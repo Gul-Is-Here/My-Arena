@@ -138,6 +138,15 @@ class _LoginScreenState extends State<LoginScreen> {
                   icon: Icons.g_mobiledata,
                   onPressed: auth.signInWithGoogle,
                 ),
+                if (auth.isAppleAvailable) ...[
+                  const SizedBox(height: 12),
+                  AppButton(
+                    label: 'Continue with Apple',
+                    outlined: true,
+                    icon: Icons.apple,
+                    onPressed: auth.signInWithApple,
+                  ),
+                ],
                 const SizedBox(height: 32),
 
                 Center(

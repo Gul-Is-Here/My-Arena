@@ -42,7 +42,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                     style: AppTextStyles.headlineLarge),
                 const SizedBox(height: 8),
                 Text(
-                  "Enter your email and we'll send you a reset link.",
+                  "Enter your email and we'll send you a 6-digit reset code.",
                   style: AppTextStyles.bodyMedium
                       .copyWith(color: AppColors.textGrey),
                 ),
@@ -59,7 +59,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 const SizedBox(height: 32),
                 Obx(
                   () => AppButton(
-                    label: 'Send Reset Link',
+                    label: 'Send Reset Code',
                     isLoading: auth.isLoading.value,
                     onPressed: _submit,
                   ),

@@ -7,27 +7,29 @@ import '../../theme/app_text_styles.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/otp_fields.dart';
 
-class PhoneOtpScreen extends StatefulWidget {
-  const PhoneOtpScreen({super.key});
+/// Signup email verification — the user enters the 6-digit code
+/// emailed by the sendEmailOtp cloud function.
+class EmailOtpScreen extends StatefulWidget {
+  const EmailOtpScreen({super.key});
 
   @override
-  State<PhoneOtpScreen> createState() => _PhoneOtpScreenState();
+  State<EmailOtpScreen> createState() => _EmailOtpScreenState();
 }
 
-class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
+class _EmailOtpScreenState extends State<EmailOtpScreen> {
   final auth = AuthController.to;
-  late final String phone = (Get.arguments as String?) ?? '';
+  late final String email = (Get.arguments as String?) ?? '';
   String _otp = '';
 
   void _verify() {
     if (_otp.length < 6) return;
-    auth.verifyOtp(phone, _otp);
+    auth.verifyEmailOtp(_otp);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Verify Phone')),
+      appBar: AppBar(title: const Text('Verify Email')),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -35,12 +37,12 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 16),
-              Text('Enter the code', style: AppTextStyles.headlineLarge),
+              Text('Check your inbox', style: AppTextStyles.headlineLarge),
               const SizedBox(height: 8),
               Text(
-                'A 6-digit code was sent to $phone',
-                style:
-                    AppTextStyles.bodyMedium.copyWith(color: AppColors.textGrey),
+                'Enter the 6-digit code we sent to\n$email',
+                style: AppTextStyles.bodyMedium
+                    .copyWith(color: AppColors.textGrey),
               ),
               const SizedBox(height: 40),
               OtpFields(
@@ -50,7 +52,7 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
               const SizedBox(height: 40),
               Obx(
                 () => AppButton(
-                  label: 'Verify',
+                  label: 'Verify Email',
                   isLoading: auth.isLoading.value,
                   onPressed: _verify,
                 ),
@@ -58,7 +60,7 @@ class _PhoneOtpScreenState extends State<PhoneOtpScreen> {
               const SizedBox(height: 16),
               Center(
                 child: TextButton(
-                  onPressed: () => auth.sendOtp(phone),
+                  onPressed: auth.resendEmailOtp,
                   child: const Text('Resend Code'),
                 ),
               ),

@@ -21,7 +21,12 @@ class StatusBadge extends StatelessWidget {
       case 'cancelled':
       case 'off':
       case 'banned':
+      case 'suspended':
         return AppColors.error;
+      case 'resolved':
+        return AppColors.success;
+      case 'open':
+      case 'in_progress':
       case 'pending':
       case 'pending_deposit':
       case 'deposit_submitted':

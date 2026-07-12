@@ -1,8 +1,10 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 
 import 'app/bindings/initial_binding.dart';
+import 'firebase_options.dart';
 import 'app/routes/app_pages.dart';
 import 'app/theme/app_theme.dart';
 import 'app/theme/theme_controller.dart';
@@ -10,6 +12,9 @@ import 'app/theme/theme_controller.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await GetStorage.init();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const MyArenaApp());
 }
 

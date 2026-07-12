@@ -43,3 +43,17 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Firebase config — contain API keys, never commit to public repos
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+lib/firebase_options.dart
+
+# Cloud Functions — contains SMTP credentials
+functions/emailConfig.js
+functions/otp_store.js
+functions/node_modules/
+
+# Claude Code session files
+.agents/
+.claude/
