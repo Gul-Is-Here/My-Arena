@@ -1,0 +1,178 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ──────────────────────────────────────────────────────
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function role() {
+      return get(/databases/$(database)/documents/users/$(uid())).data.role;
+    }
+
+    function isAdmin() {
+      return isAuth() && role() == 'admin';
+    }
+
+    function isOwner() {
+      return isAuth() && role() == 'owner';
+    }
+
+    function isStaff() {
+      return isAuth() && (role() == 'staff' || role() == 'admin');
+    }
+
+    // ── Users ─────────────────────────────────────────────────────────
+    match /users/{userId} {
+      // Owners need to resolve their customers' name/phone/avatar for
+      // booking cards and details — they already have open read access to
+      // all bookings, so this doesn't widen the existing trust boundary.
+      allow read: if isAuth() && (uid() == userId || isAdmin() || isStaff() || isOwner());
+      allow create: if isAuth() && uid() == userId;
+      allow update: if isAuth() && (uid() == userId || isAdmin());
+      allow delete: if isAdmin();
+
+      match /favorites/{arenaId} {
+        allow read, write: if isAuth() && uid() == userId;
+      }
+    }
+
+    // ── Arenas ────────────────────────────────────────────────────────
+    match /arenas/{arenaId} {
+      allow read: if isAuth();
+      allow create: if isOwner();
+      allow update: if isAuth() && (
+        // owner updates their own arena
+        resource.data.ownerId == uid() ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+
+      match /courts/{courtId} {
+        allow read: if isAuth();
+        allow write: if isAuth() && (
+          get(/databases/$(database)/documents/arenas/$(arenaId)).data.ownerId == uid() ||
+          isAdmin()
+        );
+      }
+
+      match /reviews/{reviewId} {
+        allow read: if isAuth();
+        // Only the reviewer can create; reviews are immutable once written
+        allow create: if isAuth() && request.resource.data.customerId == uid();
+        allow update, delete: if false;
+      }
+    }
+
+    // ── Bookings ──────────────────────────────────────────────────────
+    match /bookings/{bookingId} {
+      // Read is open to any signed-in user because slot-availability checks
+      // query bookings across all customers for a given court/date — a
+      // per-owner restriction here would make Firestore deny the whole
+      // query as soon as it matched another customer's booking.
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth() && (
+        resource.data.customerId == uid() ||
+        resource.data.ownerId == uid() ||
+        isStaff()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // ── Chats ─────────────────────────────────────────────────────────
+    match /chats/{chatId} {
+      // Admin/staff can monitor and join any conversation.
+      allow read, write: if isAuth() && (
+        uid() in resource.data.participants || isStaff()
+      );
+
+      allow create: if isAuth();
+
+      match /messages/{msgId} {
+        allow read: if isAuth() && (
+          uid() in get(/databases/$(database)/documents/chats/$(chatId)).data.participants ||
+          isStaff()
+        );
+        allow create: if isAuth() && (
+          uid() in get(/databases/$(database)/documents/chats/$(chatId)).data.participants ||
+          isStaff()
+        );
+        allow update, delete: if false;
+      }
+    }
+
+    // ── Tickets ───────────────────────────────────────────────────────
+    match /tickets/{ticketId} {
+      allow read: if isAuth() && (
+        resource.data.raisedByUid == uid() || isStaff()
+      );
+      allow create: if isAuth();
+      allow update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    // ── Tournaments ───────────────────────────────────────────────────
+    match /tournaments/{tId} {
+      allow read: if isAuth();
+      allow create: if isOwner() || isAdmin();
+      allow update: if isAuth() && (
+        resource.data.createdBy == uid() || isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /registrations/{regId} {
+      allow read: if isAuth() && (
+        resource.data.userId == uid() ||
+        // owner of the tournament's arena
+        isOwner() ||
+        isAdmin()
+      );
+      allow create: if isAuth();
+      allow update: if isAuth() && (isOwner() || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /brackets/{tId} {
+      allow read: if isAuth();
+      allow write: if isAuth() && (isOwner() || isAdmin());
+    }
+
+    // ── Boost requests ────────────────────────────────────────────────
+    match /boostRequests/{reqId} {
+      allow read: if isAuth() && (
+        resource.data.ownerId == uid() || isAdmin()
+      );
+      allow create: if isOwner();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── Settings (admin-managed config) ───────────────────────────────
+    match /settings/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // ── Waitlist ──────────────────────────────────────────────────────────
+    match /waitlist/{entryId} {
+      allow read: if isAuth() && (resource.data.customerId == uid() || isStaff());
+      allow create: if isAuth() && request.resource.data.customerId == uid();
+      allow delete: if isAuth() && resource.data.customerId == uid();
+      allow update: if false;
+    }
+
+    // ── Audit logs ────────────────────────────────────────────────────
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+  }
+}

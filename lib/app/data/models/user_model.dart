@@ -5,7 +5,7 @@ extension UserRoleX on UserRole {
   String get value => name;
 
   static UserRole fromString(String? role) => UserRole.values.firstWhere(
-        (r) => r.name == role,
+        (r) => r.name == role?.trim(),
         orElse: () => UserRole.customer,
       );
 }
@@ -41,6 +41,8 @@ class UserModel {
         role: UserRoleX.fromString(map['role']),
         avatar: map['avatar'] ?? '',
         isActive: map['isActive'] ?? true,
+        createdAt: (map['createdAt'] as dynamic)?.toDate(),
+        lastLogin: (map['lastLogin'] as dynamic)?.toDate(),
       );
 
   Map<String, dynamic> toMap() => {

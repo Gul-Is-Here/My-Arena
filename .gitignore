@@ -31,6 +31,7 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+**/build/
 /coverage/
 
 # Symbolication related
@@ -47,6 +48,7 @@ app.*.map.json
 # Firebase config — contain API keys, never commit to public repos
 android/app/google-services.json
 ios/Runner/GoogleService-Info.plist
+macos/Runner/GoogleService-Info.plist
 lib/firebase_options.dart
 
 # Cloud Functions — contains SMTP credentials

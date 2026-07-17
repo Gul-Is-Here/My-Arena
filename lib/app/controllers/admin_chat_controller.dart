@@ -1,13 +1,17 @@
+import 'dart:async';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:get/get.dart';
 
 import '../data/models/chat_model.dart';
+import '../services/chat_service.dart';
 
-/// A conversation between two parties, monitored by admin.
+/// Admin-side view of every conversation on the platform.
 class MonitoredChat {
   final ChatModel chat;
-  final String partyA; // e.g. 'Ali Raza (Customer)'
-  final String partyB; // e.g. 'Usman Khalid (Owner)'
-  final String pair; // 'customer_owner' | 'customer_staff' | 'customer_admin'
+  final String partyA;
+  final String partyB;
+  final String pair;
 
   const MonitoredChat({
     required this.chat,
@@ -28,140 +32,106 @@ class MonitoredChat {
   }
 }
 
-/// Admin chat monitoring — every conversation on the platform.
-/// Firestore collectionGroup streams replace this in the backend phase.
 class AdminChatController extends GetxController {
   static AdminChatController get to => Get.find();
 
+  final _service = ChatService();
+
   final RxList<MonitoredChat> conversations = <MonitoredChat>[].obs;
   final RxString query = ''.obs;
-  final RxString pairFilter = 'all'.obs; // all | customer_owner | customer_staff | customer_admin
+  final RxString pairFilter = 'all'.obs;
+
+  StreamSubscription? _sub;
+  final Map<String, StreamSubscription> _msgSubs = {};
+  final Map<String, RxList<MessageModel>> _msgRx = {};
+
+  String get myUid => FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  @override
+  void onInit() {
+    super.onInit();
+    _listen();
+  }
+
+  @override
+  void onClose() {
+    _sub?.cancel();
+    for (final s in _msgSubs.values) {
+      s.cancel();
+    }
+    super.onClose();
+  }
+
+  /// Live message stream for one chat (admin can read any chat per rules).
+  RxList<MessageModel> messagesFor(String chatId) {
+    if (!_msgRx.containsKey(chatId)) {
+      _msgRx[chatId] = <MessageModel>[].obs;
+      _msgSubs[chatId] = _service
+          .messages(chatId)
+          .listen((msgs) => _msgRx[chatId]!.assignAll(msgs));
+    }
+    return _msgRx[chatId]!;
+  }
+
+  /// Admin replies in a conversation — joins as participant first so the
+  /// other side's unread counts and streams include the admin.
+  Future<void> sendReply(String chatId, String text) async {
+    if (text.trim().isEmpty) return;
+    final m = byId(chatId);
+    final participants =
+        List<String>.from(m?.chat.participants ?? const <String>[]);
+    if (!participants.contains(myUid)) {
+      await _service.addParticipant(chatId, myUid);
+      participants.add(myUid);
+    }
+    await _service.sendText(
+      chatId: chatId,
+      senderId: myUid,
+      senderRole: 'admin',
+      text: text.trim(),
+      participants: participants,
+    );
+  }
+
+  void _listen() {
+    _sub = _service.allChats().listen((maps) {
+      conversations.assignAll(maps.map((m) {
+        final chat = ChatModel.fromMap(m);
+        final typeStr = m['type'] ?? 'booking';
+        final String pair;
+        if (typeStr == 'booking') {
+          pair = 'customer_owner';
+        } else if (typeStr == 'owner_support') {
+          pair = 'customer_staff';
+        } else {
+          pair = 'customer_admin';
+        }
+        final parts = List<String>.from(m['participants'] ?? []);
+        return MonitoredChat(
+          chat: chat,
+          partyA: parts.isNotEmpty ? parts[0] : '',
+          partyB: parts.length > 1 ? parts[1] : 'Support',
+          pair: pair,
+        );
+      }).toList());
+    });
+  }
 
   List<MonitoredChat> get filtered {
     final q = query.value.toLowerCase().trim();
     return conversations.where((m) {
       if (pairFilter.value != 'all' && m.pair != pairFilter.value) return false;
       if (q.isEmpty) return true;
-      return m.partyA.toLowerCase().contains(q) ||
-          m.partyB.toLowerCase().contains(q) ||
-          m.chat.title.toLowerCase().contains(q) ||
+      return m.chat.title.toLowerCase().contains(q) ||
           m.chat.subtitle.toLowerCase().contains(q) ||
           (m.chat.bookingId ?? '').toLowerCase().contains(q);
-    }).toList()
-      ..sort((a, b) => b.chat.lastMessageAt.compareTo(a.chat.lastMessageAt));
+    }).toList();
   }
 
   MonitoredChat? byId(String id) =>
       conversations.firstWhereOrNull((m) => m.chat.id == id);
 
-  @override
-  void onInit() {
-    super.onInit();
-    _seed();
-  }
-
-  void _seed() {
-    final now = DateTime.now();
-    MessageModel m(String id, String sender, String role, String text,
-            Duration ago) =>
-        MessageModel(
-          id: id,
-          senderId: sender,
-          senderRole: role,
-          type: MessageType.text,
-          content: text,
-          isRead: true,
-          createdAt: now.subtract(ago),
-        );
-
-    conversations.assignAll([
-      MonitoredChat(
-        partyA: 'Ali Raza (Customer)',
-        partyB: 'Usman Khalid (Owner)',
-        pair: 'customer_owner',
-        chat: ChatModel(
-          id: 'mon-1',
-          type: ChatType.booking,
-          title: 'Champions Arena',
-          subtitle: 'Padel Court A · Booking #1042',
-          bookingId: '#1042',
-          lastMessage: 'Perfect, see you at 6pm!',
-          lastMessageAt: now.subtract(const Duration(minutes: 12)),
-          messages: [
-            m('m1', 'cust-1', 'customer',
-                'Hi! Is the court ready for tomorrow 6pm?', const Duration(hours: 2)),
-            m('m2', 'owner-1', 'owner',
-                'Yes, all set. Floodlights are working too.', const Duration(hours: 1)),
-            m('m3', 'cust-1', 'customer',
-                'Great — can we get 4 rackets on rent?', const Duration(minutes: 40)),
-            m('m4', 'owner-1', 'owner', 'Perfect, see you at 6pm!',
-                const Duration(minutes: 12)),
-          ],
-        ),
-      ),
-      MonitoredChat(
-        partyA: 'Hamza Sheikh (Customer)',
-        partyB: 'Bilal Ahmed (Staff)',
-        pair: 'customer_staff',
-        chat: ChatModel(
-          id: 'mon-2',
-          type: ChatType.customerSupport,
-          title: 'Refund inquiry',
-          subtitle: 'Smash Indoor Sports · Booking #0987',
-          bookingId: '#0987',
-          lastMessage: 'Your refund was sent — please confirm receipt.',
-          lastMessageAt: now.subtract(const Duration(hours: 5)),
-          messages: [
-            m('m1', 'cust-2', 'customer',
-                'My booking was cancelled. Where is my refund?',
-                const Duration(days: 1)),
-            m('m2', 'staff-1', 'staff',
-                'We\'ve checked with the owner — it is being processed today.',
-                const Duration(hours: 20)),
-            m('m3', 'staff-1', 'staff',
-                'Your refund was sent — please confirm receipt.',
-                const Duration(hours: 5)),
-          ],
-        ),
-      ),
-      MonitoredChat(
-        partyA: 'Sara Malik (Customer)',
-        partyB: 'Admin',
-        pair: 'customer_admin',
-        chat: ChatModel(
-          id: 'mon-3',
-          type: ChatType.customerSupport,
-          title: 'Account ban appeal',
-          subtitle: 'Account issue',
-          lastMessage: 'Your appeal is under review.',
-          lastMessageAt: now.subtract(const Duration(hours: 8)),
-          messages: [
-            m('m1', 'cust-3', 'customer',
-                'Why was my account banned? I did nothing wrong.',
-                const Duration(days: 1, hours: 2)),
-            m('m2', 'admin', 'admin', 'Your appeal is under review.',
-                const Duration(hours: 8)),
-          ],
-        ),
-      ),
-      MonitoredChat(
-        partyA: 'Ahmed Nawaz (Customer)',
-        partyB: 'Usman Khalid (Owner)',
-        pair: 'customer_owner',
-        chat: ChatModel(
-          id: 'mon-4',
-          type: ChatType.booking,
-          title: 'Padel Pro Center',
-          subtitle: 'Panorama Court 1 · Booking #1101',
-          bookingId: '#1101',
-          lastMessage: 'Deposit screenshot attached.',
-          lastMessageAt: now.subtract(const Duration(days: 1)),
-          messages: [
-            m('m1', 'cust-4', 'customer', 'Deposit screenshot attached.',
-                const Duration(days: 1)),
-          ],
-        ),
-      ),
-    ]);
-  }
+  /// Admin joins a support chat to be able to respond.
+  Future<void> joinChat(String chatId, String adminUid) =>
+      _service.addParticipant(chatId, adminUid);
 }

@@ -1,23 +1,99 @@
+import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/material.dart';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:get/get.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../data/models/tournament_model.dart';
+import '../services/tournament_service.dart';
 
-/// Tournament state for all roles — dummy data in the UI-first phase.
-/// Bracket generation, winner advancement and points tables run
-/// client-side here and move to Cloud Functions later.
 class TournamentController extends GetxController {
   static TournamentController get to => Get.find();
 
-  final RxList<TournamentModel> tournaments = <TournamentModel>[].obs;
-  final RxList<RegistrationModel> registrations = <RegistrationModel>[].obs;
+  final _service = TournamentService();
+  final _picker = ImagePicker();
 
-  /// tournamentId → rounds. Only exists once a bracket is generated.
+  String get myUid => FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  final RxList<TournamentModel> tournaments = <TournamentModel>[].obs;
+
+  /// My registrations (current user).
+  final RxList<RegistrationModel> myRegistrations = <RegistrationModel>[].obs;
+
+  /// Per-tournament registrations: streamed on demand when a tournament is opened.
+  final Map<String, RxList<RegistrationModel>> _tournamentRegs = {};
+  final Map<String, StreamSubscription> _regSubs = {};
+
+  /// Bracket data: tournamentId → rounds (live from Firestore).
   final RxMap<String, List<BracketRound>> brackets =
       <String, List<BracketRound>>{}.obs;
+  final Map<String, StreamSubscription> _bracketSubs = {};
+
+  StreamSubscription? _tournamentsSub;
+  StreamSubscription? _myRegsSub;
+
+  // ── Lifecycle ──────────────────────────────────────────────────────
+
+  @override
+  void onInit() {
+    super.onInit();
+    _tournamentsSub = _service.publicTournaments().listen(
+          (list) => tournaments.assignAll(list),
+        );
+    if (myUid.isNotEmpty) {
+      _myRegsSub = _service
+          .userRegistrations(myUid)
+          .listen((list) => myRegistrations.assignAll(list));
+    }
+  }
+
+  @override
+  void onClose() {
+    _tournamentsSub?.cancel();
+    _myRegsSub?.cancel();
+    for (final s in _regSubs.values) {
+      s.cancel();
+    }
+    for (final s in _bracketSubs.values) {
+      s.cancel();
+    }
+    super.onClose();
+  }
+
+  // ── Admin/owner tournament stream ─────────────────────────────────
+
+  void listenAllTournaments() {
+    _tournamentsSub?.cancel();
+    _tournamentsSub = _service
+        .allTournaments()
+        .listen((list) => tournaments.assignAll(list));
+  }
+
+  void listenOwnerTournaments() {
+    _tournamentsSub?.cancel();
+    _tournamentsSub = _service
+        .ownerTournaments(myUid)
+        .listen((list) => tournaments.assignAll(list));
+  }
+
+  // ── Per-tournament registrations ───────────────────────────────────
+
+  RxList<RegistrationModel> registrationsList(String tournamentId) {
+    if (!_tournamentRegs.containsKey(tournamentId)) {
+      _tournamentRegs[tournamentId] = <RegistrationModel>[].obs;
+      _regSubs[tournamentId] = _service
+          .registrationsFor(tournamentId, myUid: myUid)
+          .listen((list) => _tournamentRegs[tournamentId]!.assignAll(list));
+    }
+    return _tournamentRegs[tournamentId]!;
+  }
 
   // ── Queries ────────────────────────────────────────────────────────
+
   List<TournamentModel> get publicTournaments => tournaments
       .where((t) =>
           t.status == TournamentStatus.registrationOpen ||
@@ -27,69 +103,85 @@ class TournamentController extends GetxController {
     ..sort((a, b) => a.startDate.compareTo(b.startDate));
 
   List<TournamentModel> get ownerTournaments =>
-      tournaments.where((t) => t.createdByRole == 'owner').toList()
+      tournaments.where((t) => t.createdBy == myUid).toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
   List<TournamentModel> get pendingApproval => tournaments
       .where((t) => t.status == TournamentStatus.pendingApproval)
       .toList();
 
-  List<RegistrationModel> get myRegistrations =>
-      registrations.where((r) => r.isMine).toList()
-        ..sort((a, b) => b.registeredAt.compareTo(a.registeredAt));
-
   TournamentModel? byId(String id) =>
       tournaments.firstWhereOrNull((t) => t.id == id);
 
   List<RegistrationModel> registrationsFor(String tournamentId) =>
-      registrations.where((r) => r.tournamentId == tournamentId).toList();
+      registrationsList(tournamentId);
 
   bool isRegistered(String tournamentId) =>
-      registrations.any((r) => r.tournamentId == tournamentId && r.isMine);
+      myRegistrations.any((r) => r.tournamentId == tournamentId);
 
-  // ── Lifecycle ──────────────────────────────────────────────────────
-  void create(TournamentModel t) => tournaments.insert(0, t);
+  // ── Tournament CRUD ────────────────────────────────────────────────
 
-  void setStatus(String id, TournamentStatus status) {
-    final i = tournaments.indexWhere((t) => t.id == id);
-    if (i == -1) return;
-    tournaments[i] = tournaments[i].copyWith(status: status);
+  Future<void> create(TournamentModel t, {File? banner}) async {
+    await _service.createTournament(t, banner: banner);
   }
 
-  // ── Registration ───────────────────────────────────────────────────
-  void register(RegistrationModel reg) {
-    registrations.add(reg);
-    final i = tournaments.indexWhere((t) => t.id == reg.tournamentId);
+  Future<void> setStatus(String id, TournamentStatus status) async {
+    await _service.updateStatus(id, status);
+    final i = tournaments.indexWhere((t) => t.id == id);
     if (i != -1) {
-      tournaments[i] = tournaments[i]
-          .copyWith(registeredCount: tournaments[i].registeredCount + 1);
+      tournaments[i] = tournaments[i].copyWith(status: status);
     }
   }
 
-  void verifyPayment(String regId) {
-    final i = registrations.indexWhere((r) => r.id == regId);
-    if (i == -1) return;
-    registrations[i] =
-        registrations[i].copyWith(paymentStatus: 'verified', status: 'confirmed');
+  // ── Registration ───────────────────────────────────────────────────
+
+  Future<void> register(RegistrationModel reg, {File? paymentScreenshot}) async {
+    await _service.createRegistration(reg, paymentScreenshot: paymentScreenshot);
+  }
+
+  Future<void> verifyPayment(String regId) async {
+    await _service.verifyPayment(regId);
+  }
+
+  Future<void> rejectRegistration(String regId) async {
+    await _service.rejectRegistration(regId);
   }
 
   // ── Bracket ────────────────────────────────────────────────────────
-  /// Shuffles confirmed participants and builds the bracket, then moves
-  /// the tournament to ongoing.
-  void generateBracket(String tournamentId) {
+
+  void listenBracket(String tournamentId) {
+    if (_bracketSubs.containsKey(tournamentId)) return;
+    _bracketSubs[tournamentId] =
+        _service.bracketStream(tournamentId).listen((rounds) {
+      if (rounds != null) {
+        brackets[tournamentId] = rounds;
+        brackets.refresh();
+      }
+    });
+  }
+
+  Future<void> generateBracket(String tournamentId) async {
     final t = byId(tournamentId);
     if (t == null) return;
-    final names = registrationsFor(tournamentId)
+    final regs = registrationsList(tournamentId);
+    final names = regs
         .where((r) => r.status == 'confirmed')
         .map((r) => r.playerName)
         .toList()
       ..shuffle(Random());
-    if (names.length < 2) return;
+    if (names.length < 2) {
+      Get.snackbar('Not enough players',
+          'At least 2 confirmed participants needed.',
+          snackPosition: SnackPosition.BOTTOM,
+          margin: const EdgeInsets.all(16));
+      return;
+    }
 
+    List<BracketRound> rounds;
     if (t.format == TournamentFormat.elimination) {
-      brackets[tournamentId] = _eliminationRounds(tournamentId, names);
+      rounds = _eliminationRounds(tournamentId, names);
     } else {
-      brackets[tournamentId] = [
+      rounds = [
         BracketRound(
           roundNumber: 1,
           matches: [
@@ -104,11 +196,14 @@ class TournamentController extends GetxController {
         ),
       ];
     }
-    setStatus(tournamentId, TournamentStatus.ongoing);
+
+    brackets[tournamentId] = rounds;
+    brackets.refresh();
+    await _service.saveBracket(tournamentId, rounds);
+    await setStatus(tournamentId, TournamentStatus.ongoing);
   }
 
   List<BracketRound> _eliminationRounds(String tid, List<String> names) {
-    // Pad to the next power of two with byes (null participants).
     var size = 2;
     while (size < names.length) {
       size *= 2;
@@ -118,39 +213,34 @@ class TournamentController extends GetxController {
 
     final rounds = <BracketRound>[];
     var matchCount = size ~/ 2;
-    var round = 1;
+    var roundNum = 1;
     while (matchCount >= 1) {
-      rounds.add(BracketRound(
-        roundNumber: round,
-        matches: [
-          for (var m = 0; m < matchCount; m++)
-            round == 1
-                ? MatchModel(
-                    id: '$tid-r1-m$m',
-                    participant1: slots[m * 2],
-                    participant2: slots[m * 2 + 1],
-                  )
-                : MatchModel(id: '$tid-r$round-m$m'),
-        ],
-      ));
-      matchCount ~/= 2;
-      round++;
-    }
-
-    // Auto-advance byes from round 1.
-    for (var m = 0; m < rounds[0].matches.length; m++) {
-      final match = rounds[0].matches[m];
-      if (match.participant1 != null && match.participant2 == null) {
-        _advance(rounds, 0, m, match.participant1!);
-      } else if (match.participant1 == null && match.participant2 != null) {
-        _advance(rounds, 0, m, match.participant2!);
+      final matches = <MatchModel>[];
+      if (rounds.isEmpty) {
+        for (var i = 0; i < slots.length; i += 2) {
+          matches.add(MatchModel(
+            id: '$tid-r1-${i ~/ 2}',
+            participant1: slots[i],
+            participant2: slots[i + 1],
+            status: slots[i] == null || slots[i + 1] == null
+                ? 'completed'
+                : 'scheduled',
+          ));
+        }
+      } else {
+        for (var i = 0; i < matchCount; i++) {
+          matches.add(MatchModel(id: '$tid-r$roundNum-$i'));
+        }
       }
+      rounds.add(BracketRound(roundNumber: roundNum, matches: matches));
+      matchCount ~/= 2;
+      roundNum++;
     }
     return rounds;
   }
 
-  void _advance(
-      List<BracketRound> rounds, int roundIdx, int matchIdx, String winner) {
+  void _advance(List<BracketRound> rounds, int roundIdx, int matchIdx,
+      String winner) {
     if (roundIdx + 1 >= rounds.length) return;
     final next = rounds[roundIdx + 1].matches[matchIdx ~/ 2];
     rounds[roundIdx + 1].matches[matchIdx ~/ 2] = matchIdx.isEven
@@ -158,9 +248,8 @@ class TournamentController extends GetxController {
         : next.copyWith(participant2: winner);
   }
 
-  /// Records a score. In elimination the winner advances automatically;
-  /// if the final completes, the tournament is marked completed.
-  void enterScore(String tournamentId, int roundIdx, int matchIdx, int s1, int s2) {
+  Future<void> enterScore(String tournamentId, int roundIdx, int matchIdx,
+      int s1, int s2) async {
     final rounds = brackets[tournamentId];
     final t = byId(tournamentId);
     if (rounds == null || t == null) return;
@@ -172,21 +261,23 @@ class TournamentController extends GetxController {
     if (t.format == TournamentFormat.elimination && match.winner != null) {
       _advance(rounds, roundIdx, matchIdx, match.winner!);
       if (roundIdx == rounds.length - 1) {
-        setStatus(tournamentId, TournamentStatus.completed);
+        await setStatus(tournamentId, TournamentStatus.completed);
       }
     } else if (t.format == TournamentFormat.roundRobin) {
       final allDone =
           rounds.first.matches.every((m) => m.status == 'completed');
-      if (allDone) setStatus(tournamentId, TournamentStatus.completed);
+      if (allDone) await setStatus(tournamentId, TournamentStatus.completed);
     }
     brackets.refresh();
+    await _service.updateMatch(tournamentId, rounds);
   }
 
-  /// Round-robin points table (win 3, draw 1) sorted by points.
+  // ── Leaderboard (round robin) ──────────────────────────────────────
+
   List<LeaderboardEntry> leaderboard(String tournamentId) {
     final rounds = brackets[tournamentId];
     if (rounds == null) return [];
-    final stats = <String, List<int>>{}; // name → [played, won, lost, drawn]
+    final stats = <String, List<int>>{};
 
     for (final m in rounds.first.matches) {
       if (m.participant1 == null || m.participant2 == null) continue;
@@ -207,7 +298,7 @@ class TournamentController extends GetxController {
       }
     }
 
-    final entries = stats.entries
+    return stats.entries
         .map((e) => LeaderboardEntry(
               name: e.key,
               played: e.value[0],
@@ -218,141 +309,12 @@ class TournamentController extends GetxController {
             ))
         .toList()
       ..sort((a, b) => b.points.compareTo(a.points));
-    return entries;
   }
 
-  @override
-  void onInit() {
-    super.onInit();
-    _seed();
-  }
+  // ── Banner picker (for create screen) ─────────────────────────────
 
-  void _seed() {
-    final now = DateTime.now();
-    tournaments.addAll([
-      TournamentModel(
-        id: 'tour-1',
-        createdBy: 'mock-login',
-        createdByRole: 'owner',
-        arenaId: 'arena-1',
-        arenaName: 'Champions Arena',
-        name: 'Lahore Padel Cup',
-        description:
-            'City-wide knockout padel championship. Winner takes the trophy plus cash prize.',
-        sport: 'Padel',
-        format: TournamentFormat.elimination,
-        participationType: ParticipationType.individual,
-        maxParticipants: 8,
-        registeredCount: 8,
-        registrationFee: 1500,
-        startDate: now.add(const Duration(days: 3)),
-        endDate: now.add(const Duration(days: 5)),
-        registrationDeadline: now.add(const Duration(days: 2)),
-        status: TournamentStatus.ongoing,
-        prizeDetails: 'PKR 50,000 + trophy',
-        createdAt: now.subtract(const Duration(days: 10)),
-      ),
-      TournamentModel(
-        id: 'tour-2',
-        createdBy: 'mock-login',
-        createdByRole: 'owner',
-        arenaId: 'arena-1',
-        arenaName: 'Champions Arena',
-        name: 'Weekend Futsal League',
-        description:
-            'Round-robin futsal league over four weekends. All matches on FIFA-standard turf.',
-        sport: 'Football',
-        format: TournamentFormat.roundRobin,
-        participationType: ParticipationType.team,
-        maxParticipants: 6,
-        registeredCount: 4,
-        registrationFee: 0,
-        startDate: now.add(const Duration(days: 9)),
-        endDate: now.add(const Duration(days: 30)),
-        registrationDeadline: now.add(const Duration(days: 7)),
-        status: TournamentStatus.registrationOpen,
-        prizeDetails: 'PKR 30,000 team prize',
-        createdAt: now.subtract(const Duration(days: 4)),
-      ),
-      TournamentModel(
-        id: 'tour-3',
-        createdBy: 'admin',
-        createdByRole: 'admin',
-        arenaName: 'Multiple venues',
-        name: 'MyArena Cricket Championship',
-        description:
-            'Platform-wide T10 cricket championship across partner arenas.',
-        sport: 'Cricket',
-        format: TournamentFormat.elimination,
-        participationType: ParticipationType.team,
-        maxParticipants: 16,
-        registeredCount: 3,
-        registrationFee: 5000,
-        startDate: now.add(const Duration(days: 20)),
-        endDate: now.add(const Duration(days: 24)),
-        registrationDeadline: now.add(const Duration(days: 15)),
-        status: TournamentStatus.registrationOpen,
-        prizeDetails: 'PKR 200,000 + medals',
-        createdAt: now.subtract(const Duration(days: 2)),
-      ),
-      TournamentModel(
-        id: 'tour-4',
-        createdBy: 'mock-login',
-        createdByRole: 'owner',
-        arenaId: 'arena-2',
-        arenaName: 'Victory Sports Club',
-        name: 'Night Cricket Bash',
-        description: 'Floodlit T5 blitz — awaiting admin approval.',
-        sport: 'Cricket',
-        format: TournamentFormat.roundRobin,
-        participationType: ParticipationType.team,
-        maxParticipants: 4,
-        registrationFee: 2000,
-        startDate: now.add(const Duration(days: 14)),
-        endDate: now.add(const Duration(days: 15)),
-        registrationDeadline: now.add(const Duration(days: 12)),
-        status: TournamentStatus.pendingApproval,
-        prizeDetails: 'PKR 20,000',
-        createdAt: now.subtract(const Duration(hours: 8)),
-      ),
-    ]);
-
-    // Registrations — tour-1 (8 confirmed, one is "mine").
-    final players = [
-      'Ali Raza', 'Hamza Sheikh', 'Usman Khalid', 'Sara Malik',
-      'Bilal Ahmed', 'Ayesha Tariq', 'Omar Farooq', 'You',
-    ];
-    for (var i = 0; i < players.length; i++) {
-      registrations.add(RegistrationModel(
-        id: 'reg-t1-$i',
-        tournamentId: 'tour-1',
-        playerName: players[i],
-        paymentStatus: 'verified',
-        status: 'confirmed',
-        isMine: players[i] == 'You',
-        registeredAt: now.subtract(Duration(days: 8, hours: i)),
-      ));
-    }
-    // tour-2 — 4 teams, one payment pending verification.
-    final teams = ['Thunder FC', 'City Strikers', 'Falcons', 'Real Gulberg'];
-    for (var i = 0; i < teams.length; i++) {
-      registrations.add(RegistrationModel(
-        id: 'reg-t2-$i',
-        tournamentId: 'tour-2',
-        type: ParticipationType.team,
-        playerName: teams[i],
-        members: ['Player 1', 'Player 2', 'Player 3', 'Player 4', 'Player 5'],
-        paymentStatus: 'free',
-        status: i == 3 ? 'pending' : 'confirmed',
-        registeredAt: now.subtract(Duration(days: 3, hours: i * 5)),
-      ));
-    }
-
-    // Ongoing elimination bracket for tour-1 with quarter-finals done.
-    generateBracket('tour-1');
-    final rounds = brackets['tour-1']!;
-    for (var m = 0; m < rounds[0].matches.length; m++) {
-      enterScore('tour-1', 0, m, 6, m.isEven ? 3 : 4);
-    }
-  }
+  Future<XFile?> pickBanner() => _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 80,
+      );
 }

@@ -1,8 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' show DateTimeRange;
 import 'package:get/get.dart';
 
-import '../data/dummy_data.dart';
 import '../data/models/arena_model.dart';
+import '../services/arena_service.dart';
 
 /// Date range filters shared by every report.
 enum ReportRange { today, yesterday, week, month, year, custom }
@@ -112,10 +114,13 @@ class StaffStats {
   double get completionRate => handled == 0 ? 0 : completed / handled;
 }
 
-/// Deterministic dummy analytics — aggregation queries / Cloud Functions
-/// replace these generators in the backend phase.
+/// Deterministic pseudo-analytics using real arena list from Firestore.
+/// Real aggregation stats require Cloud Functions or Firestore queries.
 class AnalyticsController extends GetxController {
   static AnalyticsController get to => Get.find();
+
+  final _arenaService = ArenaService();
+  StreamSubscription? _arenaSub;
 
   final Rx<ReportRange> range = ReportRange.week.obs;
   final Rxn<DateTimeRange> customRange = Rxn<DateTimeRange>();
@@ -123,7 +128,19 @@ class AnalyticsController extends GetxController {
   /// null = all arenas.
   final RxnString arenaFilter = RxnString();
 
-  List<ArenaModel> get arenas => DummyData.arenas;
+  final RxList<ArenaModel> arenas = <ArenaModel>[].obs;
+
+  @override
+  void onInit() {
+    super.onInit();
+    _arenaSub = _arenaService.allArenas().listen((list) => arenas.assignAll(list));
+  }
+
+  @override
+  void onClose() {
+    _arenaSub?.cancel();
+    super.onClose();
+  }
 
   int get _days {
     if (range.value == ReportRange.custom && customRange.value != null) {

@@ -145,6 +145,48 @@ class CourtModel {
     this.isActive = true,
   });
 
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'arenaId': arenaId,
+        'name': name,
+        'description': description,
+        'type': type.name,
+        'surface': surface.name,
+        'capacity': capacity,
+        'pricePerHour': pricePerHour,
+        'images': images,
+        'startTime': startTime,
+        'endTime': endTime,
+        'advanceBookingDays': advanceBookingDays,
+        'hasFloodlights': hasFloodlights,
+        'amenities': amenities.map((a) => a.name).toList(),
+        'isActive': isActive,
+      };
+
+  factory CourtModel.fromMap(Map<String, dynamic> m) => CourtModel(
+        id: m['id'] ?? '',
+        arenaId: m['arenaId'] ?? '',
+        name: m['name'] ?? '',
+        description: m['description'] ?? '',
+        type: CourtTypeX.fromString(m['type']),
+        surface: CourtSurface.values.firstWhere(
+          (s) => s.name == m['surface'],
+          orElse: () => CourtSurface.artificial,
+        ),
+        capacity: (m['capacity'] ?? 10) as int,
+        pricePerHour: (m['pricePerHour'] ?? 0).toDouble(),
+        images: List<String>.from(m['images'] ?? []),
+        startTime: m['startTime'] ?? '08:00',
+        endTime: m['endTime'] ?? '23:00',
+        advanceBookingDays: (m['advanceBookingDays'] ?? 14) as int,
+        hasFloodlights: m['hasFloodlights'] ?? false,
+        amenities: CourtAmenity.values
+            .where((a) =>
+                (m['amenities'] as List<dynamic>? ?? []).contains(a.name))
+            .toList(),
+        isActive: m['isActive'] ?? true,
+      );
+
   CourtModel copyWith({
     String? name,
     String? description,

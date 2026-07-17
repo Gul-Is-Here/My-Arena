@@ -1,18 +1,30 @@
-import 'package:get/get.dart';
+import 'dart:async';
+import 'dart:io';
 
-import '../data/dummy_data.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
+import 'package:get/get.dart';
+import 'package:image_picker/image_picker.dart';
+
 import '../data/models/arena_model.dart';
 import '../data/models/booking_model.dart';
 import '../data/models/court_model.dart';
+import '../services/booking_service.dart';
+import '../utils/slot_status.dart';
+import 'auth_controller.dart';
 
-enum SlotStatus { available, booked, pending, past }
+export '../utils/slot_status.dart' show SlotStatus;
 
-/// Drives the Phase 3 booking flow. In-memory for the UI-first phase;
-/// swapped for a Firestore repository (with transaction-based double
-/// booking prevention) in the backend phase.
 class BookingController extends GetxController {
-  // ── My bookings ────────────────────────────────────────────────────
+  final BookingService _service = BookingService();
+  final ImagePicker _picker = ImagePicker();
+
+  // ── My bookings stream ─────────────────────────────────────────────
   final RxList<BookingModel> bookings = <BookingModel>[].obs;
+  StreamSubscription? _bookingsSub;
+  StreamSubscription? _authSub;
+  Timer? _retryTimer;
 
   List<BookingModel> get upcoming =>
       bookings.where((b) => b.isUpcoming).toList()
@@ -27,18 +39,90 @@ class BookingController extends GetxController {
       bookings.where((b) => b.isCancelled).toList()
         ..sort((a, b) => b.startDateTime.compareTo(a.startDateTime));
 
-  // ── Draft state for the current flow ──────────────────────────────
+  // ── Draft state for the current booking flow ───────────────────────
   final Rxn<ArenaModel> arena = Rxn<ArenaModel>();
   final Rxn<CourtModel> court = Rxn<CourtModel>();
   final Rx<DateTime> date = DateTime.now().obs;
   final RxSet<int> selectedHours = <int>{}.obs;
+  final RxInt selectedDuration = 1.obs;
+
+  // Booked slots loaded from Firestore for the current date+court
+  final RxList<BookingModel> _bookedSlots = <BookingModel>[].obs;
+  final RxBool loadingSlots = false.obs;
 
   BookingModel? draft;
+
+  // JazzCash number from settings/booking
+  final RxString jazzCashNumber = '0300-1234567'.obs;
+
+  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   @override
   void onInit() {
     super.onInit();
-    _seed();
+    // Controller is permanent — re-subscribe whenever the signed-in user
+    // changes so the list never goes stale across logins.
+    _authSub = FirebaseAuth.instance
+        .authStateChanges()
+        .listen((user) => _listenBookings(user?.uid));
+    _listenBookings(_uid);
+    _loadSettings();
+  }
+
+  void _listenBookings(String? uid) {
+    _retryTimer?.cancel();
+    _bookingsSub?.cancel();
+    _bookingsSub = null;
+    if (uid == null || uid.isEmpty) {
+      bookings.clear();
+      return;
+    }
+    _bookingsSub = _service.customerBookings(uid).listen(
+      (list) => bookings.assignAll(list),
+      onError: (e) {
+        debugPrint('customerBookings stream error: $e');
+        _retryTimer =
+            Timer(const Duration(seconds: 8), () => _listenBookings(_uid));
+      },
+    );
+  }
+
+  Future<void> _loadSettings() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('settings')
+          .doc('booking')
+          .get();
+      if (doc.exists) {
+        jazzCashNumber.value =
+            doc.data()?['jazzCashNumber'] ?? jazzCashNumber.value;
+      }
+    } catch (_) {}
+  }
+
+  Future<void> joinWaitlist({
+    required String arenaId,
+    required String arenaName,
+    required String courtId,
+    required DateTime date,
+    required int hour,
+  }) async {
+    final uid = _uid;
+    if (uid.isEmpty) return;
+    final dateKey =
+        '${date.year}${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}';
+    await FirebaseFirestore.instance
+        .collection('waitlist')
+        .doc('${uid}_${arenaId}_${courtId}_${dateKey}_$hour')
+        .set({
+      'arenaId': arenaId,
+      'arenaName': arenaName,
+      'courtId': courtId,
+      'date': Timestamp.fromDate(DateTime(date.year, date.month, date.day)),
+      'hour': hour,
+      'customerId': uid,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
   }
 
   void startFlow(ArenaModel a, CourtModel c) {
@@ -46,21 +130,37 @@ class BookingController extends GetxController {
     court.value = c;
     date.value = DateTime.now();
     selectedHours.clear();
+    selectedDuration.value = 1;
     draft = null;
+    _bookedSlots.clear();
+    _loadBookedSlots();
   }
 
   void selectCourt(CourtModel c) {
     court.value = c;
     selectedHours.clear();
+    _loadBookedSlots();
   }
 
   void selectDate(DateTime d) {
     date.value = d;
     selectedHours.clear();
+    _loadBookedSlots();
   }
 
-  /// Hour slots the court operates, in display order.
-  /// Handles closing past midnight (e.g. 09:00 – 02:00).
+  Future<void> _loadBookedSlots() async {
+    final c = court.value;
+    if (c == null) return;
+    loadingSlots.value = true;
+    try {
+      final slots = await _service.bookedSlots(c.id, date.value);
+      _bookedSlots.assignAll(slots);
+    } catch (_) {
+    } finally {
+      loadingSlots.value = false;
+    }
+  }
+
   List<int> hoursFor(CourtModel c) {
     final start = int.parse(c.startTime.split(':').first);
     var end = int.parse(c.endTime.split(':').first);
@@ -68,51 +168,35 @@ class BookingController extends GetxController {
     return [for (var h = start; h < end; h++) h];
   }
 
-  SlotStatus slotStatus(int hour) {
-    final d = date.value;
-    final slotStart = DateTime(d.year, d.month, d.day, hour);
-    if (slotStart.isBefore(DateTime.now())) return SlotStatus.past;
+  SlotStatus slotStatus(int hour) => computeSlotStatus(
+        date: date.value,
+        hour: hour,
+        bookedSlots: _bookedSlots,
+      );
 
-    for (final b in bookings) {
-      if (b.courtId != court.value?.id || b.isCancelled) continue;
-      final hourStart = slotStart;
-      final hourEnd = slotStart.add(const Duration(hours: 1));
-      final overlaps =
-          hourStart.isBefore(b.endDateTime) && hourEnd.isAfter(b.startDateTime);
-      if (!overlaps) continue;
-      return b.status == BookingStatus.confirmed ||
-              b.status == BookingStatus.completed
-          ? SlotStatus.booked
-          : SlotStatus.pending;
-    }
-    return SlotStatus.available;
+  void setDuration(int hours) {
+    if (selectedDuration.value == hours) return;
+    selectedDuration.value = hours;
+    selectedHours.clear();
   }
 
-  /// Toggle an hour keeping the selection contiguous — tapping a
-  /// non-adjacent slot restarts the selection there.
-  void toggleHour(int hour) {
-    if (selectedHours.contains(hour)) {
-      // Only allow trimming from either end so the block stays contiguous.
-      final min = selectedHours.reduce((a, b) => a < b ? a : b);
-      final max = selectedHours.reduce((a, b) => a > b ? a : b);
-      if (hour == min || hour == max) {
-        selectedHours.remove(hour);
-      } else {
-        selectedHours
-          ..clear()
-          ..add(hour);
-      }
+  /// Selects the [selectedDuration]-hour block starting at [hour]. Taps the
+  /// same already-selected block again to deselect. Refuses to select if any
+  /// hour in the block isn't available.
+  void selectSlot(int hour) {
+    final dur = selectedDuration.value;
+    final range = [for (var i = 0; i < dur; i++) hour + i];
+
+    if (selectedHours.length == dur && range.every(selectedHours.contains)) {
+      selectedHours.clear();
       return;
     }
-    if (selectedHours.isEmpty ||
-        selectedHours.contains(hour - 1) ||
-        selectedHours.contains(hour + 1)) {
-      selectedHours.add(hour);
-    } else {
-      selectedHours
-        ..clear()
-        ..add(hour);
+    for (final h in range) {
+      if (slotStatus(h) != SlotStatus.available) return;
     }
+    selectedHours
+      ..clear()
+      ..addAll(range);
   }
 
   int get startHour =>
@@ -123,16 +207,18 @@ class BookingController extends GetxController {
       totalAmount * BookingSettings.depositPercent / 100;
   double get remainingAmount => totalAmount - depositAmount;
 
-  /// Creates the draft booking from the current selection.
   void buildDraft() {
     final a = arena.value!;
     final c = court.value!;
     draft = BookingModel(
-      id: 'booking-${DateTime.now().millisecondsSinceEpoch}',
+      id: '',
       arenaId: a.id,
       arenaName: a.name,
       courtId: c.id,
       courtName: c.name,
+      customerId: _uid,
+      customerName: AuthController.to.currentUser.value?.name ?? '',
+      ownerId: a.ownerId,
       date: DateTime(date.value.year, date.value.month, date.value.day),
       startHour: startHour,
       totalHours: totalHours,
@@ -141,89 +227,41 @@ class BookingController extends GetxController {
     );
   }
 
-  /// Deposit screenshot "uploaded" → booking submitted for approval.
-  BookingModel submitDeposit() {
-    final b = draft!.copyWith(
-      status: BookingStatus.depositSubmitted,
-      depositScreenshot: 'mock-screenshot.png',
+  // Returns picked file or null if user cancelled
+  Future<XFile?> pickDepositScreenshot() =>
+      _picker.pickImage(source: ImageSource.gallery);
+
+  Future<String> submitDeposit(File screenshot, String accountUsed) async {
+    final b = draft!;
+    final bookingId = await _service.createBooking(b);
+    await _service.submitDeposit(
+      bookingId,
+      screenshot: screenshot,
+      accountUsed: accountUsed,
     );
-    bookings.add(b);
     draft = null;
     selectedHours.clear();
-    return b;
+    return bookingId;
   }
 
-  void cancelBooking(String id, String bankName, String accountNumber) {
-    final i = bookings.indexWhere((b) => b.id == id);
-    if (i == -1) return;
-    final b = bookings[i];
-    final refund = b.depositAmount *
-        (100 - BookingSettings.cancellationDeductPercent) /
-        100;
-    bookings[i] = b.copyWith(
-      status: BookingStatus.refundPending,
-      cancellation: CancellationInfo(
-        requestedAt: DateTime.now(),
-        refundAmount: refund,
-        bankName: bankName,
-        accountNumber: accountNumber,
-      ),
+  Future<void> cancelBooking(
+      String id, String bankName, String accountNumber) async {
+    final b = bookings.firstWhereOrNull((x) => x.id == id);
+    if (b == null) return;
+    final refund =
+        b.depositAmount * (100 - BookingSettings.cancellationDeductPercent) / 100;
+    await _service.cancelBooking(
+      id,
+      refundAmount: refund,
+      customerAccount: {'bankName': bankName, 'accountNumber': accountNumber},
     );
   }
 
-  void _seed() {
-    final now = DateTime.now();
-    bookings.addAll([
-      BookingModel(
-        id: 'booking-seed-1',
-        arenaId: 'arena-1',
-        arenaName: 'Champions Arena',
-        courtId: 'court-1',
-        courtName: 'Padel Court A',
-        date: DateTime(now.year, now.month, now.day)
-            .add(const Duration(days: 2)),
-        startHour: 18,
-        totalHours: 2,
-        pricePerHour: 3000,
-        status: BookingStatus.confirmed,
-        createdAt: now.subtract(const Duration(days: 1)),
-      ),
-      BookingModel(
-        id: 'booking-seed-2',
-        arenaId: 'arena-3',
-        arenaName: 'Padel Pro Center',
-        courtId: 'court-4',
-        courtName: 'Panorama Court 1',
-        date: DateTime(now.year, now.month, now.day)
-            .subtract(const Duration(days: 5)),
-        startHour: 20,
-        totalHours: 1,
-        pricePerHour: 3500,
-        status: BookingStatus.completed,
-        createdAt: now.subtract(const Duration(days: 6)),
-      ),
-      BookingModel(
-        id: 'booking-seed-3',
-        arenaId: 'arena-5',
-        arenaName: 'Smash Indoor Sports',
-        courtId: 'court-7',
-        courtName: 'Indoor Court 1',
-        date: DateTime(now.year, now.month, now.day)
-            .subtract(const Duration(days: 12)),
-        startHour: 16,
-        totalHours: 2,
-        pricePerHour: 1800,
-        status: BookingStatus.refundConfirmed,
-        cancellation: CancellationInfo(
-          requestedAt: now.subtract(const Duration(days: 13)),
-          refundAmount: 864,
-          bankName: 'HBL',
-          accountNumber: '01234567890',
-        ),
-        createdAt: now.subtract(const Duration(days: 14)),
-      ),
-    ]);
+  @override
+  void onClose() {
+    _retryTimer?.cancel();
+    _authSub?.cancel();
+    _bookingsSub?.cancel();
+    super.onClose();
   }
-
-  static String get jazzCashNumber => DummyData.jazzCashNumber;
 }

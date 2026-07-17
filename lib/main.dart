@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 
 import 'app/bindings/initial_binding.dart';
+import 'app/services/notification_service.dart';
 import 'firebase_options.dart';
 import 'app/routes/app_pages.dart';
 import 'app/theme/app_theme.dart';
@@ -15,6 +16,7 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  await NotificationService.init();
   runApp(const MyArenaApp());
 }
 

@@ -3,6 +3,13 @@ import 'court_model.dart';
 /// Mirrors Firestore arenas/{arenaId} from scope.md.
 enum ArenaStatus { pending, approved, rejected, suspended, off }
 
+extension ArenaStatusX on ArenaStatus {
+  static ArenaStatus fromString(String? s) => ArenaStatus.values.firstWhere(
+        (e) => e.name == s,
+        orElse: () => ArenaStatus.pending,
+      );
+}
+
 class ArenaLocation {
   final String address;
   final double lat;
@@ -28,7 +35,8 @@ class ArenaModel {
   final DateTime? featuredUntil;
   final List<CourtModel> courts;
   final double rating;
-  final double distanceKm; // dummy discovery distance
+  final int reviewCount;
+  final double distanceKm;
 
   const ArenaModel({
     required this.id,
@@ -42,9 +50,47 @@ class ArenaModel {
     this.isFeatured = false,
     this.featuredUntil,
     this.courts = const [],
-    this.rating = 4.5,
+    this.rating = 0,
+    this.reviewCount = 0,
     this.distanceKm = 0,
   });
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'ownerId': ownerId,
+        'name': name,
+        'description': description,
+        'images': images,
+        'location': {
+          'address': location.address,
+          'lat': location.lat,
+          'lng': location.lng,
+        },
+        'status': status.name,
+        'isActive': isActive,
+        'isFeatured': isFeatured,
+      };
+
+  factory ArenaModel.fromMap(Map<String, dynamic> m) {
+    final loc = m['location'] as Map<String, dynamic>? ?? {};
+    return ArenaModel(
+      id: m['id'] ?? '',
+      ownerId: m['ownerId'] ?? '',
+      name: m['name'] ?? '',
+      description: m['description'] ?? '',
+      images: List<String>.from(m['images'] ?? []),
+      location: ArenaLocation(
+        address: loc['address'] ?? '',
+        lat: (loc['lat'] ?? 0).toDouble(),
+        lng: (loc['lng'] ?? 0).toDouble(),
+      ),
+      status: ArenaStatusX.fromString(m['status']),
+      isActive: m['isActive'] ?? true,
+      isFeatured: m['isFeatured'] ?? false,
+      rating: (m['rating'] ?? 0).toDouble(),
+      reviewCount: (m['reviewCount'] ?? 0) as int,
+    );
+  }
 
   double get minPrice => courts.isEmpty
       ? 0
@@ -73,6 +119,7 @@ class ArenaModel {
         featuredUntil: featuredUntil,
         courts: courts ?? this.courts,
         rating: rating,
+        reviewCount: reviewCount,
         distanceKm: distanceKm,
       );
 }
