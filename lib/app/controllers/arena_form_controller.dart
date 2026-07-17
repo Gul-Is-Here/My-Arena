@@ -1,13 +1,18 @@
+import 'dart:io';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../data/models/arena_model.dart';
 import '../data/models/court_model.dart';
-import 'owner_controller.dart';
+import '../services/arena_service.dart';
 
-/// Multi-step Add Arena form state (5 steps per scope.md).
 class ArenaFormController extends GetxController {
+  final ArenaService _arenaService = ArenaService();
+
   final RxInt currentStep = 0.obs;
   static const int totalSteps = 5;
 
@@ -19,9 +24,9 @@ class ArenaFormController extends GetxController {
   final RxList<XFile> images = <XFile>[].obs;
   final ImagePicker _picker = ImagePicker();
 
-  // Step 3 — location (map picker stubbed until google_maps is wired)
+  // Step 3 — location
   final addressCtrl = TextEditingController();
-  final RxBool locationPicked = false.obs;
+  final Rx<LatLng?> pickedLatLng = Rx<LatLng?>(null);
 
   // Step 4 — courts
   final RxList<CourtModel> courts = <CourtModel>[].obs;
@@ -48,7 +53,7 @@ class ArenaFormController extends GetxController {
         return true;
       case 2:
         if (addressCtrl.text.trim().isEmpty) {
-          _warn('Pick the arena location');
+          _warn('Enter the arena address');
           return false;
         }
         return true;
@@ -73,11 +78,25 @@ class ArenaFormController extends GetxController {
   }
 
   Future<void> pickImages() async {
-    final picked = await _picker.pickMultiImage(imageQuality: 80);
-    if (picked.isNotEmpty) images.addAll(picked);
+    try {
+      final picked = await _picker.pickMultiImage(imageQuality: 80);
+      if (picked.isNotEmpty) images.addAll(picked);
+    } catch (e) {
+      Get.snackbar(
+        'Could not load image',
+        'Please try selecting a different photo.',
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+      );
+    }
   }
 
   void removeImage(int index) => images.removeAt(index);
+
+  void setLocation(LatLng latLng, String address) {
+    pickedLatLng.value = latLng;
+    addressCtrl.text = address;
+  }
 
   void addCourt(CourtModel court) => courts.add(court);
 
@@ -85,27 +104,48 @@ class ArenaFormController extends GetxController {
 
   Future<void> submit() async {
     isSubmitting.value = true;
-    await Future.delayed(const Duration(milliseconds: 900)); // simulate save
-    final arena = ArenaModel(
-      id: 'arena-${DateTime.now().millisecondsSinceEpoch}',
-      ownerId: 'mock-login',
-      name: nameCtrl.text.trim(),
-      description: descriptionCtrl.text.trim(),
-      images: images.map((x) => x.path).toList(),
-      location: ArenaLocation(address: addressCtrl.text.trim()),
-      status: ArenaStatus.pending,
-      courts: courts.toList(),
-      distanceKm: 0.5,
-    );
-    OwnerController.to.addArena(arena);
-    isSubmitting.value = false;
-    Get.back(); // close form
-    Get.snackbar(
-      'Submitted for review',
-      '${arena.name} is pending admin approval',
-      snackPosition: SnackPosition.BOTTOM,
-      margin: const EdgeInsets.all(16),
-    );
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final location = pickedLatLng.value;
+
+      // 1. Create arena doc first to get its ID
+      final arena = ArenaModel(
+        id: '',
+        ownerId: uid,
+        name: nameCtrl.text.trim(),
+        description: descriptionCtrl.text.trim(),
+        images: const [],
+        location: ArenaLocation(
+          address: addressCtrl.text.trim(),
+          lat: location?.latitude ?? 0,
+          lng: location?.longitude ?? 0,
+        ),
+        status: ArenaStatus.pending,
+      );
+      final arenaId = await _arenaService.createArena(arena);
+
+      // 2. Upload images then update arena doc with URLs
+      final files = images.map((x) => File(x.path)).toList();
+      final imageUrls = await _arenaService.uploadArenaImages(arenaId, files);
+      await _arenaService.updateArena(arenaId, {'images': imageUrls});
+
+      // 3. Save courts as subcollection
+      for (final court in courts) {
+        await _arenaService.addCourt(arenaId, court);
+      }
+
+      isSubmitting.value = false;
+      Get.back();
+      Get.snackbar(
+        'Submitted for review',
+        '${nameCtrl.text.trim()} is pending admin approval',
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+      );
+    } catch (e) {
+      isSubmitting.value = false;
+      _warn('Failed to submit: ${e.toString()}');
+    }
   }
 
   void _warn(String message) {

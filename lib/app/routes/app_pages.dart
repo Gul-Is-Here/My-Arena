@@ -17,6 +17,7 @@ import '../modules/admin/admin_settings_screen.dart';
 import '../modules/admin/admin_users_screen.dart';
 import '../modules/auth/forgot_password_screen.dart';
 import '../modules/booking/booking_confirmation_screen.dart';
+import '../modules/booking/booking_detail_screen.dart';
 import '../modules/booking/booking_slot_screen.dart';
 import '../modules/booking/booking_summary_screen.dart';
 import '../modules/booking/cancellation_screen.dart';
@@ -35,6 +36,7 @@ import '../modules/customer/arena_detail_customer_screen.dart';
 import '../modules/customer/arena_list_screen.dart';
 import '../modules/customer/customer_dashboard_screen.dart';
 import '../modules/owner/add_arena_screen.dart';
+import '../modules/owner/edit_arena_screen.dart';
 import '../modules/owner/arena_detail_owner_screen.dart';
 import '../modules/owner/boost_request_screen.dart';
 import '../modules/owner/booking_detail_owner_screen.dart';
@@ -42,6 +44,7 @@ import '../modules/owner/boost_status_screen.dart';
 import '../modules/owner/manual_booking_screen.dart';
 import '../modules/owner/owner_bookings_screen.dart';
 import '../modules/owner/owner_dashboard_screen.dart';
+import '../modules/owner/owner_qr_scanner_screen.dart';
 import '../modules/admin/admin_tournaments_screen.dart';
 import '../modules/staff/staff_dashboard_screen.dart';
 import '../modules/tournaments/bracket_screen.dart';
@@ -100,6 +103,7 @@ class AppPages {
 
     // Phase 2 — Owner module
     GetPage(name: AppRoutes.addArena, page: () => const AddArenaScreen()),
+    GetPage(name: AppRoutes.editArena, page: () => const EditArenaScreen()),
     GetPage(
       name: AppRoutes.arenaDetailOwner,
       page: () => const ArenaDetailOwnerScreen(),
@@ -138,6 +142,10 @@ class AppPages {
       name: AppRoutes.bookingCancellation,
       page: () => const CancellationScreen(),
     ),
+    GetPage(
+      name: AppRoutes.bookingDetail,
+      page: () => const BookingDetailScreen(),
+    ),
 
     // Phase 3 — Owner booking management
     GetPage(
@@ -151,6 +159,10 @@ class AppPages {
     GetPage(
       name: AppRoutes.bookingDetailOwner,
       page: () => const BookingDetailOwnerScreen(),
+    ),
+    GetPage(
+      name: AppRoutes.ownerQrScanner,
+      page: () => const OwnerQrScannerScreen(),
     ),
 
     // Phase 4 — Chat

@@ -144,17 +144,17 @@ class _AdminHomeTab extends StatelessWidget {
                 _stat(Icons.stadium_outlined, 'Total Arenas',
                     '${admin.totalArenas}', AppColors.accent),
                 _stat(Icons.event_note_outlined, 'Total Bookings',
-                    '${admin.totalBookings}', AppColors.primary,
+                    '${admin.totalBookings.value}', AppColors.primary,
                     onTap: () =>
                         Get.toNamed(AppRoutes.adminBookingAnalytics)),
                 _stat(Icons.calendar_today_outlined, "Today's Bookings",
-                    '${admin.todaysBookings}', AppColors.accent,
+                    '${admin.todaysBookings.value}', AppColors.accent,
                     onTap: () =>
                         Get.toNamed(AppRoutes.adminBookingAnalytics)),
                 _stat(
                     Icons.payments_outlined,
                     'Monthly Revenue',
-                    'PKR ${(admin.monthlyRevenue / 1000).toStringAsFixed(0)}k',
+                    'PKR ${(admin.monthlyRevenue.value / 1000).toStringAsFixed(0)}k',
                     AppColors.success,
                     onTap: () =>
                         Get.toNamed(AppRoutes.adminRevenueAnalytics)),

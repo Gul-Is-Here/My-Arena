@@ -1,9 +1,13 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:get/get.dart';
 
-import '../data/dummy_data.dart';
 import '../data/models/arena_model.dart';
 import '../data/models/boost_request_model.dart';
 import '../data/models/user_model.dart';
+import '../services/arena_service.dart';
+import '../services/boost_service.dart';
 
 /// Audit log entry — mirrors Firestore auditLogs/{logId}.
 class AuditLog {
@@ -22,11 +26,11 @@ class AuditLog {
   });
 }
 
-/// Admin notification — mirrors Firestore notifications/{uid}/items (FCM later).
+/// Admin notification — in-memory; FCM replaces this in a later phase.
 class AdminNotification {
   final String title;
   final String body;
-  final String type; // booking | ticket | boost | tournament | arena | payment
+  final String type;
   final DateTime timestamp;
   final bool isRead;
 
@@ -47,10 +51,13 @@ class AdminNotification {
       );
 }
 
-/// Platform-wide admin state — arenas, boosts, users, settings, logs.
-/// Dummy data now; Firestore repositories in the backend phase.
+/// Platform-wide admin state — streamed from Firestore.
 class AdminController extends GetxController {
   static AdminController get to => Get.find();
+
+  final _arenaService = ArenaService();
+  final _boostService = BoostService();
+  final _db = FirebaseFirestore.instance;
 
   final RxList<ArenaModel> arenas = <ArenaModel>[].obs;
   final RxList<BoostRequestModel> boosts = <BoostRequestModel>[].obs;
@@ -58,33 +65,51 @@ class AdminController extends GetxController {
   final RxList<AuditLog> logs = <AuditLog>[].obs;
   final RxList<AdminNotification> notifications = <AdminNotification>[].obs;
 
-  /// Arena ids whose ownership/registration documents are verified.
   final RxSet<String> verifiedArenaDocs = <String>{}.obs;
 
-  // Editable platform settings (mirrors Firestore settings/booking).
   final RxInt depositPercent = 30.obs;
   final RxInt cancellationDeductPercent = 20.obs;
   final RxInt minCancelHoursBefore = 1.obs;
-  final RxString jazzCashNumber = DummyData.jazzCashNumber.obs;
+  final RxString jazzCashNumber = '0300-0000000'.obs;
 
-  List<ArenaModel> get pendingArenas =>
-      arenas.where((a) => a.status == ArenaStatus.pending).toList();
-
-  List<BoostRequestModel> get pendingBoosts =>
-      boosts.where((b) => b.status == 'pending').toList();
-
-  List<BoostRequestModel> get activeBoosts =>
-      boosts.where((b) => b.status == 'approved').toList();
+  StreamSubscription? _arenasSub;
+  StreamSubscription? _boostsSub;
+  StreamSubscription? _usersSub;
 
   @override
   void onInit() {
     super.onInit();
-    arenas.assignAll(DummyData.arenas);
-    boosts.assignAll(DummyData.boostRequests);
-    _seedUsers();
-    _seedLogs();
-    _seedNotifications();
-    verifiedArenaDocs.addAll(['arena-1', 'arena-3']);
+    _arenasSub = _arenaService.allArenas().listen((list) => arenas.assignAll(list));
+    _boostsSub = _boostService.allRequests().listen((list) => boosts.assignAll(list));
+    _usersSub = _db
+        .collection('users')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .listen((s) => users.assignAll(
+              s.docs.map((d) => UserModel.fromMap({...d.data(), 'uid': d.id})).toList(),
+            ));
+    _loadSettings();
+    refreshStats();
+  }
+
+  @override
+  void onClose() {
+    _arenasSub?.cancel();
+    _boostsSub?.cancel();
+    _usersSub?.cancel();
+    super.onClose();
+  }
+
+  Future<void> _loadSettings() async {
+    final doc = await _db.collection('settings').doc('booking').get();
+    if (!doc.exists) return;
+    final d = doc.data()!;
+    depositPercent.value = (d['depositPercent'] ?? 30) as int;
+    cancellationDeductPercent.value = (d['cancellationDeductPercent'] ?? 20) as int;
+    minCancelHoursBefore.value = (d['minCancelHoursBefore'] ?? 1) as int;
+    jazzCashNumber.value = d['jazzCashNumber'] ?? '0300-0000000';
+    final verified = List<String>.from(d['verifiedArenaDocs'] ?? []);
+    verifiedArenaDocs.assignAll(verified.toSet());
   }
 
   void _log(String action, String target) {
@@ -98,66 +123,93 @@ class AdminController extends GetxController {
         timestamp: DateTime.now(),
       ),
     );
+    _db.collection('auditLogs').add({
+      'actorName': 'Admin',
+      'actorRole': 'admin',
+      'action': action,
+      'target': target,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
   }
 
-  // ── Arena management ───────────────────────────────────────────────
-  void setArenaStatus(String id, ArenaStatus status) {
-    final i = arenas.indexWhere((a) => a.id == id);
-    if (i == -1) return;
-    arenas[i] = arenas[i].copyWith(status: status);
-    _log('Arena ${status.name}', arenas[i].name);
+  // ── Derived lists ────────────────────────────────────────────────────
+
+  List<ArenaModel> get pendingArenas =>
+      arenas.where((a) => a.status == ArenaStatus.pending).toList();
+
+  List<BoostRequestModel> get pendingBoosts =>
+      boosts.where((b) => b.status == 'pending').toList();
+
+  List<BoostRequestModel> get activeBoosts =>
+      boosts.where((b) => b.status == 'approved').toList();
+
+  // ── Arena management ─────────────────────────────────────────────────
+
+  Future<void> setArenaStatus(String id, ArenaStatus status) async {
+    await _arenaService.setStatus(id, status);
+    _log('Arena ${status.name}', arenas.firstWhereOrNull((a) => a.id == id)?.name ?? id);
   }
 
-  void toggleArenaActive(String id) {
-    final i = arenas.indexWhere((a) => a.id == id);
-    if (i == -1) return;
-    final next = !arenas[i].isActive;
-    arenas[i] = arenas[i].copyWith(isActive: next);
-    _log(next ? 'Arena turned ON' : 'Arena forced OFF', arenas[i].name);
+  Future<void> toggleArenaActive(String id) async {
+    final arena = arenas.firstWhereOrNull((a) => a.id == id);
+    if (arena == null) return;
+    final next = !arena.isActive;
+    await _arenaService.toggleActive(id, next);
+    _log(next ? 'Arena turned ON' : 'Arena forced OFF', arena.name);
   }
 
   void toggleDocsVerified(String id) {
     final name = arenas.firstWhereOrNull((a) => a.id == id)?.name ?? id;
-    if (verifiedArenaDocs.contains(id)) {
+    final isVerified = verifiedArenaDocs.contains(id);
+    if (isVerified) {
       verifiedArenaDocs.remove(id);
-      _log('Arena documents unverified', name);
     } else {
       verifiedArenaDocs.add(id);
-      _log('Arena documents verified', name);
     }
+    _db.collection('settings').doc('booking').update({
+      'verifiedArenaDocs': verifiedArenaDocs.toList(),
+    });
+    _log(isVerified ? 'Arena documents unverified' : 'Arena documents verified', name);
   }
 
-  // ── Boost management ───────────────────────────────────────────────
-  void setBoostStatus(String id, String status) {
-    final i = boosts.indexWhere((b) => b.id == id);
-    if (i == -1) return;
-    boosts[i] = boosts[i].copyWith(status: status);
-    _log('Boost $status', boosts[i].arenaName);
+  // ── Boost management ─────────────────────────────────────────────────
+
+  Future<void> setBoostStatus(String id, String status) async {
+    await _boostService.updateStatus(id, status);
+    _log('Boost $status', boosts.firstWhereOrNull((b) => b.id == id)?.arenaName ?? id);
   }
 
-  // ── User management ────────────────────────────────────────────────
-  void toggleBan(String uid) {
-    final i = users.indexWhere((u) => u.uid == uid);
-    if (i == -1) return;
-    final next = !users[i].isActive;
-    users[i] = users[i].copyWith(isActive: next);
-    _log(next ? 'User unbanned' : 'User banned', users[i].name);
+  // ── User management ──────────────────────────────────────────────────
+
+  Future<void> toggleBan(String uid) async {
+    final user = users.firstWhereOrNull((u) => u.uid == uid);
+    if (user == null) return;
+    final next = !user.isActive;
+    await _db.collection('users').doc(uid).update({'isActive': next});
+    _log(next ? 'User unbanned' : 'User banned', user.name);
   }
 
-  void changeRole(String uid, UserRole role) {
-    final i = users.indexWhere((u) => u.uid == uid);
-    if (i == -1) return;
-    users[i] = users[i].copyWith(role: role);
-    _log('Role changed to ${role.name}', users[i].name);
+  Future<void> changeRole(String uid, UserRole role) async {
+    final user = users.firstWhereOrNull((u) => u.uid == uid);
+    if (user == null) return;
+    await _db.collection('users').doc(uid).update({'role': role.value});
+    _log('Role changed to ${role.name}', user.name);
   }
 
-  // ── Settings ───────────────────────────────────────────────────────
-  void saveSettings({
+  // ── Platform settings ────────────────────────────────────────────────
+
+  Future<void> saveSettings({
     required int deposit,
     required int deduct,
     required int minHours,
     required String jazzCash,
-  }) {
+  }) async {
+    await _db.collection('settings').doc('booking').set({
+      'depositPercent': deposit,
+      'cancellationDeductPercent': deduct,
+      'minCancelHoursBefore': minHours,
+      'jazzCashNumber': jazzCash,
+    }, SetOptions(merge: true));
     depositPercent.value = deposit;
     cancellationDeductPercent.value = deduct;
     minCancelHoursBefore.value = minHours;
@@ -165,7 +217,8 @@ class AdminController extends GetxController {
     _log('Platform settings updated', 'settings/booking');
   }
 
-  // ── Notifications ──────────────────────────────────────────────────
+  // ── Notifications (in-memory; FCM in next phase) ─────────────────────
+
   int get unreadNotifications =>
       notifications.where((n) => !n.isRead).length;
 
@@ -175,137 +228,30 @@ class AdminController extends GetxController {
     }
   }
 
-  // ── Dashboard stats ────────────────────────────────────────────────
+  // ── Dashboard stats ──────────────────────────────────────────────────
+
   int get totalArenas => arenas.length;
   int get totalUsers => users.length;
-  int get totalOwners =>
-      users.where((u) => u.role == UserRole.owner).length;
-  int get totalStaff =>
-      users.where((u) => u.role == UserRole.staff).length;
-  int get totalBookings => 412;
-  int get todaysBookings => 23;
-  double get monthlyRevenue => 385000;
-  double get platformRevenue => 1250000;
+  int get totalOwners => users.where((u) => u.role == UserRole.owner).length;
+  int get totalStaff => users.where((u) => u.role == UserRole.staff).length;
 
-  /// Dummy owner lookup — falls back to the seeded owner user until
-  /// real ownerIds are wired to Firestore users.
+  // ── Booking stats — aggregated via Cloud Function in production;
+  // read from Firestore stats doc for now.
+  final RxInt totalBookings = 0.obs;
+  final RxInt todaysBookings = 0.obs;
+  final RxDouble monthlyRevenue = 0.0.obs;
+  final RxDouble platformRevenue = 0.0.obs;
+
+  Future<void> refreshStats() async {
+    final doc = await _db.collection('settings').doc('stats').get();
+    if (!doc.exists) return;
+    final d = doc.data()!;
+    totalBookings.value = (d['totalBookings'] ?? 0) as int;
+    todaysBookings.value = (d['todaysBookings'] ?? 0) as int;
+    monthlyRevenue.value = (d['monthlyRevenue'] ?? 0.0).toDouble();
+    platformRevenue.value = (d['platformRevenue'] ?? 0.0).toDouble();
+  }
+
   UserModel? ownerOf(String ownerId) =>
-      users.firstWhereOrNull((u) => u.uid == ownerId) ??
-      users.firstWhereOrNull((u) => u.role == UserRole.owner);
-
-  void _seedNotifications() {
-    final now = DateTime.now();
-    notifications.assignAll([
-      AdminNotification(
-          title: 'New booking',
-          body: 'Ali Raza booked Padel Court A at Champions Arena.',
-          type: 'booking',
-          timestamp: now.subtract(const Duration(minutes: 18))),
-      AdminNotification(
-          title: 'New support ticket',
-          body: 'Ahmed Nawaz: "Charged twice for one booking".',
-          type: 'ticket',
-          timestamp: now.subtract(const Duration(minutes: 45))),
-      AdminNotification(
-          title: 'Boost request',
-          body: 'Victory Sports Club requested a 2-week boost.',
-          type: 'boost',
-          timestamp: now.subtract(const Duration(hours: 2))),
-      AdminNotification(
-          title: 'Tournament request',
-          body: 'Ramadan Night Padel Cup awaits approval.',
-          type: 'tournament',
-          timestamp: now.subtract(const Duration(hours: 4))),
-      AdminNotification(
-          title: 'Arena verification request',
-          body: 'Victory Sports Club submitted registration documents.',
-          type: 'arena',
-          timestamp: now.subtract(const Duration(hours: 7)),
-          isRead: true),
-      AdminNotification(
-          title: 'Payment issue',
-          body: 'Deposit screenshot for booking #1101 flagged as unreadable.',
-          type: 'payment',
-          timestamp: now.subtract(const Duration(days: 1)),
-          isRead: true),
-    ]);
-  }
-
-  void _seedUsers() {
-    users.assignAll(const [
-      UserModel(
-          uid: 'u1',
-          name: 'Ali Raza',
-          email: 'ali.raza@gmail.com',
-          phone: '0300-1112233',
-          role: UserRole.customer),
-      UserModel(
-          uid: 'u2',
-          name: 'Hamza Sheikh',
-          email: 'hamza.s@gmail.com',
-          phone: '0301-4455667',
-          role: UserRole.customer),
-      UserModel(
-          uid: 'u3',
-          name: 'Usman Khalid',
-          email: 'usman.k@gmail.com',
-          phone: '0333-7788990',
-          role: UserRole.owner),
-      UserModel(
-          uid: 'u4',
-          name: 'Sara Malik',
-          email: 'sara.malik@gmail.com',
-          phone: '0345-2233445',
-          role: UserRole.customer,
-          isActive: false),
-      UserModel(
-          uid: 'u5',
-          name: 'Bilal Ahmed',
-          email: 'bilal.a@myarena.pk',
-          phone: '0321-9988776',
-          role: UserRole.staff),
-      UserModel(
-          uid: 'u6',
-          name: 'Ayesha Tariq',
-          email: 'ayesha.t@myarena.pk',
-          phone: '0302-5566778',
-          role: UserRole.staff),
-    ]);
-  }
-
-  void _seedLogs() {
-    final now = DateTime.now();
-    logs.assignAll([
-      AuditLog(
-          actorName: 'Admin',
-          actorRole: 'admin',
-          action: 'Boost approved',
-          target: 'Champions Arena',
-          timestamp: now.subtract(const Duration(hours: 2))),
-      AuditLog(
-          actorName: 'Bilal Ahmed',
-          actorRole: 'staff',
-          action: 'Arena approved',
-          target: 'Kick Off Futsal Park',
-          timestamp: now.subtract(const Duration(hours: 8))),
-      AuditLog(
-          actorName: 'Admin',
-          actorRole: 'admin',
-          action: 'User banned',
-          target: 'Sara Malik',
-          timestamp: now.subtract(const Duration(days: 1))),
-      AuditLog(
-          actorName: 'Ayesha Tariq',
-          actorRole: 'staff',
-          action: 'Booking approved',
-          target: 'Padel Court A · #1042',
-          timestamp: now.subtract(const Duration(days: 1, hours: 4))),
-      AuditLog(
-          actorName: 'Admin',
-          actorRole: 'admin',
-          action: 'Platform settings updated',
-          target: 'settings/booking',
-          timestamp: now.subtract(const Duration(days: 3))),
-    ]);
-  }
+      users.firstWhereOrNull((u) => u.uid == ownerId);
 }

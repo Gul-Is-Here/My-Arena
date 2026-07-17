@@ -3,7 +3,7 @@ import 'package:get/get.dart';
 
 import '../../controllers/owner_booking_controller.dart';
 import '../../controllers/owner_controller.dart';
-import '../../theme/app_colors.dart';
+import '../../widgets/glass.dart';
 import '../../widgets/profile_tab.dart';
 import 'dashboard_tab.dart';
 import '../chat/my_chats_screen.dart';
@@ -35,36 +35,35 @@ class OwnerDashboardScreen extends StatelessWidget {
 
     return Obx(
       () => Scaffold(
+        extendBody: true, // content flows under the floating glass nav
         body: tabs[tab.value],
-        bottomNavigationBar: NavigationBar(
+        bottomNavigationBar: GlassNavBar(
           selectedIndex: tab.value,
           onDestinationSelected: (i) => tab.value = i,
-          indicatorColor: AppColors.primary.withValues(alpha: 0.15),
           destinations: const [
             NavigationDestination(
-              icon: Icon(Icons.dashboard_outlined),
-              selectedIcon: Icon(Icons.dashboard, color: AppColors.primary),
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home),
               label: 'Dashboard',
             ),
             NavigationDestination(
               icon: Icon(Icons.calendar_month_outlined),
-              selectedIcon:
-                  Icon(Icons.calendar_month, color: AppColors.primary),
+              selectedIcon: Icon(Icons.calendar_month),
               label: 'Bookings',
             ),
             NavigationDestination(
               icon: Icon(Icons.stadium_outlined),
-              selectedIcon: Icon(Icons.stadium, color: AppColors.primary),
+              selectedIcon: Icon(Icons.stadium),
               label: 'My Arenas',
             ),
             NavigationDestination(
               icon: Icon(Icons.chat_bubble_outline),
-              selectedIcon: Icon(Icons.chat_bubble, color: AppColors.primary),
+              selectedIcon: Icon(Icons.chat_bubble),
               label: 'Chats',
             ),
             NavigationDestination(
               icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person, color: AppColors.primary),
+              selectedIcon: Icon(Icons.person),
               label: 'Profile',
             ),
           ],

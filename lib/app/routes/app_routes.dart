@@ -21,6 +21,7 @@ abstract class AppRoutes {
   // Phase 2 — Owner module
   static const String myArenas = '/owner/my-arenas';
   static const String addArena = '/owner/add-arena';
+  static const String editArena = '/owner/edit-arena';
   static const String arenaDetailOwner = '/owner/arena-detail';
   static const String boostRequest = '/owner/boost-request';
   static const String boostStatus = '/owner/boost-status';
@@ -35,11 +36,13 @@ abstract class AppRoutes {
   static const String depositPayment = '/booking/deposit';
   static const String bookingConfirmation = '/booking/confirmation';
   static const String bookingCancellation = '/booking/cancel';
+  static const String bookingDetail = '/booking/detail';
 
   // Phase 3 — Owner booking management
   static const String ownerBookings = '/owner/bookings';
   static const String manualBooking = '/owner/manual-booking';
   static const String bookingDetailOwner = '/owner/booking-detail';
+  static const String ownerQrScanner = '/owner/qr-scanner';
 
   // Phase 4 — Chat
   static const String myChats = '/chat/my-chats';

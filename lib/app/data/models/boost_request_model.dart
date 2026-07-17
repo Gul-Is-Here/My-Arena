@@ -72,3 +72,41 @@ class BoostRequestModel {
         createdAt: createdAt,
       );
 }
+
+extension BoostRequestModelX on BoostRequestModel {
+  Map<String, dynamic> toMap() => {
+        'arenaId': arenaId,
+        'arenaName': arenaName,
+        'ownerId': ownerId,
+        'type': type.name,
+        'duration': duration.name,
+        'price': price,
+        'paymentScreenshot': paymentScreenshot,
+        'accountUsed': accountUsed,
+        'status': status,
+        if (eventDetails != null) 'eventDetails': eventDetails,
+      };
+
+  static BoostRequestModel fromMap(Map<String, dynamic> m) => BoostRequestModel(
+        id: m['id'] ?? '',
+        arenaId: m['arenaId'] ?? '',
+        arenaName: m['arenaName'] ?? '',
+        ownerId: m['ownerId'] ?? '',
+        type: BoostType.values.firstWhere(
+          (t) => t.name == m['type'],
+          orElse: () => BoostType.boost,
+        ),
+        duration: BoostDuration.values.firstWhere(
+          (d) => d.name == m['duration'],
+          orElse: () => BoostDuration.oneWeek,
+        ),
+        price: (m['price'] ?? 0).toDouble(),
+        paymentScreenshot: m['paymentScreenshot'] ?? '',
+        accountUsed: m['accountUsed'] ?? '',
+        status: m['status'] ?? 'pending',
+        eventDetails: m['eventDetails'] as Map<String, dynamic>?,
+        createdAt: m['createdAt'] != null
+            ? (m['createdAt'] as dynamic).toDate()
+            : DateTime.now(),
+      );
+}

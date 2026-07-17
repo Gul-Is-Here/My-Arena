@@ -76,12 +76,12 @@ class AuthController extends GetxController {
       return;
     }
     // Refresh the profile from Firestore so role changes take effect.
+    // If Firestore is unavailable (rules not deployed, offline, etc.), fall
+    // back to the cached session — never downgrade the role.
     try {
       final profile = await _service.fetchUser(fbUser.uid);
       if (profile != null) _saveSession(profile);
-    } catch (_) {
-      // Offline — fall back to the cached session.
-    }
+    } catch (_) {}
     if (currentUser.value == null) {
       Get.offAllNamed(AppRoutes.login);
       return;
@@ -264,13 +264,27 @@ class AuthController extends GetxController {
       {required String fallbackName, bool isNew = false}) async {
     var profile = await _service.fetchUser(fbUser.uid);
     final bool firstTime = isNew || profile == null;
-    profile ??= await _service.createUserDoc(UserModel(
-      uid: fbUser.uid,
-      name: fbUser.displayName ?? fallbackName,
-      email: fbUser.email ?? '',
-      phone: fbUser.phoneNumber ?? '',
-      role: selectedRole.value,
-    ));
+
+    if (profile == null) {
+      if (!isNew) {
+        // Sign-in flow: no Firestore doc exists — this is a first-time social
+        // or phone login. Use the role the user selected, but never default
+        // to customer silently for an account that may have been set as admin
+        // via Firestore console without going through sign-up.
+        profile = await _service.createUserDoc(UserModel(
+          uid: fbUser.uid,
+          name: fbUser.displayName ?? fallbackName,
+          email: fbUser.email ?? '',
+          phone: fbUser.phoneNumber ?? '',
+          role: selectedRole.value,
+        ));
+      } else {
+        // Email signup path — server already created the Firestore doc before
+        // we call _completeSignIn; if we still get null something is wrong.
+        throw Exception('Profile not found. Please try signing up again.');
+      }
+    }
+
     if (!profile.isActive) {
       await _service.signOut();
       throw Exception('This account has been deactivated. Contact support.');
@@ -282,6 +296,20 @@ class AuthController extends GetxController {
     } else {
       goToRoleDashboard();
     }
+  }
+
+  /// Force-refreshes the current user's profile from Firestore and re-routes.
+  /// Useful after an admin manually updates someone's role in the console.
+  Future<void> refreshRole() async {
+    final fbUser = _service.firebaseUser;
+    if (fbUser == null) return;
+    try {
+      final profile = await _service.fetchUser(fbUser.uid);
+      if (profile != null) {
+        _saveSession(profile);
+        goToRoleDashboard();
+      }
+    } catch (_) {}
   }
 
   Future<void> completeProfile({

@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 /// Mirrors Firestore bookings/{bookingId} from scope.md.
 enum BookingStatus {
   pendingDeposit,
@@ -92,6 +94,8 @@ class BookingModel {
   final String courtId;
   final String courtName;
   final String customerName;
+  final String customerId;
+  final String ownerId;
   final String bookedByRole; // 'customer' | 'owner' | 'staff'
   final DateTime date;
   final int startHour; // 0–23, slot start
@@ -101,6 +105,9 @@ class BookingModel {
   final String? depositScreenshot;
   final CancellationInfo? cancellation;
   final DateTime createdAt;
+  final bool checkedIn;
+  final DateTime? checkedInAt;
+  final bool hasReview;
 
   const BookingModel({
     required this.id,
@@ -108,6 +115,8 @@ class BookingModel {
     required this.arenaName,
     required this.courtId,
     required this.courtName,
+    this.customerId = '',
+    this.ownerId = '',
     this.customerName = '',
     this.bookedByRole = 'customer',
     required this.date,
@@ -118,6 +127,9 @@ class BookingModel {
     this.depositScreenshot,
     this.cancellation,
     required this.createdAt,
+    this.checkedIn = false,
+    this.checkedInAt,
+    this.hasReview = false,
   });
 
   double get totalAmount => pricePerHour * totalHours;
@@ -137,6 +149,10 @@ class BookingModel {
 
   static String _fmtHour(int h) =>
       '${(h % 24).toString().padLeft(2, '0')}:00';
+
+  bool get isActive => status == BookingStatus.confirmed && checkedIn;
+
+  String get displayLabel => isActive ? 'Active' : status.label;
 
   bool get isUpcoming =>
       endDateTime.isAfter(DateTime.now()) &&
@@ -158,10 +174,67 @@ class BookingModel {
       startDateTime.difference(DateTime.now()).inMinutes >=
           BookingSettings.minCancelHoursBefore * 60;
 
+  String get startTime => '${startHour.toString().padLeft(2, '0')}:00';
+  String get endTime =>
+      '${((startHour + totalHours) % 24).toString().padLeft(2, '0')}:00';
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'arenaId': arenaId,
+        'arenaName': arenaName,
+        'courtId': courtId,
+        'courtName': courtName,
+        'customerName': customerName,
+        'customerId': customerId,
+        'ownerId': ownerId,
+        'bookedByRole': bookedByRole,
+        'date': Timestamp.fromDate(date),
+        'startHour': startHour,
+        'totalHours': totalHours,
+        'pricePerHour': pricePerHour,
+        'startTime': startTime,
+        'endTime': endTime,
+        'status': status.key,
+      };
+
+  factory BookingModel.fromMap(Map<String, dynamic> m) => BookingModel(
+        id: m['id'] ?? '',
+        arenaId: m['arenaId'] ?? '',
+        arenaName: m['arenaName'] ?? '',
+        courtId: m['courtId'] ?? '',
+        courtName: m['courtName'] ?? '',
+        customerName: m['customerName'] ?? '',
+        customerId: m['customerId'] ?? '',
+        ownerId: m['ownerId'] ?? '',
+        bookedByRole: m['bookedByRole'] ?? 'customer',
+        date: m['date'] is String
+            ? DateTime.parse(m['date'])
+            : (m['date'] as dynamic).toDate(),
+        startHour: (m['startHour'] ?? 0) as int,
+        totalHours: (m['totalHours'] ?? 1) as int,
+        pricePerHour: (m['pricePerHour'] ?? 0).toDouble(),
+        status: BookingStatus.values.firstWhere(
+          (s) => s.key == m['status'],
+          orElse: () => BookingStatus.pendingDeposit,
+        ),
+        depositScreenshot: m['depositPayment']?['screenshot'],
+        createdAt: m['createdAt'] is String
+            ? DateTime.parse(m['createdAt'])
+            : (m['createdAt'] as dynamic)?.toDate() ?? DateTime.now(),
+        checkedIn: m['checkedIn'] ?? false,
+        checkedInAt: m['checkedInAt'] != null
+            ? (m['checkedInAt'] as dynamic).toDate()
+            : null,
+        hasReview: m['hasReview'] ?? false,
+      );
+
   BookingModel copyWith({
     BookingStatus? status,
     String? depositScreenshot,
     CancellationInfo? cancellation,
+    String? customerId,
+    String? ownerId,
+    bool? hasReview,
   }) =>
       BookingModel(
         id: id,
@@ -169,6 +242,8 @@ class BookingModel {
         arenaName: arenaName,
         courtId: courtId,
         courtName: courtName,
+        customerId: customerId ?? this.customerId,
+        ownerId: ownerId ?? this.ownerId,
         customerName: customerName,
         bookedByRole: bookedByRole,
         date: date,
@@ -179,5 +254,8 @@ class BookingModel {
         depositScreenshot: depositScreenshot ?? this.depositScreenshot,
         cancellation: cancellation ?? this.cancellation,
         createdAt: createdAt,
+        checkedIn: checkedIn,
+        checkedInAt: checkedInAt,
+        hasReview: hasReview ?? this.hasReview,
       );
 }
