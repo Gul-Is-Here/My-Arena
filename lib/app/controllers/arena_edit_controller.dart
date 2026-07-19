@@ -93,7 +93,12 @@ class ArenaEditController extends GetxController {
 
   // ── Location ──────────────────────────────────────────────────────────
 
-  void setLocation(LatLng latLng) => pickedLatLng.value = latLng;
+  void setLocation(LatLng latLng, {String? address}) {
+    pickedLatLng.value = latLng;
+    // Re-pinning means the old address is stale — replace it with the
+    // geocoded place name (the owner can still edit the text field after).
+    if (address != null && address.isNotEmpty) addressCtrl.text = address;
+  }
 
   // ── Courts ────────────────────────────────────────────────────────────
 

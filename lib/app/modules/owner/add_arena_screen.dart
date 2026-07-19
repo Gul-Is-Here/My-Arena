@@ -228,9 +228,9 @@ class AddArenaScreen extends StatelessWidget {
               if (result != null) {
                 c.setLocation(
                   result.latLng,
-                  c.addressCtrl.text.isEmpty
-                      ? '${result.latLng.latitude.toStringAsFixed(5)}, ${result.latLng.longitude.toStringAsFixed(5)}'
-                      : c.addressCtrl.text,
+                  c.addressCtrl.text.isNotEmpty
+                      ? c.addressCtrl.text
+                      : (result.address ?? 'Pinned location'),
                 );
               }
             },
@@ -258,7 +258,9 @@ class AddArenaScreen extends StatelessWidget {
                     const SizedBox(height: 8),
                     Text(
                       latLng != null
-                          ? '${latLng.latitude.toStringAsFixed(4)}, ${latLng.longitude.toStringAsFixed(4)}'
+                          ? (c.addressCtrl.text.isNotEmpty
+                              ? c.addressCtrl.text
+                              : 'Location selected — tap to change')
                           : 'Tap to pick location on map',
                       textAlign: TextAlign.center,
                       style: AppTextStyles.bodySmall

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 
 import '../data/models/booking_model.dart';
 
@@ -44,6 +45,8 @@ class BookingService {
         'id': ref.id,
         'status': 'pending_deposit',
         'createdAt': FieldValue.serverTimestamp(),
+        // Stored for the booking-reminder Cloud Function query
+        'startDateTime': Timestamp.fromDate(booking.startDateTime),
       });
     });
     return ref.id;
@@ -59,6 +62,59 @@ class BookingService {
     final s1m = toMin(s1), e1m = toMin(e1);
     final s2m = toMin(s2), e2m = toMin(e2);
     return s1m < e2m && e1m > s2m;
+  }
+
+  /// Customer deposit submission — uploads screenshot first, then writes the
+  /// booking as deposit_submitted in a single Firestore set. Avoids the
+  /// two-step (create pending_deposit → update) race where the second write
+  /// could fail after the customer was already shown a success screen.
+  Future<String> createBookingWithDeposit(
+    BookingModel booking, {
+    required File screenshot,
+    required String accountUsed,
+  }) async {
+    final ref = _bookings.doc();
+
+    // 1. Upload screenshot BEFORE touching Firestore, so we have the URL ready.
+    debugPrint('📸 [createBookingWithDeposit] uploading screenshot for booking ${ref.id}');
+    final storageRef = _storage.ref(
+        'bookings/${ref.id}/deposit_${DateTime.now().millisecondsSinceEpoch}.jpg');
+    await storageRef.putFile(screenshot);
+    final screenshotUrl = await storageRef.getDownloadURL();
+    debugPrint('📸 [createBookingWithDeposit] screenshot uploaded → $screenshotUrl');
+
+    // 2. Write booking as deposit_submitted in one atomic set.
+    debugPrint('📝 [createBookingWithDeposit] writing booking to Firestore…');
+    await ref.set({
+      ...booking.toMap(),
+      'id': ref.id,
+      'status': 'deposit_submitted',
+      'createdAt': FieldValue.serverTimestamp(),
+      'startDateTime': Timestamp.fromDate(booking.startDateTime),
+      'depositPayment': {
+        'screenshot': screenshotUrl,
+        'accountUsed': accountUsed,
+        'submittedAt': FieldValue.serverTimestamp(),
+      },
+    });
+    debugPrint('✅ [createBookingWithDeposit] booking ${ref.id} written as deposit_submitted');
+    return ref.id;
+  }
+
+  /// Used by owners for manual/walk-in bookings — writes confirmed in one shot,
+  /// no transaction needed since payment is taken in person.
+  Future<String> createManualBooking(BookingModel booking) async {
+    final ref = _bookings.doc();
+    await ref.set({
+      ...booking.toMap(),
+      'id': ref.id,
+      'status': 'confirmed',
+      'confirmedBy': booking.ownerId,
+      'confirmedAt': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
+      'startDateTime': Timestamp.fromDate(booking.startDateTime),
+    });
+    return ref.id;
   }
 
   // ── Status transitions ───────────────────────────────────────────────
@@ -113,6 +169,12 @@ class BookingService {
     });
   }
 
+  Future<void> submitRefundWithRef(String bookingId, String bankRef) =>
+      updateStatus(bookingId, 'refund_sent', extra: {
+        'cancellation.refundBankRef': bankRef,
+        'cancellation.refundStatus': 'sent',
+      });
+
   Future<void> confirmRefund(String bookingId) =>
       updateStatus(bookingId, 'refund_confirmed', extra: {
         'cancellation.refundStatus': 'confirmed',
@@ -120,13 +182,16 @@ class BookingService {
 
   // ── Queries ──────────────────────────────────────────────────────────
 
-  Stream<List<BookingModel>> ownerBookings(String ownerId) => _bookings
-      .where('ownerId', isEqualTo: ownerId)
-      .orderBy('createdAt', descending: true)
-      .snapshots()
-      .map((s) => s.docs
-          .map((d) => BookingModel.fromMap({...d.data(), 'id': d.id}))
-          .toList());
+  Stream<List<BookingModel>> ownerBookings(String ownerId,
+          {int limit = 200}) =>
+      _bookings
+          .where('ownerId', isEqualTo: ownerId)
+          .orderBy('createdAt', descending: true)
+          .limit(limit)
+          .snapshots()
+          .map((s) => s.docs
+              .map((d) => BookingModel.fromMap({...d.data(), 'id': d.id}))
+              .toList());
 
   Stream<List<BookingModel>> customerBookings(String customerId) => _bookings
       .where('customerId', isEqualTo: customerId)

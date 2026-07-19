@@ -19,6 +19,7 @@ class OwnerController extends GetxController {
   final RxList<ArenaModel> myArenas = <ArenaModel>[].obs;
   final Rx<RevenueRange> revenueRange = RevenueRange.daily.obs;
   final RxBool isLoading = true.obs;
+  final RxInt shellTab = 0.obs;
 
   // Live booking stats from Firestore
   final RxInt totalBookings = 0.obs;

@@ -127,6 +127,12 @@ class CourtModel {
   final List<CourtAmenity> amenities;
   final bool isActive;
 
+  /// Peak-hour surcharge. Hours in [peakStartHour, peakEndHour) are priced at
+  /// pricePerHour * peakMultiplier. Default multiplier 1.0 = no surcharge.
+  final int peakStartHour;
+  final int peakEndHour;
+  final double peakMultiplier;
+
   const CourtModel({
     required this.id,
     this.arenaId = '',
@@ -143,7 +149,21 @@ class CourtModel {
     this.hasFloodlights = false,
     this.amenities = const [],
     this.isActive = true,
+    this.peakStartHour = 17,
+    this.peakEndHour = 23,
+    this.peakMultiplier = 1.0,
   });
+
+  /// Price for a single hour slot, applying the peak multiplier if applicable.
+  double priceAt(int hour) {
+    if (peakMultiplier > 1.0 && hour >= peakStartHour && hour < peakEndHour) {
+      return pricePerHour * peakMultiplier;
+    }
+    return pricePerHour;
+  }
+
+  bool isPeak(int hour) =>
+      peakMultiplier > 1.0 && hour >= peakStartHour && hour < peakEndHour;
 
   Map<String, dynamic> toMap() => {
         'id': id,
@@ -161,6 +181,9 @@ class CourtModel {
         'hasFloodlights': hasFloodlights,
         'amenities': amenities.map((a) => a.name).toList(),
         'isActive': isActive,
+        'peakStartHour': peakStartHour,
+        'peakEndHour': peakEndHour,
+        'peakMultiplier': peakMultiplier,
       };
 
   factory CourtModel.fromMap(Map<String, dynamic> m) => CourtModel(
@@ -185,6 +208,9 @@ class CourtModel {
                 (m['amenities'] as List<dynamic>? ?? []).contains(a.name))
             .toList(),
         isActive: m['isActive'] ?? true,
+        peakStartHour: (m['peakStartHour'] ?? 17) as int,
+        peakEndHour: (m['peakEndHour'] ?? 23) as int,
+        peakMultiplier: (m['peakMultiplier'] ?? 1.0).toDouble(),
       );
 
   CourtModel copyWith({
@@ -200,6 +226,9 @@ class CourtModel {
     bool? hasFloodlights,
     List<CourtAmenity>? amenities,
     bool? isActive,
+    int? peakStartHour,
+    int? peakEndHour,
+    double? peakMultiplier,
   }) =>
       CourtModel(
         id: id,
@@ -217,5 +246,8 @@ class CourtModel {
         hasFloodlights: hasFloodlights ?? this.hasFloodlights,
         amenities: amenities ?? this.amenities,
         isActive: isActive ?? this.isActive,
+        peakStartHour: peakStartHour ?? this.peakStartHour,
+        peakEndHour: peakEndHour ?? this.peakEndHour,
+        peakMultiplier: peakMultiplier ?? this.peakMultiplier,
       );
 }

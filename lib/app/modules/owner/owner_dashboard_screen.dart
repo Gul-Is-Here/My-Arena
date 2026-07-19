@@ -23,7 +23,7 @@ class OwnerDashboardScreen extends StatelessWidget {
       Get.put(OwnerBookingController(), permanent: true);
     }
 
-    final RxInt tab = 0.obs;
+    final owner = OwnerController.to;
 
     final tabs = const [
       DashboardTab(),
@@ -36,10 +36,10 @@ class OwnerDashboardScreen extends StatelessWidget {
     return Obx(
       () => Scaffold(
         extendBody: true, // content flows under the floating glass nav
-        body: tabs[tab.value],
+        body: tabs[owner.shellTab.value],
         bottomNavigationBar: GlassNavBar(
-          selectedIndex: tab.value,
-          onDestinationSelected: (i) => tab.value = i,
+          selectedIndex: owner.shellTab.value,
+          onDestinationSelected: (i) => owner.shellTab.value = i,
           destinations: const [
             NavigationDestination(
               icon: Icon(Icons.home_outlined),

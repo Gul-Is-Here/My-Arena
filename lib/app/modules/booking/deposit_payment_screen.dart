@@ -313,7 +313,8 @@ class _DepositPaymentScreenState extends State<DepositPaymentScreen> {
                               c.jazzCashNumber.value,
                             );
                             Get.offNamed(AppRoutes.bookingConfirmation);
-                          } catch (e) {
+                          } catch (e, st) {
+                            debugPrint('❌ submitDeposit failed: $e\n$st');
                             if (!mounted) return;
                             setState(() => _submitting = false);
                             Get.snackbar('Submission failed', e.toString(),

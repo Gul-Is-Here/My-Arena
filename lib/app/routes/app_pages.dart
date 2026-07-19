@@ -45,6 +45,9 @@ import '../modules/owner/manual_booking_screen.dart';
 import '../modules/owner/owner_bookings_screen.dart';
 import '../modules/owner/owner_dashboard_screen.dart';
 import '../modules/owner/owner_qr_scanner_screen.dart';
+import '../modules/owner/earnings_screen.dart';
+import '../modules/owner/owner_tickets_screen.dart';
+import '../modules/owner/owner_schedule_screen.dart';
 import '../modules/admin/admin_tournaments_screen.dart';
 import '../modules/staff/staff_dashboard_screen.dart';
 import '../modules/tournaments/bracket_screen.dart';
@@ -55,6 +58,7 @@ import '../modules/tournaments/tournament_detail_screen.dart';
 import '../modules/tournaments/tournament_manage_screen.dart';
 import '../modules/tournaments/tournament_registration_screen.dart';
 import '../modules/tournaments/tournaments_home_screen.dart';
+import '../modules/shared/notifications_screen.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -65,6 +69,9 @@ class AppPages {
   static final List<GetPage> pages = [
     // Auth
     GetPage(name: AppRoutes.splash, page: () => const SplashScreen()),
+    GetPage(
+        name: AppRoutes.notifications,
+        page: () => const NotificationsScreen()),
     GetPage(name: AppRoutes.onboarding, page: () => const OnboardingScreen()),
     GetPage(name: AppRoutes.login, page: () => const LoginScreen()),
     GetPage(name: AppRoutes.signup, page: () => const SignupScreen()),
@@ -149,6 +156,14 @@ class AppPages {
 
     // Phase 3 — Owner booking management
     GetPage(
+      name: AppRoutes.ownerEarnings,
+      page: () => const EarningsScreen(),
+    ),
+    GetPage(
+      name: AppRoutes.ownerTickets,
+      page: () => const OwnerTicketsScreen(),
+    ),
+    GetPage(
       name: AppRoutes.ownerBookings,
       page: () => const OwnerBookingsScreen(),
     ),
@@ -163,6 +178,10 @@ class AppPages {
     GetPage(
       name: AppRoutes.ownerQrScanner,
       page: () => const OwnerQrScannerScreen(),
+    ),
+    GetPage(
+      name: AppRoutes.ownerSchedule,
+      page: () => const OwnerScheduleScreen(),
     ),
 
     // Phase 4 — Chat

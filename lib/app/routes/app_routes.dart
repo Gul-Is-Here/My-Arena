@@ -12,6 +12,9 @@ abstract class AppRoutes {
   static const String resetPasswordOtp = '/reset-password-otp';
   static const String profileSetup = '/profile-setup';
 
+  // Shared
+  static const String notifications = '/notifications';
+
   // Role dashboards
   static const String customerDashboard = '/customer';
   static const String ownerDashboard = '/owner';
@@ -39,10 +42,13 @@ abstract class AppRoutes {
   static const String bookingDetail = '/booking/detail';
 
   // Phase 3 — Owner booking management
+  static const String ownerEarnings = '/owner/earnings';
+  static const String ownerTickets = '/owner/tickets';
   static const String ownerBookings = '/owner/bookings';
   static const String manualBooking = '/owner/manual-booking';
   static const String bookingDetailOwner = '/owner/booking-detail';
   static const String ownerQrScanner = '/owner/qr-scanner';
+  static const String ownerSchedule = '/owner/schedule';
 
   // Phase 4 — Chat
   static const String myChats = '/chat/my-chats';

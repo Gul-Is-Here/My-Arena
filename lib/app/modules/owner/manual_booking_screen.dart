@@ -6,6 +6,7 @@ import '../../controllers/owner_controller.dart';
 import '../../data/models/arena_model.dart';
 import '../../data/models/booking_model.dart';
 import '../../data/models/court_model.dart';
+import '../../services/blocked_slot_service.dart';
 import '../../services/booking_service.dart';
 import '../../utils/slot_status.dart';
 import '../../widgets/slot_picker_widgets.dart';
@@ -34,6 +35,8 @@ class _ManualBookingScreenState extends State<ManualBookingScreen> {
   final Set<int> _selectedHours = {};
 
   List<BookingModel> _bookedSlots = [];
+  Set<int> _blockedHours = {};
+  final _blockedService = BlockedSlotService();
   bool _loadingSlots = false;
   bool _submitting = false;
 
@@ -63,11 +66,19 @@ class _ManualBookingScreenState extends State<ManualBookingScreen> {
     setState(() => _loadingSlots = true);
     try {
       final slots = await _bookingService.bookedSlots(court.id, _date);
+      final blocked =
+          await _blockedService.blockedHours(_arena.id, court.id, _date);
       if (!mounted) return;
-      setState(() => _bookedSlots = slots);
+      setState(() {
+        _bookedSlots = slots;
+        _blockedHours = blocked;
+      });
     } catch (_) {
       if (!mounted) return;
-      setState(() => _bookedSlots = []);
+      setState(() {
+        _bookedSlots = [];
+        _blockedHours = {};
+      });
     } finally {
       if (mounted) setState(() => _loadingSlots = false);
     }
@@ -86,6 +97,7 @@ class _ManualBookingScreenState extends State<ManualBookingScreen> {
         date: _date,
         hour: hour,
         bookedSlots: _bookedSlots,
+        blockedHours: _blockedHours,
       );
 
   void _setDuration(int hours) {

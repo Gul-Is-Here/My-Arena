@@ -109,6 +109,14 @@ class BookingModel {
   final DateTime? checkedInAt;
   final bool hasReview;
 
+  /// Set when the booking auto-completed without a check-in — the
+  /// customer never showed up.
+  final bool noShow;
+
+  /// When peak-hour pricing applies, the controller stores the correct sum
+  /// here instead of relying on the flat pricePerHour * totalHours formula.
+  final double? totalAmountStored;
+
   const BookingModel({
     required this.id,
     required this.arenaId,
@@ -130,9 +138,11 @@ class BookingModel {
     this.checkedIn = false,
     this.checkedInAt,
     this.hasReview = false,
+    this.noShow = false,
+    this.totalAmountStored,
   });
 
-  double get totalAmount => pricePerHour * totalHours;
+  double get totalAmount => totalAmountStored ?? pricePerHour * totalHours;
   double get depositAmount =>
       totalAmount * BookingSettings.depositPercent / 100;
   double get remainingAmount => totalAmount - depositAmount;
@@ -195,6 +205,7 @@ class BookingModel {
         'startTime': startTime,
         'endTime': endTime,
         'status': status.key,
+        if (totalAmountStored != null) 'totalAmount': totalAmountStored,
       };
 
   factory BookingModel.fromMap(Map<String, dynamic> m) => BookingModel(
@@ -226,6 +237,10 @@ class BookingModel {
             ? (m['checkedInAt'] as dynamic).toDate()
             : null,
         hasReview: m['hasReview'] ?? false,
+        noShow: m['noShow'] ?? false,
+        totalAmountStored: m['totalAmount'] != null
+            ? (m['totalAmount'] as num).toDouble()
+            : null,
       );
 
   BookingModel copyWith({
@@ -257,5 +272,6 @@ class BookingModel {
         checkedIn: checkedIn,
         checkedInAt: checkedInAt,
         hasReview: hasReview ?? this.hasReview,
+        noShow: noShow,
       );
 }

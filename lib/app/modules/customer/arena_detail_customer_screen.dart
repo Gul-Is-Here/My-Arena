@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../controllers/booking_controller.dart';
 import '../../controllers/discovery_controller.dart';
@@ -1092,7 +1093,18 @@ class _HeroSection extends StatelessWidget {
             right: 16,
             child: Row(
               children: [
-                _GlassBtn(icon: Icons.share_outlined, onTap: () {}),
+                _GlassBtn(
+                  icon: Icons.share_outlined,
+                  onTap: () {
+                    final minPrice = arena.minPrice > 0
+                        ? 'from PKR ${arena.minPrice.toStringAsFixed(0)}/hr'
+                        : '';
+                    SharePlus.instance.share(ShareParams(
+                      text:
+                          '⚽ ${arena.name}\n📍 ${arena.location.address}\n$minPrice\n\nBook your slot on MyArena!',
+                    ));
+                  },
+                ),
                 const SizedBox(width: 8),
                 Obx(() {
                   if (!Get.isRegistered<FavoritesController>()) {

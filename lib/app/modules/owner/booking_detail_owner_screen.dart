@@ -7,6 +7,7 @@ import '../../data/models/booking_model.dart';
 import '../../data/models/user_model.dart';
 import '../../routes/app_routes.dart';
 import '../../services/auth_service.dart';
+import '../../services/booking_service.dart';
 
 const _bg = Color(0xFF10131A);
 const _surface = Color(0xFF1D2026);
@@ -126,6 +127,13 @@ class BookingDetailOwnerScreen extends StatelessWidget {
               ),
               if (b.status == BookingStatus.depositSubmitted)
                 _actionBar(context, c, b),
+              if (b.status == BookingStatus.refundPending)
+                _refundSentBar(context, b),
+              if (b.status == BookingStatus.confirmed &&
+                  DateTime.now().isAfter(b.endDateTime) &&
+                  !b.noShow &&
+                  !b.checkedIn)
+                _noShowBar(context, c, b),
             ],
           );
         }),
@@ -558,6 +566,139 @@ class BookingDetailOwnerScreen extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _refundSentBar(BuildContext context, BookingModel b) {
+    final refCtrl = TextEditingController();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: () {
+            showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: _surfaceLow,
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              builder: (_) => Padding(
+                padding: EdgeInsets.only(
+                  left: 20, right: 20, top: 20,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40, height: 4,
+                        decoration: BoxDecoration(color: _outline, borderRadius: BorderRadius.circular(2)),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('Mark Refund Sent',
+                        style: TextStyle(color: _onSurface, fontSize: 18, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Enter your bank transfer reference so the customer can verify receipt.',
+                      style: const TextStyle(color: _onSurfaceVar, fontSize: 13),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: refCtrl,
+                      style: const TextStyle(color: _onSurface),
+                      decoration: InputDecoration(
+                        hintText: 'e.g. TRN-20240712-001',
+                        hintStyle: const TextStyle(color: _onSurfaceVar),
+                        filled: true,
+                        fillColor: _surface,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _outline)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _outline)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _cyan)),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          final ref = refCtrl.text.trim();
+                          if (ref.isEmpty) {
+                            Get.snackbar('Required', 'Enter a bank transfer reference.',
+                                snackPosition: SnackPosition.BOTTOM);
+                            return;
+                          }
+                          await BookingService().submitRefundWithRef(b.id, ref);
+                          Get.back();
+                          Get.snackbar('Refund Marked', 'Customer will be notified to confirm.',
+                              snackPosition: SnackPosition.BOTTOM,
+                              backgroundColor: _surface, colorText: _greenFixed);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _cyan,
+                          foregroundColor: const Color(0xFF002022),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: const Text('Confirm Refund Sent', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+          style: OutlinedButton.styleFrom(
+            foregroundColor: _cyan,
+            backgroundColor: _cyan.withValues(alpha: 0.08),
+            side: BorderSide(color: _cyan.withValues(alpha: 0.5)),
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+          icon: const Icon(Icons.currency_exchange, size: 18),
+          label: const Text('Mark Refund Sent', style: TextStyle(fontWeight: FontWeight.w700)),
+        ),
+      ),
+    );
+  }
+
+  Widget _noShowBar(BuildContext context, OwnerBookingController c, BookingModel b) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: () => Get.defaultDialog(
+            backgroundColor: _surfaceLow,
+            titleStyle: const TextStyle(color: _onSurface, fontWeight: FontWeight.w800),
+            middleTextStyle: const TextStyle(color: _onSurfaceVar),
+            title: 'Mark as No-Show?',
+            middleText: 'This will complete the booking and flag the customer as a no-show.',
+            textCancel: 'Cancel',
+            textConfirm: 'Mark No-Show',
+            confirmTextColor: Colors.white,
+            buttonColor: _amber,
+            onConfirm: () async {
+              await c.markNoShow(b.id);
+              Get.back();
+              Get.back();
+            },
+          ),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: _amber,
+            backgroundColor: _amber.withValues(alpha: 0.08),
+            side: BorderSide(color: _amber.withValues(alpha: 0.5)),
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+          icon: const Icon(Icons.person_off_outlined, size: 18),
+          label: const Text('Mark No-Show', style: TextStyle(fontWeight: FontWeight.w700)),
+        ),
       ),
     );
   }

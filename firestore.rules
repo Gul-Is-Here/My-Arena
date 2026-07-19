@@ -168,6 +168,25 @@ service cloud.firestore {
       allow update: if false;
     }
 
+    // ── Notifications (in-app inbox; docs created by Cloud Functions) ─────
+    match /notifications/{notifId} {
+      allow read: if isAuth() && resource.data.uid == uid();
+      // Only the `read` flag may change, and only by the owner.
+      allow update: if isAuth() && resource.data.uid == uid() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if isAuth() && resource.data.uid == uid();
+      allow create: if false; // server-side only
+    }
+
+    // ── Blocked slots (owner marks court hours unavailable) ──────────────
+    match /blockedSlots/{slotId} {
+      // Customers need to read these to grey out slots.
+      allow read: if isAuth();
+      allow create: if isAuth() && request.resource.data.ownerId == uid();
+      allow delete: if isAuth() && resource.data.ownerId == uid();
+      allow update: if false;
+    }
+
     // ── Audit logs ────────────────────────────────────────────────────
     match /auditLogs/{logId} {
       allow read: if isAdmin();

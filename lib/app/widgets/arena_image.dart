@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
@@ -46,14 +47,13 @@ class ArenaImage extends StatelessWidget {
     if (path == null) {
       imageWidget = placeholder;
     } else if (path!.startsWith('http://') || path!.startsWith('https://')) {
-      imageWidget = Image.network(
-        path!,
+      imageWidget = CachedNetworkImage(
+        imageUrl: path!,
         height: height,
         width: width,
         fit: BoxFit.cover,
-        loadingBuilder: (_, child, progress) =>
-            progress == null ? child : placeholder,
-        errorBuilder: (_, e, s) => placeholder,
+        placeholder: (context2, url) => placeholder,
+        errorWidget: (context2, url, err) => placeholder,
       );
     } else {
       final file = File(path!);

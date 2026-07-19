@@ -20,6 +20,9 @@ class OwnerBookingController extends GetxController {
 
   final RxList<BookingModel> bookings = <BookingModel>[].obs;
   final RxBool isLoading = true.obs;
+  final RxBool hasError = false.obs;
+  int _pageLimit = 200;
+  final RxBool canLoadMore = false.obs;
   StreamSubscription? _sub;
   StreamSubscription? _authSub;
   Timer? _retryTimer;
@@ -62,15 +65,54 @@ class OwnerBookingController extends GetxController {
       return;
     }
     isLoading.value = true;
-    _sub = _service.ownerBookings(uid).listen((list) {
+    hasError.value = false;
+    _sub = _service.ownerBookings(uid, limit: _pageLimit).listen((list) {
       bookings.assignAll(list);
+      canLoadMore.value = list.length >= _pageLimit;
       isLoading.value = false;
+      hasError.value = false;
+      _autoCompleteExpired(list);
     }, onError: (e) {
       debugPrint('ownerBookings stream error: $e');
       isLoading.value = false;
-      // One-off errors (e.g. index still building) shouldn't kill the tab.
+      hasError.value = true;
       _retryTimer = Timer(const Duration(seconds: 8), () => _listen(_uid));
     });
+  }
+
+  void retry() => _listen(_uid);
+
+  void loadMore() {
+    _pageLimit += 100;
+    _listen(_uid);
+  }
+
+  // Fallback for the scheduled Cloud Function: confirmed bookings whose end
+  // time has passed get completed from the owner's client too. The status
+  // change fires the onBookingUpdated function, which pushes the
+  // "Session Complete" notification to the booking's customer.
+  final Set<String> _autoCompleting = {};
+
+  void _autoCompleteExpired(List<BookingModel> list) {
+    final now = DateTime.now();
+    for (final b in list) {
+      if (b.status == BookingStatus.confirmed &&
+          b.endDateTime.isBefore(now) &&
+          !_autoCompleting.contains(b.id)) {
+        _autoCompleting.add(b.id);
+        FirebaseFirestore.instance
+            .collection('bookings')
+            .doc(b.id)
+            .update({
+          'status': BookingStatus.completed.key,
+          'completedAt': FieldValue.serverTimestamp(),
+          if (!b.checkedIn) 'noShow': true,
+        }).catchError((e) {
+          _autoCompleting.remove(b.id);
+          debugPrint('auto-complete failed for ${b.id}: $e');
+        });
+      }
+    }
   }
 
   Future<void> approve(String id) async {
@@ -123,12 +165,18 @@ class OwnerBookingController extends GetxController {
     return null; // null = success
   }
 
+  Future<void> markNoShow(String bookingId) async {
+    await FirebaseFirestore.instance.collection('bookings').doc(bookingId).update({
+      'noShow': true,
+      'status': BookingStatus.completed.key,
+      'completedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   Future<void> addManualBooking(BookingModel booking) async {
-    // Manual walk-ins are confirmed immediately — payment taken in person
-    final ref = await _service.createBooking(
+    await _service.createManualBooking(
       booking.copyWith(ownerId: _uid),
     );
-    await _service.confirmBooking(ref, _uid);
   }
 
   @override

@@ -88,14 +88,12 @@ class _RateBookingSheetState extends State<RateBookingSheet> {
     final bottom = MediaQuery.of(context).viewInsets.bottom;
     return Container(
       margin: EdgeInsets.only(bottom: bottom),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: _bg,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        border: Border(
-          top: BorderSide(color: _cyan, width: 1.5),
-          left: BorderSide(color: _outline),
-          right: BorderSide(color: _outline),
-        ),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        // A borderRadius requires uniform border colors, so a single cyan
+        // hairline stands in for the old cyan-top / grey-sides mix.
+        border: Border.all(color: _cyan.withValues(alpha: 0.6), width: 1.2),
       ),
       child: SafeArea(
         top: false,

@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import '../data/models/arena_model.dart';
 import '../data/models/booking_model.dart';
 import '../data/models/court_model.dart';
+import '../services/blocked_slot_service.dart';
 import '../services/booking_service.dart';
 import '../utils/slot_status.dart';
 import 'auth_controller.dart';
@@ -48,6 +49,8 @@ class BookingController extends GetxController {
 
   // Booked slots loaded from Firestore for the current date+court
   final RxList<BookingModel> _bookedSlots = <BookingModel>[].obs;
+  final RxSet<int> _blockedHours = <int>{}.obs;
+  final BlockedSlotService _blockedService = BlockedSlotService();
   final RxBool loadingSlots = false.obs;
 
   BookingModel? draft;
@@ -78,13 +81,43 @@ class BookingController extends GetxController {
       return;
     }
     _bookingsSub = _service.customerBookings(uid).listen(
-      (list) => bookings.assignAll(list),
+      (list) {
+        bookings.assignAll(list);
+        _autoCompleteExpired(list);
+      },
       onError: (e) {
         debugPrint('customerBookings stream error: $e');
         _retryTimer =
             Timer(const Duration(seconds: 8), () => _listenBookings(_uid));
       },
     );
+  }
+
+  // Fallback for the scheduled Cloud Function: confirmed bookings whose end
+  // time has passed are marked completed from the client too, so the status
+  // flips even if the server-side job hasn't run yet.
+  final Set<String> _autoCompleting = {};
+
+  void _autoCompleteExpired(List<BookingModel> list) {
+    final now = DateTime.now();
+    for (final b in list) {
+      if (b.status == BookingStatus.confirmed &&
+          b.endDateTime.isBefore(now) &&
+          !_autoCompleting.contains(b.id)) {
+        _autoCompleting.add(b.id);
+        FirebaseFirestore.instance
+            .collection('bookings')
+            .doc(b.id)
+            .update({
+          'status': BookingStatus.completed.key,
+          'completedAt': FieldValue.serverTimestamp(),
+          if (!b.checkedIn) 'noShow': true,
+        }).catchError((e) {
+          _autoCompleting.remove(b.id);
+          debugPrint('auto-complete failed for ${b.id}: $e');
+        });
+      }
+    }
   }
 
   Future<void> _loadSettings() async {
@@ -133,6 +166,7 @@ class BookingController extends GetxController {
     selectedDuration.value = 1;
     draft = null;
     _bookedSlots.clear();
+    _blockedHours.clear();
     _loadBookedSlots();
   }
 
@@ -155,6 +189,8 @@ class BookingController extends GetxController {
     try {
       final slots = await _service.bookedSlots(c.id, date.value);
       _bookedSlots.assignAll(slots);
+      _blockedHours.assignAll(await _blockedService.blockedHours(
+          arena.value?.id ?? '', c.id, date.value));
     } catch (_) {
     } finally {
       loadingSlots.value = false;
@@ -172,6 +208,7 @@ class BookingController extends GetxController {
         date: date.value,
         hour: hour,
         bookedSlots: _bookedSlots,
+        blockedHours: _blockedHours,
       );
 
   void setDuration(int hours) {
@@ -202,10 +239,18 @@ class BookingController extends GetxController {
   int get startHour =>
       selectedHours.isEmpty ? 0 : selectedHours.reduce((a, b) => a < b ? a : b);
   int get totalHours => selectedHours.length;
-  double get totalAmount => (court.value?.pricePerHour ?? 0) * totalHours;
+
+  double get totalAmount {
+    final c = court.value;
+    if (c == null) return 0;
+    return selectedHours.fold(0.0, (s, h) => s + c.priceAt(h));
+  }
+
   double get depositAmount =>
       totalAmount * BookingSettings.depositPercent / 100;
   double get remainingAmount => totalAmount - depositAmount;
+
+  bool isPeak(int hour) => court.value?.isPeak(hour) ?? false;
 
   void buildDraft() {
     final a = arena.value!;
@@ -224,6 +269,9 @@ class BookingController extends GetxController {
       totalHours: totalHours,
       pricePerHour: c.pricePerHour,
       createdAt: DateTime.now(),
+      totalAmountStored: totalAmount != c.pricePerHour * totalHours
+          ? totalAmount
+          : null,
     );
   }
 
@@ -233,9 +281,8 @@ class BookingController extends GetxController {
 
   Future<String> submitDeposit(File screenshot, String accountUsed) async {
     final b = draft!;
-    final bookingId = await _service.createBooking(b);
-    await _service.submitDeposit(
-      bookingId,
+    final bookingId = await _service.createBookingWithDeposit(
+      b,
       screenshot: screenshot,
       accountUsed: accountUsed,
     );

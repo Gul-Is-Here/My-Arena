@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 
 import '../../controllers/chat_controller.dart';
@@ -38,15 +39,56 @@ class OwnerBookingsScreen extends StatelessWidget {
         body: SafeArea(
           child: Column(
             children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Text(
-                  'Bookings',
-                  style: TextStyle(
-                    color: _onSurface,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                  ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 40),
+                    const Expanded(
+                      child: Text(
+                        'Bookings',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: _onSurface,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        GestureDetector(
+                          onTap: () => _exportCsv(context, c.all),
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: _surface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: _outline),
+                            ),
+                            child: const Icon(Icons.download_outlined,
+                                size: 20, color: _greenFixed),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () => Get.toNamed(AppRoutes.ownerSchedule),
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: _surface,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: _outline),
+                            ),
+                            child: const Icon(Icons.calendar_month_outlined,
+                                size: 20, color: _cyan),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
               Container(
@@ -71,6 +113,30 @@ class OwnerBookingsScreen extends StatelessWidget {
               ),
               Expanded(
                 child: Obx(() {
+                  if (c.isLoading.value) {
+                    return const Center(
+                        child: CircularProgressIndicator(color: _cyan));
+                  }
+                  if (c.hasError.value) {
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.wifi_off_outlined,
+                              color: _onSurfaceVar, size: 40),
+                          const SizedBox(height: 12),
+                          const Text('Could not load bookings',
+                              style: TextStyle(color: _onSurface)),
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: () => c.retry(),
+                            child: const Text('Retry',
+                                style: TextStyle(color: _cyan)),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
                   c.bookings.length; // rebuild on any change
                   return TabBarView(
                     children: [
@@ -223,6 +289,40 @@ Future<String> _resolveCustomerName(BookingModel b) async {
     // gracefully instead of crashing. Not cached so a later retry can win.
     return 'Customer';
   }
+}
+
+void _exportCsv(BuildContext context, List<BookingModel> bookings) {
+  final rows = [
+    'Date,Arena,Court,Customer,Start,Hours,Total (PKR),Deposit (PKR),Status',
+    ...bookings
+        .where((b) => b.status == BookingStatus.confirmed ||
+            b.status == BookingStatus.completed)
+        .map((b) {
+      String esc(String s) =>
+          s.contains(',') ? '"${s.replaceAll('"', '""')}"' : s;
+      final d = b.date;
+      return [
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}',
+        esc(b.arenaName),
+        esc(b.courtName),
+        esc(b.customerName.isNotEmpty ? b.customerName : 'Customer'),
+        '${b.startHour.toString().padLeft(2, '0')}:00',
+        '${b.totalHours}',
+        b.totalAmount.toStringAsFixed(0),
+        b.depositAmount.toStringAsFixed(0),
+        b.status.label,
+      ].join(',');
+    }),
+  ];
+  final csv = rows.join('\n');
+  Clipboard.setData(ClipboardData(text: csv));
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(
+          'Payout CSV copied to clipboard (${rows.length - 1} completed bookings)'),
+      duration: const Duration(seconds: 3),
+    ),
+  );
 }
 
 class _CustomerNameText extends StatelessWidget {
@@ -410,6 +510,24 @@ Widget _bookingCardShell(
                       ),
                       child: const Icon(Icons.login,
                           size: 14, color: _greenFixed),
+                    ),
+                  if (b.noShow)
+                    Container(
+                      margin: const EdgeInsets.only(right: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: _red.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                        border:
+                            Border.all(color: _red.withValues(alpha: 0.4)),
+                      ),
+                      child: const Text('NO-SHOW',
+                          style: TextStyle(
+                              fontSize: 9,
+                              color: _red,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.4)),
                     ),
                   Container(
                     padding:
@@ -669,8 +787,18 @@ class _AllList extends StatelessWidget {
     }
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 140),
-      itemCount: items.length,
+      itemCount: items.length + (controller.canLoadMore.value ? 1 : 0),
       itemBuilder: (_, i) {
+        if (i == items.length) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: TextButton(
+              onPressed: controller.loadMore,
+              child: const Text('Load more',
+                  style: TextStyle(color: _cyan)),
+            ),
+          );
+        }
         final b = items[i];
         return _bookingCardShell(
           context,

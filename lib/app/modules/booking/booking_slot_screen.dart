@@ -197,9 +197,10 @@ class BookingSlotScreen extends StatelessWidget {
                                   : null,
                               child: SlotTile(
                                 hour: h,
-                                pricePerHour: court.pricePerHour,
+                                pricePerHour: court.priceAt(h),
                                 status: status,
                                 isSelected: sel,
+                                isPeak: court.isPeak(h),
                                 onTap: () => c.selectSlot(h),
                               ),
                             );

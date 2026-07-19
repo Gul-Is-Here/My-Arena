@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 
 import '../../controllers/auth_controller.dart';
+import '../../controllers/notification_controller.dart';
 import '../../controllers/owner_booking_controller.dart';
 import '../../controllers/owner_controller.dart';
 import '../../data/models/booking_model.dart';
@@ -66,6 +67,11 @@ class DashboardTab extends StatelessWidget {
                   .where((b) => _isSameDay(b.date, today))
                   .length;
               final pendingCount = ownerBookings.pendingApproval.length;
+              final totalEarnings = ownerBookings.all
+                  .where((b) =>
+                      b.status == BookingStatus.confirmed ||
+                      b.status == BookingStatus.completed)
+                  .fold(0.0, (acc, b) => acc + b.totalAmount);
               return GridView.count(
                 crossAxisCount: 2,
                 shrinkWrap: true,
@@ -78,8 +84,8 @@ class DashboardTab extends StatelessWidget {
                     icon: Icons.payments_outlined,
                     iconColor: _greenFixed,
                     label: 'Total Earnings',
-                    value: 'PKR ${_pkr.format(owner.totalEarnings.value)}',
-                    onTap: () => Get.toNamed(AppRoutes.ownerBookings),
+                    value: 'PKR ${_pkr.format(totalEarnings)}',
+                    onTap: () => Get.toNamed(AppRoutes.ownerEarnings),
                   ),
                   _statCard(
                     icon: Icons.calendar_month_outlined,
@@ -93,7 +99,7 @@ class DashboardTab extends StatelessWidget {
                     iconColor: _onSurfaceVar,
                     label: 'Active Courts',
                     value: '${owner.activeCourts}',
-                    onTap: () => Get.toNamed(AppRoutes.myArenas),
+                    onTap: () => owner.shellTab.value = 2,
                   ),
                   _statCard(
                     icon: Icons.hourglass_top_outlined,
@@ -174,16 +180,48 @@ class DashboardTab extends StatelessWidget {
               ],
             ),
           ),
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: _surface,
-              shape: BoxShape.circle,
-              border: Border.all(color: _outline),
-            ),
-            child: const Icon(Icons.notifications_outlined,
-                color: _onSurfaceVar, size: 20),
+          GestureDetector(
+            onTap: () => Get.toNamed(AppRoutes.notifications),
+            child: Obx(() {
+              final unread = NotificationController.to.unreadCount;
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: _surface,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: _outline),
+                    ),
+                    child: const Icon(Icons.notifications_outlined,
+                        color: _onSurfaceVar, size: 20),
+                  ),
+                  if (unread > 0)
+                    Positioned(
+                      top: -2,
+                      right: -2,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _cyan,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          unread > 9 ? '9+' : '$unread',
+                          style: const TextStyle(
+                            color: Color(0xFF002022),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            }),
           ),
         ],
       );
@@ -473,6 +511,9 @@ class DashboardTab extends StatelessWidget {
           _quickAction(Icons.assignment_outlined, 'Bookings', _greenFixed,
               () => Get.toNamed(AppRoutes.ownerBookings)),
           const SizedBox(width: 10),
+          _quickAction(Icons.calendar_view_week_outlined, 'Schedule', _onSurfaceVar,
+              () => Get.toNamed(AppRoutes.ownerSchedule)),
+          const SizedBox(width: 10),
           _quickAction(Icons.rocket_launch_outlined, 'Boost', _amber,
               () => Get.toNamed(AppRoutes.boostRequest)),
         ],
@@ -580,7 +621,9 @@ class DashboardTab extends StatelessWidget {
 
   Widget _activityRow(BookingModel b) {
     final color = _statusColor(b.status);
-    return Container(
+    return GestureDetector(
+      onTap: () => Get.toNamed(AppRoutes.bookingDetailOwner, arguments: b.id),
+      child: Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: _surfaceLow,
@@ -645,6 +688,7 @@ class DashboardTab extends StatelessWidget {
           ),
         ],
       ),
+    ),
     );
   }
 }

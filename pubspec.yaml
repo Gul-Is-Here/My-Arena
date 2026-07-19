@@ -52,6 +52,10 @@ dependencies:
   google_maps_flutter: ^2.17.1
   google_sign_in: ^7.2.0
   firebase_messaging: ^16.4.1
+  geocoding: ^5.0.0
+  share_plus: ^13.0.0
+  cached_network_image: ^3.4.1
+  awesome_notifications: ^0.12.1
 
 dev_dependencies:
   flutter_test:

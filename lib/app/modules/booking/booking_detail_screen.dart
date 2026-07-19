@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:maps_launcher/maps_launcher.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../data/models/arena_model.dart';
 import '../../data/models/booking_model.dart';
@@ -284,6 +285,20 @@ class _Header extends StatelessWidget {
                 letterSpacing: 2,
               ),
             ),
+          ),
+          IconButton(
+            onPressed: () {
+              final b = booking;
+              final d = b.date;
+              SharePlus.instance.share(ShareParams(
+                text: '📅 ${b.arenaName} — ${b.courtName}\n'
+                    '${d.day}/${d.month}/${d.year} · ${b.timeRange}\n'
+                    'PKR ${b.totalAmount.toStringAsFixed(0)} total\n'
+                    'Organised via MyArena 🏟️',
+              ));
+            },
+            icon: const Icon(Icons.share_outlined,
+                color: SlotPickerColors.muted),
           ),
           IconButton(
             onPressed: () => openBookingChatAndGo(booking),

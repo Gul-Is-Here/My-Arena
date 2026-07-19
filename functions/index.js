@@ -29,10 +29,26 @@ async function getToken(uid) {
   return snap.data()?.fcmToken ?? null;
 }
 
-async function sendPush(uid, title, body) {
+async function sendPush(uid, title, body, type = "general", relatedId = null) {
+  // Durable in-app inbox copy — written even when the user has no FCM token,
+  // so the notification center shows every event.
+  await admin.firestore().collection("notifications").add({
+    uid,
+    title,
+    body,
+    type,
+    ...(relatedId ? { relatedId } : {}),
+    read: false,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  }).catch((e) => console.error("inbox write failed:", e));
+
   const token = await getToken(uid);
   if (!token) return;
-  await admin.messaging().send({ token, notification: { title, body } });
+  await admin.messaging().send({
+    token,
+    notification: { title, body },
+    data: { type, ...(relatedId ? { relatedId } : {}) },
+  });
 }
 
 // ── Booking: deposit submitted → notify owner ─────────────────────────
@@ -42,7 +58,9 @@ exports.onBookingCreated = onDocumentCreated("bookings/{bookingId}", async (even
   await sendPush(
     data.ownerId,
     "New Booking Request",
-    `${data.customerName ?? "A customer"} submitted a deposit for ${data.courtName ?? "your court"}.`
+    `${data.customerName ?? "A customer"} submitted a deposit for ${data.courtName ?? "your court"}.`,
+    "booking",
+    event.params.bookingId
   );
 });
 
@@ -64,7 +82,7 @@ exports.onBookingUpdated = onDocumentUpdated("bookings/{bookingId}", async (even
     const msg = messages[after.status];
     if (msg) {
       const titles = { confirmed: "Booking Confirmed ✅", completed: "Session Complete ⭐" };
-      await sendPush(uid, titles[after.status] ?? "Booking Update", msg);
+      await sendPush(uid, titles[after.status] ?? "Booking Update", msg, "booking", event.params.bookingId);
     }
   }
 
@@ -102,10 +120,12 @@ exports.autoTransitionBookings = onSchedule("every 30 minutes", async () => {
   let ops = 0;
 
   function endMs(data) {
-    const bookingDate = data.date.toDate();
-    const midnight = new Date(bookingDate);
-    midnight.setHours(0, 0, 0, 0);
-    return midnight.getTime() + (data.startHour + data.totalHours) * 3600000;
+    // The client stores `date` as local midnight (Timestamp.fromDate of a
+    // y/m/d DateTime), so the timestamp itself is the booking day's start
+    // instant. Recomputing midnight in the server's timezone (UTC) shifted
+    // the end time by the UTC offset — add the hours to the raw instant.
+    return data.date.toDate().getTime() +
+      (data.startHour + data.totalHours) * 3600000;
   }
 
   // confirmed → completed
@@ -119,6 +139,8 @@ exports.autoTransitionBookings = onSchedule("every 30 minutes", async () => {
       batch.update(doc.ref, {
         status: "completed",
         completedAt: admin.firestore.FieldValue.serverTimestamp(),
+        // Never checked in → the customer didn't show up.
+        ...(doc.data().checkedIn ? {} : { noShow: true }),
       });
       ops++;
     }
@@ -188,6 +210,40 @@ exports.onArenaCreated = onDocumentCreated("arenas/{arenaId}", async (event) => 
       sendPush(d.id, "New Arena Pending", `${data?.name ?? "An arena"} is awaiting approval.`)
     )
   );
+});
+
+// ── Booking reminders: push 2 hours before confirmed bookings ─────────
+// Runs every 15 min; finds bookings starting in 2h ±15min and sends a push.
+exports.sendBookingReminders = onSchedule({ schedule: "every 15 minutes", timeZone: "Asia/Karachi" }, async () => {
+  const db = admin.firestore();
+  const now = new Date();
+  const windowStart = new Date(now.getTime() + 105 * 60 * 1000); // 1h45m ahead
+  const windowEnd   = new Date(now.getTime() + 135 * 60 * 1000); // 2h15m ahead
+
+  const snap = await db.collection("bookings")
+    .where("status", "==", "confirmed")
+    .where("startDateTime", ">=", admin.firestore.Timestamp.fromDate(windowStart))
+    .where("startDateTime", "<=", admin.firestore.Timestamp.fromDate(windowEnd))
+    .get();
+
+  let sent = 0;
+  await Promise.all(snap.docs.map(async (doc) => {
+    const b = doc.data();
+    if (!b.customerId || b.reminderSent) return;
+    const hour = b.startHour ?? 0;
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const h12 = ((hour % 12) || 12);
+    await sendPush(
+      b.customerId,
+      `⏰ Booking in 2 hours`,
+      `${b.arenaName} · ${b.courtName} at ${h12}:00 ${ampm}. Don't forget your QR code!`,
+      "booking_reminder",
+      doc.id,
+    );
+    await doc.ref.update({ reminderSent: true });
+    sent++;
+  }));
+  console.log(`sendBookingReminders: ${sent} reminders sent.`);
 });
 
 // ── Tournament registration payment verified → notify customer ────────

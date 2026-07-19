@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../controllers/auth_controller.dart';
+import '../data/models/user_model.dart';
+import '../routes/app_routes.dart';
 import '../theme/theme_controller.dart';
 
 // ── Design tokens (Arena Command dark glass theme) ────────────────────────
@@ -105,7 +107,16 @@ class ProfileTab extends StatelessWidget {
                     ],
                   );
                 }),
-                const SizedBox(height: 36),
+                const SizedBox(height: 16),
+                // Edit profile button
+                _GlassCard(
+                  child: _SettingsRow(
+                    icon: Icons.edit_outlined,
+                    label: 'Edit Profile',
+                    onTap: () => _showEditProfile(context, auth),
+                  ),
+                ),
+                const SizedBox(height: 16),
 
                 // Settings glass card
                 _GlassCard(
@@ -129,10 +140,26 @@ class ProfileTab extends StatelessWidget {
                         onTap: () => _comingSoon('Notification settings'),
                       ),
                       _divider(),
+                      Obx(() {
+                        final role = auth.currentUser.value?.role;
+                        if (role == UserRole.owner) {
+                          return Column(
+                            children: [
+                              _SettingsRow(
+                                icon: Icons.support_agent_outlined,
+                                label: 'Support Tickets',
+                                onTap: () => Get.toNamed(AppRoutes.ownerTickets),
+                              ),
+                              _divider(),
+                            ],
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      }),
                       _SettingsRow(
                         icon: Icons.help_outline,
                         label: 'Help & Support',
-                        onTap: () => _comingSoon('Support chat (Phase 4)'),
+                        onTap: () => _comingSoon('Help center'),
                       ),
                     ],
                   ),
@@ -163,6 +190,95 @@ class ProfileTab extends StatelessWidget {
         thickness: 1,
         color: _outline.withValues(alpha: 0.2),
       );
+
+  void _showEditProfile(BuildContext context, AuthController auth) {
+    final user = auth.currentUser.value;
+    final nameCtrl = TextEditingController(text: user?.name ?? '');
+    final phoneCtrl = TextEditingController(text: user?.phone ?? '');
+    final saving = false.obs;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1D2026),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => Padding(
+        padding: EdgeInsets.only(
+          left: 20, right: 20, top: 20,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: _outline,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text('Edit Profile',
+                style: TextStyle(color: _onSurface, fontSize: 18, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: nameCtrl,
+              style: const TextStyle(color: _onSurface),
+              decoration: _sheetInput('Full name'),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: phoneCtrl,
+              keyboardType: TextInputType.phone,
+              style: const TextStyle(color: _onSurface),
+              decoration: _sheetInput('Phone number'),
+            ),
+            const SizedBox(height: 20),
+            Obx(() => SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: saving.value ? null : () async {
+                  final name = nameCtrl.text.trim();
+                  if (name.isEmpty) return;
+                  saving.value = true;
+                  await auth.updateProfile(name: name, phone: phoneCtrl.text.trim());
+                  saving.value = false;
+                  Get.back();
+                  Get.snackbar('Profile Updated', 'Changes saved.',
+                      snackPosition: SnackPosition.BOTTOM);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _cyan,
+                  foregroundColor: const Color(0xFF002022),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: saving.value
+                    ? const SizedBox(width: 20, height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF002022)))
+                    : const Text('Save', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+              ),
+            )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _sheetInput(String hint) => InputDecoration(
+    hintText: hint,
+    hintStyle: const TextStyle(color: _onSurfaceVar),
+    filled: true,
+    fillColor: const Color(0xFF10131A),
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _outline)),
+    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _outline)),
+    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _cyan)),
+  );
 
   void _comingSoon(String feature) {
     Get.snackbar(

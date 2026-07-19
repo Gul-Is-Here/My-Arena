@@ -375,6 +375,7 @@ class SlotTile extends StatelessWidget {
   final SlotStatus status;
   final bool isSelected;
   final VoidCallback? onTap;
+  final bool isPeak;
 
   const SlotTile({
     super.key,
@@ -383,6 +384,7 @@ class SlotTile extends StatelessWidget {
     required this.status,
     required this.isSelected,
     this.onTap,
+    this.isPeak = false,
   });
 
   @override
@@ -413,7 +415,9 @@ class SlotTile extends StatelessWidget {
     } else {
       switch (status) {
         case SlotStatus.available:
-          border = SlotPickerColors.green.withValues(alpha: 0.4);
+          border = isPeak
+              ? const Color(0xFFFFB59C).withValues(alpha: 0.6)
+              : SlotPickerColors.green.withValues(alpha: 0.4);
           fill = SlotPickerColors.surface;
           textColor = SlotPickerColors.onBg;
           subLabel = 'PKR ${pricePerHour.toStringAsFixed(0)}';
@@ -440,10 +444,15 @@ class SlotTile extends StatelessWidget {
           break;
         case SlotStatus.booked:
         case SlotStatus.past:
+        case SlotStatus.blocked:
           border = Colors.white.withValues(alpha: 0.06);
           fill = SlotPickerColors.surface.withValues(alpha: 0.5);
           textColor = SlotPickerColors.muted.withValues(alpha: 0.6);
-          subLabel = status == SlotStatus.booked ? 'BOOKED' : 'PAST';
+          subLabel = status == SlotStatus.booked
+              ? 'BOOKED'
+              : status == SlotStatus.blocked
+                  ? 'UNAVAILABLE'
+                  : 'PAST';
           trailing = Icon(
             status == SlotStatus.booked
                 ? Icons.lock_outline
@@ -477,7 +486,26 @@ class SlotTile extends StatelessWidget {
                 color: textColor,
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
+            if (isPeak && !isSelected && status == SlotStatus.available)
+              Container(
+                margin: const EdgeInsets.only(bottom: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFB59C).withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'PEAK',
+                  style: TextStyle(
+                    fontSize: 8,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                    color: Color(0xFFFFB59C),
+                  ),
+                ),
+              ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [

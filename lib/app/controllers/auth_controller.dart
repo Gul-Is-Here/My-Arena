@@ -329,6 +329,13 @@ class AuthController extends GetxController {
     });
   }
 
+  Future<void> updateProfile({required String name, required String phone}) async {
+    final user = currentUser.value;
+    if (user == null) return;
+    await _service.updateUserDoc(user.uid, {'name': name, 'phone': phone});
+    _saveSession(user.copyWith(name: name, phone: phone));
+  }
+
   Future<void> signOut() async {
     await _service.signOut();
     _box.remove(_sessionKey);

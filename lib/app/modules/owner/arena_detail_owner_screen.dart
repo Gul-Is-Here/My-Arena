@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -10,7 +11,9 @@ import '../../data/models/arena_model.dart';
 import '../../data/models/booking_model.dart';
 import '../../data/models/boost_request_model.dart';
 import '../../data/models/court_model.dart';
+import '../../data/models/review_model.dart';
 import '../../routes/app_routes.dart';
+import '../../services/arena_service.dart';
 import '../../widgets/arena_image.dart';
 
 const _bg = Color(0xFF10131A);
@@ -89,6 +92,8 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
                     _photosSection(context, arena),
                     const SizedBox(height: 22),
                     _locationSection(arena),
+                    const SizedBox(height: 22),
+                    _reviewsSection(arena),
                     const SizedBox(height: 22),
                     _boostBanner(arena),
                   ],
@@ -574,11 +579,20 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text('PKR ${NumberFormat('#,##0').format(court.pricePerHour)}/hr',
-                  style: TextStyle(
-                      color: maintenance ? _onSurfaceVar : _onSurface,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700)),
+              Row(
+                children: [
+                  Text('PKR ${NumberFormat('#,##0').format(court.pricePerHour)}/hr',
+                      style: TextStyle(
+                          color: maintenance ? _onSurfaceVar : _onSurface,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700)),
+                  const SizedBox(width: 6),
+                  GestureDetector(
+                    onTap: () => _editCourtSheet(arena, court),
+                    child: const Icon(Icons.edit_outlined, size: 16, color: _cyan),
+                  ),
+                ],
+              ),
               Switch(
                 value: court.isActive,
                 activeThumbColor: _greenFixed,
@@ -591,6 +605,113 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
       ),
     );
   }
+
+  void _editCourtSheet(ArenaModel arena, CourtModel court) {
+    final priceCtrl = TextEditingController(text: court.pricePerHour.toStringAsFixed(0));
+    final startCtrl = TextEditingController(text: court.startTime);
+    final endCtrl = TextEditingController(text: court.endTime);
+    final saving = false.obs;
+
+    Get.bottomSheet(
+      Container(
+        decoration: const BoxDecoration(
+          color: _surfaceLow,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: EdgeInsets.only(
+          left: 20, right: 20, top: 20,
+          bottom: MediaQuery.of(Get.context!).viewInsets.bottom + 24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(color: _outline, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text('Edit ${court.name}',
+                style: const TextStyle(color: _onSurface, fontSize: 18, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: priceCtrl,
+              keyboardType: TextInputType.number,
+              style: const TextStyle(color: _onSurface),
+              decoration: _sheetInput('Price per hour (PKR)'),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: startCtrl,
+                    style: const TextStyle(color: _onSurface),
+                    decoration: _sheetInput('Start (e.g. 08:00)'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: endCtrl,
+                    style: const TextStyle(color: _onSurface),
+                    decoration: _sheetInput('End (e.g. 22:00)'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Obx(() => SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: saving.value ? null : () async {
+                  final price = double.tryParse(priceCtrl.text.trim());
+                  if (price == null || price <= 0) {
+                    Get.snackbar('Invalid', 'Enter a valid price.',
+                        snackPosition: SnackPosition.BOTTOM);
+                    return;
+                  }
+                  saving.value = true;
+                  await ArenaService().updateCourt(arena.id, court.id, {
+                    'pricePerHour': price,
+                    'startTime': startCtrl.text.trim(),
+                    'endTime': endCtrl.text.trim(),
+                  });
+                  saving.value = false;
+                  Get.back();
+                  Get.snackbar('Court Updated', 'Changes saved.',
+                      snackPosition: SnackPosition.BOTTOM,
+                      backgroundColor: _surfaceLow, colorText: _greenFixed);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _cyan,
+                  foregroundColor: const Color(0xFF002022),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: saving.value
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF002022)))
+                    : const Text('Save Changes', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+              ),
+            )),
+          ],
+        ),
+      ),
+      isScrollControlled: true,
+    );
+  }
+
+  InputDecoration _sheetInput(String hint) => InputDecoration(
+    hintText: hint,
+    hintStyle: const TextStyle(color: _onSurfaceVar),
+    filled: true,
+    fillColor: _surface,
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _outline)),
+    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _outline)),
+    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _cyan)),
+  );
 
   Widget _photosSection(BuildContext context, ArenaModel arena) {
     final images = arena.images;
@@ -773,6 +894,74 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
     );
   }
 
+  Widget _reviewsSection(ArenaModel arena) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('arenas')
+          .doc(arena.id)
+          .collection('reviews')
+          .orderBy('createdAt', descending: true)
+          .limit(20)
+          .snapshots(),
+      builder: (context, snap) {
+        final reviews = (snap.data?.docs ?? [])
+            .map((d) => ReviewModel.fromMap({...d.data(), 'id': d.id}))
+            .toList();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'Customer Reviews',
+                  style: TextStyle(
+                    color: _onSurface,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (arena.rating > 0) ...[
+                  const Icon(Icons.star_rounded,
+                      size: 16, color: Color(0xFFFFD700)),
+                  const SizedBox(width: 3),
+                  Text(
+                    '${arena.rating.toStringAsFixed(1)} · ${arena.reviewCount}',
+                    style: const TextStyle(
+                        color: _onSurfaceVar, fontSize: 13),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (reviews.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _surface,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.rate_review_outlined,
+                        color: _onSurfaceVar, size: 20),
+                    SizedBox(width: 10),
+                    Text(
+                      'No reviews yet',
+                      style: TextStyle(color: _onSurfaceVar, fontSize: 13),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ...reviews.map((r) => _ReviewCard(review: r)),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _boostBanner(ArenaModel arena) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -822,6 +1011,89 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
             child: const Text('BOOST',
                 style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.5)),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReviewCard extends StatelessWidget {
+  final ReviewModel review;
+
+  const _ReviewCard({required this.review});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _outline.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: _cyan.withValues(alpha: 0.15),
+                child: Text(
+                  review.customerName.isNotEmpty
+                      ? review.customerName[0].toUpperCase()
+                      : '?',
+                  style: const TextStyle(
+                      color: _cyan,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      review.customerName.isNotEmpty
+                          ? review.customerName
+                          : 'Customer',
+                      style: const TextStyle(
+                          color: _onSurface,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600),
+                    ),
+                    Text(
+                      '${review.createdAt.day}/${review.createdAt.month}/${review.createdAt.year}',
+                      style: const TextStyle(
+                          color: _onSurfaceVar, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+              Row(
+                children: List.generate(
+                  5,
+                  (i) => Icon(
+                    i < review.rating.round()
+                        ? Icons.star_rounded
+                        : Icons.star_outline_rounded,
+                    size: 14,
+                    color: const Color(0xFFFFD700),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (review.comment.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              review.comment,
+              style: const TextStyle(
+                  color: _onSurfaceVar, fontSize: 12.5, height: 1.4),
+            ),
+          ],
         ],
       ),
     );

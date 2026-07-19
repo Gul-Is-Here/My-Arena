@@ -5,8 +5,10 @@ import 'package:intl/intl.dart';
 import '../../controllers/booking_controller.dart';
 import '../../controllers/discovery_controller.dart';
 import '../../controllers/favorites_controller.dart';
+import '../../controllers/notification_controller.dart';
 import '../../data/models/arena_model.dart';
 import '../../data/models/booking_model.dart';
+import '../../data/models/court_model.dart';
 import '../../routes/app_routes.dart';
 import '../../widgets/arena_image.dart';
 
@@ -46,16 +48,18 @@ class HomeTab extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Search bar
+                    // Search bar + quick filters
                     _SearchBar(),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 10),
+                    _QuickFilterRow(discovery: discovery),
+                    const SizedBox(height: 14),
 
-                    // Promo hero banner
+                    // Promo hero banner carousel
                     Obx(() {
                       if (discovery.featured.isEmpty) return const SizedBox.shrink();
                       return Column(
                         children: [
-                          _PromoBanner(arena: discovery.featured.first),
+                          _PromoBannerCarousel(arenas: discovery.featured),
                           const SizedBox(height: 28),
                         ],
                       );
@@ -209,6 +213,49 @@ class _TopBarDelegate extends SliverPersistentHeaderDelegate {
             ),
           ),
           const SizedBox(width: 12),
+          // Notifications bell
+          GestureDetector(
+            onTap: () => Get.toNamed(AppRoutes.notifications),
+            child: Obx(() {
+              final unread = NotificationController.to.unreadCount;
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(
+                      color: HomeTab._surfaceLow,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.notifications_outlined,
+                        color: HomeTab._cyan, size: 20),
+                  ),
+                  if (unread > 0)
+                    Positioned(
+                      top: -2,
+                      right: -2,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: HomeTab._cyan,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          unread > 9 ? '9+' : '$unread',
+                          style: const TextStyle(
+                            color: Color(0xFF002022),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            }),
+          ),
+          const SizedBox(width: 10),
           // Search icon
           GestureDetector(
             onTap: () => Get.toNamed(AppRoutes.arenaList),
@@ -266,6 +313,63 @@ class _SearchBar extends StatelessWidget {
 }
 
 // ── Promo Banner ───────────────────────────────────────────────────────────────
+
+// ── Promo Banner Carousel ──────────────────────────────────────────────────────
+
+class _PromoBannerCarousel extends StatefulWidget {
+  final List<ArenaModel> arenas;
+  const _PromoBannerCarousel({required this.arenas});
+
+  @override
+  State<_PromoBannerCarousel> createState() => _PromoBannerCarouselState();
+}
+
+class _PromoBannerCarouselState extends State<_PromoBannerCarousel> {
+  final PageController _ctrl = PageController();
+  int _page = 0;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        SizedBox(
+          height: 220,
+          child: PageView.builder(
+            controller: _ctrl,
+            itemCount: widget.arenas.length,
+            onPageChanged: (i) => setState(() => _page = i),
+            itemBuilder: (_, i) => _PromoBanner(arena: widget.arenas[i]),
+          ),
+        ),
+        if (widget.arenas.length > 1) ...[
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(widget.arenas.length, (i) {
+              final active = i == _page;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: active ? 20 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: active ? HomeTab._cyan : HomeTab._outline,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              );
+            }),
+          ),
+        ],
+      ],
+    );
+  }
+}
 
 class _PromoBanner extends StatelessWidget {
   final ArenaModel arena;
@@ -885,6 +989,426 @@ class _NearbyCard extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Quick Filter Row ───────────────────────────────────────────────────────────
+
+void showDiscoveryFilterSheet(BuildContext context, DiscoveryController d) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _FilterSheet(discovery: d),
+  );
+}
+
+class _QuickFilterRow extends StatelessWidget {
+  final DiscoveryController discovery;
+  const _QuickFilterRow({required this.discovery});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Obx(() => Row(
+              children: [
+                _QuickChip(
+                  label: 'All',
+                  selected: discovery.typeFilter.value == null,
+                  onTap: () => discovery.typeFilter.value = null,
+                ),
+                const SizedBox(width: 8),
+                ...CourtType.values.map((t) => Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: _QuickChip(
+                    label: t.label,
+                    selected: discovery.typeFilter.value == t,
+                    onTap: () => discovery.typeFilter.value =
+                        discovery.typeFilter.value == t ? null : t,
+                  ),
+                )),
+              ],
+            )),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Obx(() {
+          final count = discovery.activeFilterCount;
+          return GestureDetector(
+            onTap: () => showDiscoveryFilterSheet(context, discovery),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: count > 0
+                    ? HomeTab._cyan.withValues(alpha: 0.12)
+                    : HomeTab._surfaceLow,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: count > 0 ? HomeTab._cyan : HomeTab._outlineVar,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.tune,
+                    size: 16,
+                    color: count > 0 ? HomeTab._cyan : HomeTab._outline,
+                  ),
+                  if (count > 0) ...[
+                    const SizedBox(width: 5),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: HomeTab._cyan,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '$count',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF002022),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+}
+
+class _QuickChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _QuickChip(
+      {required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? HomeTab._cyan : HomeTab._surfaceLow,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? HomeTab._cyan : HomeTab._outlineVar,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: selected
+                ? const Color(0xFF002022)
+                : HomeTab._onSurfaceVar,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Filter Bottom Sheet ────────────────────────────────────────────────────────
+
+class _FilterSheet extends StatelessWidget {
+  final DiscoveryController discovery;
+  const _FilterSheet({required this.discovery});
+
+  static const _bg = Color(0xFF1A1E27);
+  static const _divider = Color(0xFF252B34);
+  static const _cyan = Color(0xFF00DBE9);
+  static const _onSurface = Color(0xFFE1E2EB);
+  static const _muted = Color(0xFF849495);
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.85,
+      maxChildSize: 0.95,
+      minChildSize: 0.5,
+      expand: false,
+      builder: (_, sc) => Container(
+        decoration: const BoxDecoration(
+          color: _bg,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: _muted, borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Filters',
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: _onSurface)),
+                  Obx(() => discovery.activeFilterCount > 0
+                      ? GestureDetector(
+                          onTap: () {
+                            discovery.clearFilters();
+                            Navigator.pop(context);
+                          },
+                          child: const Text('Reset All',
+                              style: TextStyle(
+                                  color: _cyan,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14)),
+                        )
+                      : const SizedBox.shrink()),
+                ],
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Divider(height: 1, color: _divider),
+            ),
+            Expanded(
+              child: ListView(
+                controller: sc,
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+                children: [
+                  _fsSection(
+                    'SORT BY',
+                    Obx(() => Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: SortBy.values
+                          .map((s) => _SheetChip(
+                                label: s.label,
+                                selected: discovery.sortBy.value == s,
+                                onTap: () => discovery.sortBy.value = s,
+                              ))
+                          .toList(),
+                    )),
+                  ),
+                  _fsSection(
+                    'SPORT TYPE',
+                    Obx(() => Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _SheetChip(
+                          label: 'All',
+                          selected: discovery.typeFilter.value == null,
+                          onTap: () => discovery.typeFilter.value = null,
+                        ),
+                        ...CourtType.values.map((t) => _SheetChip(
+                              label: t.label,
+                              selected: discovery.typeFilter.value == t,
+                              onTap: () => discovery.typeFilter.value =
+                                  discovery.typeFilter.value == t ? null : t,
+                            )),
+                      ],
+                    )),
+                  ),
+                  _fsSection(
+                    'SURFACE',
+                    Obx(() => Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _SheetChip(
+                          label: 'Any',
+                          selected: discovery.surfaceFilter.value == null,
+                          onTap: () => discovery.surfaceFilter.value = null,
+                        ),
+                        ...CourtSurface.values.map((s) => _SheetChip(
+                              label: s.label,
+                              selected: discovery.surfaceFilter.value == s,
+                              onTap: () => discovery.surfaceFilter.value =
+                                  discovery.surfaceFilter.value == s
+                                      ? null
+                                      : s,
+                            )),
+                      ],
+                    )),
+                  ),
+                  _fsSection(
+                    'MIN RATING',
+                    Obx(() => Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _SheetChip(
+                          label: 'Any',
+                          selected: discovery.minRating.value == 0,
+                          onTap: () => discovery.minRating.value = 0,
+                        ),
+                        ...[1, 2, 3, 4].map((r) => _SheetChip(
+                              label: '$r★+',
+                              selected:
+                                  discovery.minRating.value == r.toDouble(),
+                              onTap: () => discovery.minRating.value =
+                                  discovery.minRating.value == r.toDouble()
+                                      ? 0
+                                      : r.toDouble(),
+                            )),
+                      ],
+                    )),
+                  ),
+                  _fsSection(
+                    'MAX PRICE',
+                    Obx(() => Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Up to',
+                                style:
+                                    TextStyle(color: _muted, fontSize: 13)),
+                            Text(
+                              'PKR ${discovery.maxPrice.value.toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                  color: _cyan,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        SliderTheme(
+                          data: SliderThemeData(
+                            activeTrackColor: _cyan,
+                            inactiveTrackColor: _divider,
+                            thumbColor: _cyan,
+                            overlayColor:
+                                _cyan.withValues(alpha: 0.18),
+                            trackHeight: 3,
+                          ),
+                          child: Slider(
+                            value: discovery.maxPrice.value,
+                            min: 500,
+                            max: 10000,
+                            divisions: 19,
+                            onChanged: (v) =>
+                                discovery.maxPrice.value = v,
+                          ),
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: const [
+                            Text('PKR 500',
+                                style: TextStyle(
+                                    color: _muted, fontSize: 11)),
+                            Text('PKR 10,000',
+                                style: TextStyle(
+                                    color: _muted, fontSize: 11)),
+                          ],
+                        ),
+                      ],
+                    )),
+                  ),
+                  _fsSection(
+                    'AMENITIES',
+                    Obx(() => Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _SheetChip(
+                          label: 'Any',
+                          selected: discovery.amenityFilter.value == null,
+                          onTap: () => discovery.amenityFilter.value = null,
+                        ),
+                        ...CourtAmenity.values.map((a) => _SheetChip(
+                              label: a.label,
+                              selected: discovery.amenityFilter.value == a,
+                              onTap: () => discovery.amenityFilter.value =
+                                  discovery.amenityFilter.value == a
+                                      ? null
+                                      : a,
+                            )),
+                      ],
+                    )),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _fsSection(String title, Widget child) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+              color: _muted,
+            ),
+          ),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _SheetChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _SheetChip(
+      {required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? const Color(0xFF00DBE9)
+              : const Color(0xFF252B34),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: selected
+                ? const Color(0xFF002022)
+                : const Color(0xFFB9CACB),
           ),
         ),
       ),

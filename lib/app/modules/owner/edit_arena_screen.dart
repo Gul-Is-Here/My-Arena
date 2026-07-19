@@ -211,7 +211,9 @@ class EditArenaScreen extends StatelessWidget {
               fullscreenDialog: true,
             ),
           );
-          if (result != null) c.setLocation(result.latLng);
+          if (result != null) {
+            c.setLocation(result.latLng, address: result.address);
+          }
         },
         child: AppCard(
           padding: EdgeInsets.zero,
@@ -237,7 +239,9 @@ class EditArenaScreen extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text(
                   latLng != null
-                      ? '${latLng.latitude.toStringAsFixed(4)}, ${latLng.longitude.toStringAsFixed(4)}'
+                      ? (c.addressCtrl.text.isNotEmpty
+                          ? c.addressCtrl.text
+                          : 'Location selected — tap to change')
                       : 'Tap to pick location on map',
                   textAlign: TextAlign.center,
                   style: AppTextStyles.bodySmall
