@@ -8,17 +8,19 @@ import '../../data/models/user_model.dart';
 import '../../routes/app_routes.dart';
 import '../../services/auth_service.dart';
 import '../../services/booking_service.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_text_styles.dart';
 
-const _bg = Color(0xFF10131A);
-const _surface = Color(0xFF1D2026);
-const _surfaceLow = Color(0xFF191C22);
-const _outline = Color(0xFF3B494B);
-const _cyan = Color(0xFF00DBE9);
-const _greenFixed = Color(0xFF79FF5B);
-const _amber = Color(0xFFFFB59C);
-const _red = Color(0xFFFFB4AB);
-const _onSurface = Color(0xFFE1E2EB);
-const _onSurfaceVar = Color(0xFFB9CACB);
+const _bg = AppColors.background;
+const _surface = AppColors.surface;
+const _surfaceLow = AppColors.elevated;
+const _outline = AppColors.border;
+const _cyan = AppColors.primary;
+const _greenFixed = AppColors.success;
+const _amber = AppColors.warning;
+const _red = AppColors.error;
+const _onSurface = AppColors.textPrimary;
+const _onSurfaceVar = AppColors.textSecondary;
 
 const _months = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -96,9 +98,9 @@ class BookingDetailOwnerScreen extends StatelessWidget {
         child: Obx(() {
           final b = c.bookings.firstWhereOrNull((x) => x.id == id);
           if (b == null) {
-            return const Center(
+            return Center(
               child: Text('Booking not found',
-                  style: TextStyle(color: _onSurfaceVar)),
+                  style: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar)),
             );
           }
           final sColor = _statusColor(b.status);
@@ -150,9 +152,9 @@ class BookingDetailOwnerScreen extends StatelessWidget {
             onPressed: Get.back,
             icon: const Icon(Icons.arrow_back, color: _onSurface),
           ),
-          const Text(
+          Text(
             'Booking Details',
-            style: TextStyle(
+            style: AppTextStyles.titleLarge.copyWith(
                 color: _onSurface, fontSize: 19, fontWeight: FontWeight.w800),
           ),
           const Spacer(),
@@ -173,7 +175,7 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 Text(_statusLabel(b.status),
-                    style: TextStyle(
+                    style: AppTextStyles.caption.copyWith(
                         color: sColor, fontSize: 12, fontWeight: FontWeight.w700)),
               ],
             ),
@@ -225,13 +227,13 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                     ? Image.network(user!.avatar, fit: BoxFit.cover,
                         errorBuilder: (_, _, _) => Center(
                             child: Text(initials,
-                                style: const TextStyle(
+                                style: AppTextStyles.titleLarge.copyWith(
                                     color: _cyan,
                                     fontSize: 18,
                                     fontWeight: FontWeight.w800))))
                     : Center(
                         child: Text(initials,
-                            style: const TextStyle(
+                            style: AppTextStyles.titleLarge.copyWith(
                                 color: _cyan, fontSize: 18, fontWeight: FontWeight.w800)),
                       ),
               ),
@@ -241,7 +243,7 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(name,
-                        style: const TextStyle(
+                        style: AppTextStyles.titleLarge.copyWith(
                             color: _onSurface, fontSize: 17, fontWeight: FontWeight.w800)),
                     const SizedBox(height: 6),
                     if ((user?.phone.isNotEmpty ?? false)) ...[
@@ -250,7 +252,7 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                           const Icon(Icons.call_outlined, size: 14, color: _onSurfaceVar),
                           const SizedBox(width: 6),
                           Text(user!.phone,
-                              style: const TextStyle(color: _onSurfaceVar, fontSize: 13)),
+                              style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar, fontSize: 13)),
                         ],
                       ),
                       const SizedBox(height: 4),
@@ -258,10 +260,10 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                     if (user?.createdAt != null)
                       Row(
                         children: [
-                          const Icon(Icons.star, size: 13, color: _cyan),
+                          const Icon(Icons.star, size: 13, color: AppColors.primary),
                           const SizedBox(width: 6),
                           Text('Customer since ${_fmtMonthYear(user!.createdAt!)}',
-                              style: const TextStyle(
+                              style: AppTextStyles.label.copyWith(
                                   color: _cyan, fontSize: 12.5, fontWeight: FontWeight.w600)),
                         ],
                       ),
@@ -296,8 +298,8 @@ class BookingDetailOwnerScreen extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Summary',
-                  style: TextStyle(color: _onSurface, fontSize: 16, fontWeight: FontWeight.w800)),
+              Text('Summary',
+                  style: AppTextStyles.titleMedium.copyWith(color: _onSurface, fontWeight: FontWeight.w800)),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
@@ -306,8 +308,8 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                   border: Border.all(color: _outline),
                 ),
                 child: Text(b.bookedByRole == 'customer' ? 'Customer' : 'Walk-in',
-                    style: const TextStyle(
-                        color: _onSurfaceVar, fontSize: 11, fontWeight: FontWeight.w700)),
+                    style: AppTextStyles.caption.copyWith(
+                        color: _onSurfaceVar, fontWeight: FontWeight.w700)),
               ),
             ],
           ),
@@ -345,10 +347,10 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(label, style: const TextStyle(color: _onSurfaceVar, fontSize: 12)),
+                    Text(label, style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar, fontSize: 12)),
                     const SizedBox(height: 2),
                     Text(value,
-                        style: const TextStyle(
+                        style: AppTextStyles.titleMedium.copyWith(
                             color: _onSurface, fontSize: 14.5, fontWeight: FontWeight.w700)),
                   ],
                 ),
@@ -367,25 +369,25 @@ class BookingDetailOwnerScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Payment Info',
-              style: TextStyle(color: _onSurface, fontSize: 16, fontWeight: FontWeight.w800)),
+          Text('Payment Info',
+              style: AppTextStyles.titleMedium.copyWith(color: _onSurface, fontWeight: FontWeight.w800)),
           const SizedBox(height: 14),
           _amountRow('Subtotal', 'PKR ${b.totalAmount.toStringAsFixed(0)}'),
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.check_circle, size: 16, color: _greenFixed),
-                  SizedBox(width: 8),
+                  const Icon(Icons.check_circle, size: 16, color: _greenFixed),
+                  const SizedBox(width: 8),
                   Text('Deposit Paid',
-                      style: TextStyle(
-                          color: _greenFixed, fontSize: 14, fontWeight: FontWeight.w700)),
+                      style: AppTextStyles.bodyMedium.copyWith(
+                          color: _greenFixed, fontWeight: FontWeight.w700)),
                 ],
               ),
               Text('PKR ${b.depositAmount.toStringAsFixed(0)}',
-                  style: const TextStyle(
+                  style: AppTextStyles.titleMedium.copyWith(
                       color: _greenFixed, fontSize: 15, fontWeight: FontWeight.w800)),
             ],
           ),
@@ -397,8 +399,8 @@ class BookingDetailOwnerScreen extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Payment Status',
-                  style: TextStyle(color: _onSurfaceVar, fontSize: 13)),
+              Text('Payment Status',
+                  style: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar, fontSize: 13)),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
@@ -414,9 +416,8 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                         size: 13, color: hasScreenshot ? _cyan : _amber),
                     const SizedBox(width: 5),
                     Text(hasScreenshot ? 'Screenshot Uploaded' : 'Awaiting Screenshot',
-                        style: TextStyle(
+                        style: AppTextStyles.caption.copyWith(
                             color: hasScreenshot ? _cyan : _amber,
-                            fontSize: 11,
                             fontWeight: FontWeight.w700)),
                   ],
                 ),
@@ -431,9 +432,9 @@ class BookingDetailOwnerScreen extends StatelessWidget {
   Widget _amountRow(String label, String value) => Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: _onSurfaceVar, fontSize: 13.5)),
+          Text(label, style: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar, fontSize: 13.5)),
           Text(value,
-              style: const TextStyle(color: _onSurface, fontSize: 14.5, fontWeight: FontWeight.w700)),
+              style: AppTextStyles.titleMedium.copyWith(color: _onSurface, fontSize: 14.5, fontWeight: FontWeight.w700)),
         ],
       );
 
@@ -442,8 +443,8 @@ class BookingDetailOwnerScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Deposit Proof',
-              style: TextStyle(color: _onSurface, fontSize: 16, fontWeight: FontWeight.w800)),
+          Text('Deposit Proof',
+              style: AppTextStyles.titleMedium.copyWith(color: _onSurface, fontWeight: FontWeight.w800)),
           const SizedBox(height: 12),
           GestureDetector(
             onTap: () => _showScreenshot(context, b),
@@ -474,14 +475,14 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                       color: Colors.black.withValues(alpha: 0.55),
                       borderRadius: BorderRadius.circular(24),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.search, size: 16, color: Colors.white),
-                        SizedBox(width: 6),
+                        const Icon(Icons.search, size: 16, color: Colors.white),
+                        const SizedBox(width: 6),
                         Text('View Screenshot',
-                            style: TextStyle(
-                                color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+                            style: AppTextStyles.label.copyWith(
+                                color: Colors.white, fontWeight: FontWeight.w700)),
                       ],
                     ),
                   ),
@@ -500,8 +501,8 @@ class BookingDetailOwnerScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Cancellation & Refund',
-              style: TextStyle(color: _onSurface, fontSize: 16, fontWeight: FontWeight.w800)),
+          Text('Cancellation & Refund',
+              style: AppTextStyles.titleMedium.copyWith(color: _onSurface, fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
           _summaryRow(
               Icons.event_busy_outlined, 'Requested', _fmtDate(cx.requestedAt)),
@@ -530,7 +531,7 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
               icon: const Icon(Icons.close, size: 18),
-              label: const Text('Reject', style: TextStyle(fontWeight: FontWeight.w700)),
+              label: Text('Reject', style: AppTextStyles.button.copyWith(fontWeight: FontWeight.w700)),
             ),
           ),
           const SizedBox(width: 12),
@@ -560,8 +561,8 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
                 icon: const Icon(Icons.check_circle_outline, size: 18),
-                label: const Text('Approve Booking',
-                    style: TextStyle(fontWeight: FontWeight.w800)),
+                label: Text('Approve Booking',
+                    style: AppTextStyles.button.copyWith(fontWeight: FontWeight.w800)),
               ),
             ),
           ),
@@ -601,20 +602,20 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    const Text('Mark Refund Sent',
-                        style: TextStyle(color: _onSurface, fontSize: 18, fontWeight: FontWeight.w800)),
+                    Text('Mark Refund Sent',
+                        style: AppTextStyles.titleLarge.copyWith(color: _onSurface, fontSize: 18, fontWeight: FontWeight.w800)),
                     const SizedBox(height: 6),
                     Text(
                       'Enter your bank transfer reference so the customer can verify receipt.',
-                      style: const TextStyle(color: _onSurfaceVar, fontSize: 13),
+                      style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar, fontSize: 13),
                     ),
                     const SizedBox(height: 16),
                     TextField(
                       controller: refCtrl,
-                      style: const TextStyle(color: _onSurface),
+                      style: AppTextStyles.bodyMedium.copyWith(color: _onSurface),
                       decoration: InputDecoration(
                         hintText: 'e.g. TRN-20240712-001',
-                        hintStyle: const TextStyle(color: _onSurfaceVar),
+                        hintStyle: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar),
                         filled: true,
                         fillColor: _surface,
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _outline)),
@@ -640,12 +641,12 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                               backgroundColor: _surface, colorText: _greenFixed);
                         },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _cyan,
-                          foregroundColor: const Color(0xFF002022),
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.onPrimary,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
-                        child: const Text('Confirm Refund Sent', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                        child: Text('Confirm Refund Sent', style: AppTextStyles.button.copyWith(fontWeight: FontWeight.w800, fontSize: 15)),
                       ),
                     ),
                   ],
@@ -654,14 +655,14 @@ class BookingDetailOwnerScreen extends StatelessWidget {
             );
           },
           style: OutlinedButton.styleFrom(
-            foregroundColor: _cyan,
-            backgroundColor: _cyan.withValues(alpha: 0.08),
-            side: BorderSide(color: _cyan.withValues(alpha: 0.5)),
+            foregroundColor: AppColors.primary,
+            backgroundColor: AppColors.primary.withValues(alpha: 0.08),
+            side: BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
             padding: const EdgeInsets.symmetric(vertical: 14),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),
           icon: const Icon(Icons.currency_exchange, size: 18),
-          label: const Text('Mark Refund Sent', style: TextStyle(fontWeight: FontWeight.w700)),
+          label: Text('Mark Refund Sent', style: AppTextStyles.button.copyWith(fontWeight: FontWeight.w700)),
         ),
       ),
     );
@@ -675,8 +676,8 @@ class BookingDetailOwnerScreen extends StatelessWidget {
         child: OutlinedButton.icon(
           onPressed: () => Get.defaultDialog(
             backgroundColor: _surfaceLow,
-            titleStyle: const TextStyle(color: _onSurface, fontWeight: FontWeight.w800),
-            middleTextStyle: const TextStyle(color: _onSurfaceVar),
+            titleStyle: AppTextStyles.titleLarge.copyWith(color: _onSurface, fontWeight: FontWeight.w800),
+            middleTextStyle: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar),
             title: 'Mark as No-Show?',
             middleText: 'This will complete the booking and flag the customer as a no-show.',
             textCancel: 'Cancel',
@@ -697,7 +698,7 @@ class BookingDetailOwnerScreen extends StatelessWidget {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),
           icon: const Icon(Icons.person_off_outlined, size: 18),
-          label: const Text('Mark No-Show', style: TextStyle(fontWeight: FontWeight.w700)),
+          label: Text('Mark No-Show', style: AppTextStyles.button.copyWith(fontWeight: FontWeight.w700)),
         ),
       ),
     );
@@ -709,8 +710,8 @@ class BookingDetailOwnerScreen extends StatelessWidget {
     final name = b.customerName.isNotEmpty ? b.customerName : (user?.name ?? 'This customer');
     Get.defaultDialog(
       backgroundColor: _surfaceLow,
-      titleStyle: const TextStyle(color: _onSurface, fontWeight: FontWeight.w800),
-      middleTextStyle: const TextStyle(color: _onSurfaceVar),
+      titleStyle: AppTextStyles.titleLarge.copyWith(color: _onSurface, fontWeight: FontWeight.w800),
+      middleTextStyle: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar),
       title: 'Reject booking?',
       middleText: '$name\'s deposit will need to be refunded manually.',
       textCancel: 'Back',
@@ -744,8 +745,8 @@ class BookingDetailOwnerScreen extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('Deposit Screenshot',
-                  style: TextStyle(color: _onSurface, fontSize: 18, fontWeight: FontWeight.w800)),
+              Text('Deposit Screenshot',
+                  style: AppTextStyles.titleLarge.copyWith(color: _onSurface, fontSize: 18, fontWeight: FontWeight.w800)),
               const SizedBox(height: 16),
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
@@ -763,7 +764,7 @@ class BookingDetailOwnerScreen extends StatelessWidget {
               const SizedBox(height: 16),
               TextButton(
                 onPressed: Get.back,
-                child: const Text('Close', style: TextStyle(color: _cyan)),
+                child: Text('Close', style: AppTextStyles.label.copyWith(color: _onSurfaceVar)),
               ),
             ],
           ),

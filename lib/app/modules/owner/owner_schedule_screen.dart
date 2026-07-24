@@ -8,18 +8,20 @@ import '../../controllers/owner_schedule_controller.dart';
 import '../../data/models/booking_model.dart';
 import '../../data/models/court_model.dart';
 import '../../routes/app_routes.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_text_styles.dart';
 
-const _bg = Color(0xFF10131A);
-const _surface = Color(0xFF1D2026);
-const _surfaceLow = Color(0xFF191C22);
-const _outline = Color(0xFF3B494B);
-const _cyan = Color(0xFF00DBE9);
-const _blue = Color(0xFF3B82F6);
-const _green = Color(0xFF79FF5B);
-const _amber = Color(0xFFFFB59C);
-const _red = Color(0xFFFFB4AB);
-const _onSurface = Color(0xFFE1E2EB);
-const _onSurfaceVar = Color(0xFFB9CACB);
+const _bg = AppColors.background;
+const _surface = AppColors.surface;
+const _surfaceLow = AppColors.elevated;
+const _outline = AppColors.border;
+const _cyan = AppColors.secondary;
+const _green = AppColors.success;
+const _amber = AppColors.warning;
+const _red = AppColors.error;
+const _onSurface = AppColors.textPrimary;
+const _onSurfaceVar = AppColors.textSecondary;
+const _onFixed = AppColors.onPrimary;
 
 /// Day schedule grid — rows are the selected arena's courts, columns are
 /// hours. Tap a booked cell for details, an empty cell to block it, a
@@ -43,8 +45,8 @@ class OwnerScheduleScreen extends StatelessWidget {
         backgroundColor: _bg,
         elevation: 0,
         iconTheme: const IconThemeData(color: _onSurface),
-        title: const Text('Day Schedule',
-            style: TextStyle(
+        title: Text('Day Schedule',
+            style: AppTextStyles.titleLarge.copyWith(
                 color: _onSurface, fontSize: 20, fontWeight: FontWeight.w800)),
         actions: [
           Padding(
@@ -56,9 +58,9 @@ class OwnerScheduleScreen extends StatelessWidget {
       body: Obx(() {
         final arenas = OwnerController.to.myArenas;
         if (arenas.isEmpty) {
-          return const Center(
+          return Center(
             child: Text('No arenas yet',
-                style: TextStyle(color: _onSurfaceVar, fontSize: 14)),
+                style: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar, fontSize: 14)),
           );
         }
         return ListView(
@@ -128,14 +130,14 @@ class _ArenaSelector extends StatelessWidget {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
                     decoration: BoxDecoration(
-                      color: selected ? _cyan : Colors.transparent,
+                      color: selected ? AppColors.primary : Colors.transparent,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: selected ? _cyan : _outline),
+                      border: Border.all(color: selected ? AppColors.primary : _outline),
                     ),
                     child: Text(
                       a.name.toUpperCase(),
-                      style: TextStyle(
-                        color: selected ? const Color(0xFF0B0E14) : _onSurfaceVar,
+                      style: AppTextStyles.label.copyWith(
+                        color: selected ? AppColors.onPrimary : _onSurfaceVar,
                         fontWeight: FontWeight.w800,
                         fontSize: 12.5,
                         letterSpacing: 0.4,
@@ -187,24 +189,24 @@ class _DateCard extends StatelessWidget {
                   width: 52,
                   margin: const EdgeInsets.symmetric(horizontal: 4),
                   decoration: BoxDecoration(
-                    color: selected ? _blue : Colors.transparent,
+                    color: selected ? AppColors.primary : Colors.transparent,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(_days[d.weekday - 1].toUpperCase(),
-                          style: TextStyle(
+                          style: AppTextStyles.caption.copyWith(
                               fontSize: 10.5,
                               fontWeight: FontWeight.w700,
                               letterSpacing: 0.3,
-                              color: selected ? Colors.white : _onSurfaceVar)),
+                              color: selected ? AppColors.onPrimary : _onSurfaceVar)),
                       const SizedBox(height: 4),
                       Text('${d.day}',
-                          style: TextStyle(
+                          style: AppTextStyles.titleLarge.copyWith(
                               fontSize: 18,
                               fontWeight: FontWeight.w800,
-                              color: selected ? Colors.white : _onSurface)),
+                              color: selected ? AppColors.onPrimary : _onSurface)),
                     ],
                   ),
                 ),
@@ -235,7 +237,7 @@ class _Legend extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Text(label,
-                style: const TextStyle(
+                style: AppTextStyles.caption.copyWith(
                     color: _onSurfaceVar,
                     fontSize: 11.5,
                     fontWeight: FontWeight.w600)),
@@ -246,7 +248,7 @@ class _Legend extends StatelessWidget {
       runSpacing: 8,
       children: [
         dot(_green, 'Booked'),
-        dot(_cyan, 'Pending'),
+        dot(_amber, 'Pending'),
         dot(_red, 'Blocked'),
         dot(_outline, 'Free'),
       ],
@@ -297,9 +299,9 @@ class _GridCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: _outline),
           ),
-          child: const Center(
+          child: Center(
             child: Text('No active courts in this arena',
-                style: TextStyle(color: _onSurfaceVar, fontSize: 14)),
+                style: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar, fontSize: 14)),
           ),
         );
       }
@@ -318,10 +320,10 @@ class _GridCard extends StatelessWidget {
               // Header row
               Row(
                 children: [
-                  const SizedBox(
+                  SizedBox(
                     width: _nameW,
                     child: Text('FACILITY',
-                        style: TextStyle(
+                        style: AppTextStyles.caption.copyWith(
                             color: _onSurfaceVar,
                             fontSize: 10.5,
                             fontWeight: FontWeight.w800,
@@ -332,7 +334,7 @@ class _GridCard extends StatelessWidget {
                         child: Text(
                           '${(h % 24).toString().padLeft(2, '0')}:00',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
+                          style: AppTextStyles.caption.copyWith(
                               color: _onSurfaceVar,
                               fontSize: 10.5,
                               fontWeight: FontWeight.w800),
@@ -375,7 +377,7 @@ class _GridCard extends StatelessWidget {
                               courts[i].name,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: AppTextStyles.bodyMedium.copyWith(
                                   color: _onSurface,
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.w700),
@@ -426,9 +428,9 @@ class _Cell extends StatelessWidget {
         child = Icon(Icons.check, size: 14, color: _green.withValues(alpha: 0.7));
         break;
       case ScheduleCellStatus.pending:
-        fill = _cyan.withValues(alpha: 0.18);
-        border = _cyan;
-        child = const Icon(Icons.hourglass_bottom, size: 14, color: _cyan);
+        fill = _amber.withValues(alpha: 0.18);
+        border = _amber;
+        child = const Icon(Icons.hourglass_bottom, size: 14, color: _amber);
         break;
       case ScheduleCellStatus.blocked:
         fill = _red.withValues(alpha: 0.18);
@@ -489,14 +491,14 @@ class _Cell extends StatelessWidget {
     Get.defaultDialog(
       backgroundColor: _surfaceLow,
       titleStyle:
-          const TextStyle(color: _onSurface, fontWeight: FontWeight.w800),
-      middleTextStyle: const TextStyle(color: _onSurfaceVar),
+          AppTextStyles.titleMedium.copyWith(color: _onSurface, fontWeight: FontWeight.w800),
+      middleTextStyle: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar),
       title: 'Block this slot?',
       middleText:
           '${court.name}\n$_hourLabel\n\nCustomers won\'t be able to book it.',
       textCancel: 'Cancel',
       textConfirm: 'Block',
-      confirmTextColor: const Color(0xFF0B0E14),
+      confirmTextColor: _onFixed,
       buttonColor: _amber,
       cancelTextColor: _onSurfaceVar,
       onConfirm: () {
@@ -514,13 +516,13 @@ class _Cell extends StatelessWidget {
     Get.defaultDialog(
       backgroundColor: _surfaceLow,
       titleStyle:
-          const TextStyle(color: _onSurface, fontWeight: FontWeight.w800),
-      middleTextStyle: const TextStyle(color: _onSurfaceVar),
+          AppTextStyles.titleMedium.copyWith(color: _onSurface, fontWeight: FontWeight.w800),
+      middleTextStyle: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar),
       title: 'Unblock this slot?',
       middleText: '${court.name}\n$_hourLabel',
       textCancel: 'Cancel',
       textConfirm: 'Unblock',
-      confirmTextColor: const Color(0xFF0B0E14),
+      confirmTextColor: _onFixed,
       buttonColor: _green,
       cancelTextColor: _onSurfaceVar,
       onConfirm: () {
@@ -541,7 +543,15 @@ class _Cell extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => Padding(
+      builder: (_) {
+        final badgeColor = (b.status == BookingStatus.confirmed || b.status == BookingStatus.completed)
+            ? _green
+            : (b.status == BookingStatus.pendingDeposit || b.status == BookingStatus.depositSubmitted)
+                ? _amber
+                : (b.status == BookingStatus.cancelled || b.status == BookingStatus.rejected)
+                    ? _red
+                    : _onSurfaceVar;
+        return Padding(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -552,7 +562,7 @@ class _Cell extends StatelessWidget {
                 Expanded(
                   child: Text(
                     b.customerName.isNotEmpty ? b.customerName : 'Customer',
-                    style: const TextStyle(
+                    style: AppTextStyles.titleMedium.copyWith(
                         color: _onSurface,
                         fontSize: 17,
                         fontWeight: FontWeight.w800),
@@ -562,32 +572,32 @@ class _Cell extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: _cyan.withValues(alpha: 0.14),
+                    color: badgeColor.withValues(alpha: 0.14),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(b.status.label.toUpperCase(),
-                      style: const TextStyle(
+                      style: AppTextStyles.caption.copyWith(
                           fontSize: 10,
-                          color: _cyan,
+                          color: badgeColor,
                           fontWeight: FontWeight.w800)),
                 ),
               ],
             ),
             const SizedBox(height: 8),
             Text('${b.courtName} · ${b.timeRange} · ${b.totalHours}h',
-                style: const TextStyle(color: _onSurfaceVar, fontSize: 13.5)),
+                style: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar, fontSize: 13.5)),
             const SizedBox(height: 4),
             Text('PKR ${b.totalAmount.toStringAsFixed(0)}',
-                style: const TextStyle(
-                    color: _cyan, fontSize: 16, fontWeight: FontWeight.w800)),
+                style: AppTextStyles.scoreboard.copyWith(
+                    color: _onSurface, fontSize: 16, fontWeight: FontWeight.w800)),
             if (b.checkedIn) ...[
               const SizedBox(height: 6),
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.login, size: 15, color: _green),
-                  SizedBox(width: 6),
+                  const Icon(Icons.login, size: 15, color: _green),
+                  const SizedBox(width: 6),
                   Text('Checked in',
-                      style: TextStyle(color: _green, fontSize: 12.5)),
+                      style: AppTextStyles.bodySmall.copyWith(color: _green, fontSize: 12.5)),
                 ],
               ),
             ],
@@ -600,19 +610,20 @@ class _Cell extends StatelessWidget {
                   Get.toNamed(AppRoutes.bookingDetailOwner, arguments: b.id);
                 },
                 style: FilledButton.styleFrom(
-                  backgroundColor: _cyan,
-                  foregroundColor: const Color(0xFF0B0E14),
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: AppColors.onPrimary,
                   padding: const EdgeInsets.symmetric(vertical: 13),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),
-                child: const Text('View Booking',
-                    style: TextStyle(fontWeight: FontWeight.w800)),
+                child: Text('View Booking',
+                    style: AppTextStyles.button.copyWith(fontWeight: FontWeight.w800)),
               ),
             ),
           ],
         ),
-      ),
+      );
+      },
     );
   }
 }
@@ -652,8 +663,8 @@ class _OccupancyCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('OCCUPANCY RATE',
-                          style: TextStyle(
+                      Text('OCCUPANCY RATE',
+                          style: AppTextStyles.label.copyWith(
                               color: _onSurface,
                               fontSize: 13,
                               fontWeight: FontWeight.w800,
@@ -663,7 +674,7 @@ class _OccupancyCard extends StatelessWidget {
                         total > 0
                             ? '$occupied of $total hourly slots booked'
                             : 'No operating slots today',
-                        style: const TextStyle(
+                        style: AppTextStyles.bodySmall.copyWith(
                             color: _onSurfaceVar, fontSize: 12),
                       ),
                     ],
@@ -682,8 +693,8 @@ class _OccupancyCard extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             Text('${(rate * 100).round()}%',
-                style: const TextStyle(
-                    color: _cyan, fontSize: 34, fontWeight: FontWeight.w800)),
+                style: AppTextStyles.scoreboardMedium.copyWith(
+                    color: AppColors.primary, fontSize: 34, fontWeight: FontWeight.w800)),
             const SizedBox(height: 10),
             ClipRRect(
               borderRadius: BorderRadius.circular(20),
@@ -691,7 +702,7 @@ class _OccupancyCard extends StatelessWidget {
                 value: rate.clamp(0, 1),
                 minHeight: 8,
                 backgroundColor: _outline.withValues(alpha: 0.4),
-                valueColor: const AlwaysStoppedAnimation(_cyan),
+                valueColor: const AlwaysStoppedAnimation(AppColors.primary),
               ),
             ),
           ],

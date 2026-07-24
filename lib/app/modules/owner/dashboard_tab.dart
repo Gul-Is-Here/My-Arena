@@ -9,17 +9,19 @@ import '../../controllers/owner_booking_controller.dart';
 import '../../controllers/owner_controller.dart';
 import '../../data/models/booking_model.dart';
 import '../../routes/app_routes.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_text_styles.dart';
 
-const _bg = Color(0xFF10131A);
-const _surface = Color(0xFF1D2026);
-const _surfaceLow = Color(0xFF191C22);
-const _outline = Color(0xFF3B494B);
-const _cyan = Color(0xFF00DBE9);
-const _greenFixed = Color(0xFF79FF5B);
-const _amber = Color(0xFFFFB59C);
-const _red = Color(0xFFFFB4AB);
-const _onSurface = Color(0xFFE1E2EB);
-const _onSurfaceVar = Color(0xFFB9CACB);
+const _bg = AppColors.background;
+const _surface = AppColors.surface;
+const _surfaceLow = AppColors.elevated;
+const _outline = AppColors.border;
+const _cyan = AppColors.secondary;
+const _greenFixed = AppColors.success;
+const _amber = AppColors.warning;
+const _red = AppColors.error;
+const _onSurface = AppColors.textPrimary;
+const _onSurfaceVar = AppColors.textSecondary;
 
 final _pkr = NumberFormat('#,##0');
 
@@ -117,10 +119,10 @@ class DashboardTab extends StatelessWidget {
             const SizedBox(height: 20),
             _buildQuickActions(),
             const SizedBox(height: 24),
-            const Text(
+            Text(
               'Recent Activity',
-              style: TextStyle(
-                  color: _onSurface, fontSize: 18, fontWeight: FontWeight.w800),
+              style: AppTextStyles.titleLarge.copyWith(
+                  color: _onSurface, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 12),
             _buildRecentActivity(ownerBookings),
@@ -161,7 +163,7 @@ class DashboardTab extends StatelessWidget {
                         '${_greeting()}, ${u?.name.isNotEmpty == true ? u!.name.split(' ').first : 'there'}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: AppTextStyles.titleLarge.copyWith(
                           color: _onSurface,
                           fontSize: 19,
                           fontWeight: FontWeight.w800,
@@ -173,9 +175,10 @@ class DashboardTab extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 2),
-                const Text(
+                Text(
                   "Here's your arena summary",
-                  style: TextStyle(color: _onSurfaceVar, fontSize: 13),
+                  style: AppTextStyles.bodySmall.copyWith(
+                      color: _onSurfaceVar, fontSize: 13),
                 ),
               ],
             ),
@@ -206,13 +209,13 @@ class DashboardTab extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 5, vertical: 2),
                         decoration: BoxDecoration(
-                          color: _cyan,
+                          color: AppColors.error,
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
                           unread > 9 ? '9+' : '$unread',
-                          style: const TextStyle(
-                            color: Color(0xFF002022),
+                          style: AppTextStyles.caption.copyWith(
+                            color: Colors.white,
                             fontSize: 10,
                             fontWeight: FontWeight.w800,
                           ),
@@ -275,7 +278,7 @@ class DashboardTab extends StatelessWidget {
                       ),
                       child: Text(
                         badge,
-                        style: const TextStyle(
+                        style: AppTextStyles.caption.copyWith(
                           color: _amber,
                           fontSize: 9,
                           fontWeight: FontWeight.w800,
@@ -293,7 +296,8 @@ class DashboardTab extends StatelessWidget {
                     label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: _onSurfaceVar, fontSize: 12),
+                    style: AppTextStyles.bodySmall.copyWith(
+                        color: _onSurfaceVar, fontSize: 12),
                   ),
                   const SizedBox(height: 2),
                   FittedBox(
@@ -301,7 +305,7 @@ class DashboardTab extends StatelessWidget {
                     alignment: Alignment.centerLeft,
                     child: Text(
                       value,
-                      style: const TextStyle(
+                      style: AppTextStyles.headlineMedium.copyWith(
                         color: _onSurface,
                         fontSize: 22,
                         fontWeight: FontWeight.w800,
@@ -333,16 +337,16 @@ class DashboardTab extends StatelessWidget {
             final total = points.fold(0.0, (a, b) => a + b);
             return Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Revenue Overview',
-                    style: TextStyle(
+                    style: AppTextStyles.titleMedium.copyWith(
                         color: _onSurface, fontSize: 16, fontWeight: FontWeight.w800),
                   ),
                 ),
                 Text(
                   'PKR ${_pkr.format(total)}',
-                  style: const TextStyle(
+                  style: AppTextStyles.scoreboard.copyWith(
                       color: _greenFixed, fontSize: 14, fontWeight: FontWeight.w800),
                 ),
               ],
@@ -408,7 +412,7 @@ class DashboardTab extends StatelessWidget {
                             padding: const EdgeInsets.only(top: 6),
                             child: Text(
                               labels[i],
-                              style: const TextStyle(
+                              style: AppTextStyles.caption.copyWith(
                                   color: _onSurfaceVar, fontSize: 11),
                             ),
                           );
@@ -426,8 +430,8 @@ class DashboardTab extends StatelessWidget {
                       getTooltipColor: (_) => _surface,
                       getTooltipItems: (spots) => spots.map((s) => LineTooltipItem(
                         'PKR ${_pkr.format(s.y)}',
-                        const TextStyle(
-                            color: _cyan, fontSize: 12, fontWeight: FontWeight.w700),
+                        AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w700),
                       )).toList(),
                     ),
                   ),
@@ -439,7 +443,7 @@ class DashboardTab extends StatelessWidget {
                       ],
                       isCurved: true,
                       barWidth: 3,
-                      color: _cyan,
+                      color: AppColors.primary,
                       dotData: FlDotData(
                         show: true,
                         checkToShowDot: (spot, data) =>
@@ -452,7 +456,7 @@ class DashboardTab extends StatelessWidget {
                         ),
                       ),
                       shadow: Shadow(
-                        color: _cyan.withValues(alpha: 0.6),
+                        color: AppColors.primary.withValues(alpha: 0.5),
                         blurRadius: 8,
                       ),
                       belowBarData: BarAreaData(
@@ -461,8 +465,8 @@ class DashboardTab extends StatelessWidget {
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            _cyan.withValues(alpha: 0.22),
-                            _cyan.withValues(alpha: 0.0),
+                            AppColors.primary.withValues(alpha: 0.18),
+                            AppColors.primary.withValues(alpha: 0.0),
                           ],
                         ),
                       ),
@@ -484,13 +488,13 @@ class DashboardTab extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: selected ? _cyan.withValues(alpha: 0.18) : Colors.transparent,
+          color: selected ? AppColors.primary.withValues(alpha: 0.12) : Colors.transparent,
           borderRadius: BorderRadius.circular(18),
         ),
         child: Text(
           label,
-          style: TextStyle(
-            color: selected ? _cyan : _onSurfaceVar,
+          style: AppTextStyles.bodySmall.copyWith(
+            color: selected ? AppColors.primary : _onSurfaceVar,
             fontSize: 12,
             fontWeight: FontWeight.w700,
           ),
@@ -505,7 +509,7 @@ class DashboardTab extends StatelessWidget {
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
-          _quickAction(Icons.stadium_outlined, 'My Arenas', _cyan,
+          _quickAction(Icons.stadium_outlined, 'My Arenas', AppColors.primary,
               () => Get.toNamed(AppRoutes.myArenas)),
           const SizedBox(width: 10),
           _quickAction(Icons.assignment_outlined, 'Bookings', _greenFixed,
@@ -542,7 +546,7 @@ class DashboardTab extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 label,
-                style: const TextStyle(
+                style: AppTextStyles.bodySmall.copyWith(
                     color: _onSurface, fontSize: 13, fontWeight: FontWeight.w700),
               ),
             ],
@@ -556,8 +560,8 @@ class DashboardTab extends StatelessWidget {
     return Obx(() {
       final recent = ownerBookings.all.take(5).toList();
       if (recent.isEmpty) {
-        return const Text('No recent bookings',
-            style: TextStyle(color: _onSurfaceVar));
+        return Text('No recent bookings',
+            style: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar));
       }
       return Column(
         children: recent
@@ -650,13 +654,13 @@ class DashboardTab extends StatelessWidget {
                   '${b.courtName} booked by ${b.customerName.isNotEmpty ? b.customerName : 'Guest'}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: AppTextStyles.bodySmall.copyWith(
                       color: _onSurface, fontSize: 13.5, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   _dayLabel(b.startDateTime),
-                  style: const TextStyle(color: _onSurfaceVar, fontSize: 11.5),
+                  style: AppTextStyles.caption.copyWith(color: _onSurfaceVar, fontSize: 11.5),
                 ),
               ],
             ),
@@ -680,7 +684,7 @@ class DashboardTab extends StatelessWidget {
                 const SizedBox(width: 5),
                 Text(
                   b.status.label,
-                  style: TextStyle(
+                  style: AppTextStyles.caption.copyWith(
                       color: color, fontSize: 11, fontWeight: FontWeight.w700),
                 ),
               ],

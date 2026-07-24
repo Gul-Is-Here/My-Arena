@@ -6,19 +6,20 @@ import 'package:get/get.dart';
 import '../controllers/auth_controller.dart';
 import '../data/models/user_model.dart';
 import '../routes/app_routes.dart';
+import '../theme/app_colors.dart';
 import '../theme/theme_controller.dart';
 
 // ── Design tokens (Arena Command dark glass theme) ────────────────────────
-const _bg = Color(0xFF0B0E14);
-const _surfaceHighest = Color(0xFF32353C);
-const _outline = Color(0xFF3B494B);
-const _cyan = Color(0xFF00DBE9);
-const _cyanDim = Color(0xFF7DF4FF);
-const _green = Color(0xFF79FF5B);
-const _onSurface = Color(0xFFE1E2EB);
-const _onSurfaceVar = Color(0xFFB9CACB);
-const _red = Color(0xFFFFB4AB);
-const _redContainer = Color(0xFF93000A);
+const _bg = AppColors.background;
+const _surfaceHighest = AppColors.elevated;
+const _outline = AppColors.border;
+const _cyan = AppColors.primary;
+const _cyanDim = AppColors.primary;
+const _green = AppColors.success;
+const _onSurface = AppColors.textPrimary;
+const _onSurfaceVar = AppColors.textSecondary;
+const _red = AppColors.error;
+const _redContainer = AppColors.error;
 
 /// Profile tab shared by all role shells: user info, theme toggle, sign out.
 /// Dark liquid-glass design matching the Arena Command bookings tab.
@@ -200,7 +201,7 @@ class ProfileTab extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1D2026),
+      backgroundColor: AppColors.elevated,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -254,13 +255,13 @@ class ProfileTab extends StatelessWidget {
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _cyan,
-                  foregroundColor: const Color(0xFF002022),
+                  foregroundColor: AppColors.onPrimary,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
                 child: saving.value
                     ? const SizedBox(width: 20, height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF002022)))
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.onPrimary))
                     : const Text('Save', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
               ),
             )),
@@ -274,7 +275,7 @@ class ProfileTab extends StatelessWidget {
     hintText: hint,
     hintStyle: const TextStyle(color: _onSurfaceVar),
     filled: true,
-    fillColor: const Color(0xFF10131A),
+    fillColor: AppColors.background,
     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _outline)),
     enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _outline)),
     focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _cyan)),
@@ -324,7 +325,7 @@ class _AvatarState extends State<_Avatar>
                 height: 112,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: const Color(0xFF252A34).withValues(alpha: 0.5),
+                  color: AppColors.elevated.withValues(alpha: 0.5),
                   border: Border.all(
                     color: _cyan.withValues(alpha: 0.25),
                   ),
@@ -376,7 +377,7 @@ class _GlassCard extends StatelessWidget {
         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1D23).withValues(alpha: 0.6),
+            color: AppColors.surface.withValues(alpha: 0.6),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: borderColor ?? Colors.white.withValues(alpha: 0.05),

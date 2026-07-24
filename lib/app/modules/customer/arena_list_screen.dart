@@ -5,6 +5,8 @@ import '../../controllers/discovery_controller.dart';
 import '../../data/models/arena_model.dart';
 import '../../data/models/court_model.dart';
 import '../../routes/app_routes.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_text_styles.dart';
 import '../../widgets/arena_image.dart';
 import 'arena_map_view_screen.dart';
 import 'home_tab.dart' show showDiscoveryFilterSheet;
@@ -12,20 +14,11 @@ import 'home_tab.dart' show showDiscoveryFilterSheet;
 class ArenaListScreen extends StatelessWidget {
   const ArenaListScreen({super.key});
 
-  // Palette tuned to the deep-navy discovery design
-  static const bg = Color(0xFF0A1120);
-  static const surface = Color(0xFF121B2E);
-  static const surfaceHigh = Color(0xFF1A2440);
-  static const outline = Color(0xFF223052);
-  static const blue = Color(0xFF2979FF);
-  static const green = Color(0xFF00E676);
-  static const grey = Color(0xFF8A94A6);
-
   @override
   Widget build(BuildContext context) {
     final discovery = DiscoveryController.to;
     return Scaffold(
-      backgroundColor: bg,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
@@ -45,7 +38,7 @@ class ArenaListScreen extends StatelessWidget {
   }
 }
 
-// ── Header: back • title • radius • map toggle ───────────────────────────────
+// ── Header ───────────────────────────────────────────────────────────────────
 
 class _Header extends StatelessWidget {
   final DiscoveryController discovery;
@@ -53,40 +46,27 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Row(
         children: [
-          _SquareButton(
-            icon: Icons.arrow_back,
-            iconColor: ArenaListScreen.blue,
-            onTap: Get.back,
-          ),
+          _SquareButton(icon: Icons.arrow_back, onTap: Get.back),
           const SizedBox(width: 14),
-          const Expanded(
-            child: Text(
-              'Find Arenas',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
+          Expanded(
+            child: Text('Find Arenas',
+                style: AppTextStyles.headlineMedium.copyWith(color: onSurface)),
           ),
           Obx(() => Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                 decoration: BoxDecoration(
-                  color: ArenaListScreen.blue,
+                  color: AppColors.secondary,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
                   '${discovery.searchRadius.value.toStringAsFixed(0)}km',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: AppTextStyles.label.copyWith(color: Colors.white),
                 ),
               )),
           const SizedBox(width: 10),
@@ -94,7 +74,6 @@ class _Header extends StatelessWidget {
                 icon: discovery.isMapView.value
                     ? Icons.format_list_bulleted
                     : Icons.map_outlined,
-                iconColor: ArenaListScreen.blue,
                 onTap: discovery.toggleMapView,
               )),
         ],
@@ -105,13 +84,8 @@ class _Header extends StatelessWidget {
 
 class _SquareButton extends StatelessWidget {
   final IconData icon;
-  final Color iconColor;
   final VoidCallback onTap;
-  const _SquareButton({
-    required this.icon,
-    required this.iconColor,
-    required this.onTap,
-  });
+  const _SquareButton({required this.icon, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -121,16 +95,16 @@ class _SquareButton extends StatelessWidget {
         width: 44,
         height: 44,
         decoration: BoxDecoration(
-          color: ArenaListScreen.surfaceHigh,
+          color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(14),
         ),
-        child: Icon(icon, color: iconColor, size: 22),
+        child: Icon(icon, color: AppColors.secondary, size: 22),
       ),
     );
   }
 }
 
-// ── List body: search • chips • count/sort • grid ────────────────────────────
+// ── List body ────────────────────────────────────────────────────────────────
 
 class _ListBody extends StatelessWidget {
   final DiscoveryController discovery;
@@ -138,6 +112,7 @@ class _ListBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final muted = Theme.of(context).textTheme.bodySmall?.color;
     return Column(
       children: [
         Padding(
@@ -154,10 +129,7 @@ class _ListBody extends StatelessWidget {
               Expanded(
                 child: Obx(() => Text(
                       '${discovery.nearby.length} arenas found nearby',
-                      style: const TextStyle(
-                        color: ArenaListScreen.grey,
-                        fontSize: 14,
-                      ),
+                      style: AppTextStyles.bodySmall.copyWith(color: muted),
                     )),
               ),
               _SortButton(discovery: discovery),
@@ -169,7 +141,7 @@ class _ListBody extends StatelessWidget {
           child: Obx(() {
             if (discovery.isLoading.value) {
               return const Center(
-                child: CircularProgressIndicator(color: ArenaListScreen.blue),
+                child: CircularProgressIndicator(color: AppColors.secondary),
               );
             }
             final list = discovery.nearby;
@@ -194,7 +166,7 @@ class _ListBody extends StatelessWidget {
   }
 }
 
-// ── Search field with filter button ──────────────────────────────────────────
+// ── Search field ─────────────────────────────────────────────────────────────
 
 class _SearchField extends StatelessWidget {
   final DiscoveryController discovery;
@@ -202,28 +174,30 @@ class _SearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+    final muted = theme.textTheme.bodySmall?.color;
     return Container(
       height: 52,
       padding: const EdgeInsets.only(left: 16, right: 8),
       decoration: BoxDecoration(
-        color: ArenaListScreen.surface,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: ArenaListScreen.outline),
+        border: Border.all(color: theme.dividerTheme.color ?? AppColors.border),
       ),
       child: Row(
         children: [
-          const Icon(Icons.search, color: ArenaListScreen.grey, size: 22),
+          Icon(Icons.search, color: muted, size: 22),
           const SizedBox(width: 10),
           Expanded(
             child: TextField(
               onChanged: (v) => discovery.searchQuery.value = v,
-              style: const TextStyle(color: Colors.white, fontSize: 15),
-              cursorColor: ArenaListScreen.blue,
-              decoration: const InputDecoration(
+              style: AppTextStyles.bodyMedium.copyWith(color: onSurface),
+              cursorColor: AppColors.secondary,
+              decoration: InputDecoration(
                 isDense: true,
                 hintText: 'Search arenas…',
-                hintStyle:
-                    TextStyle(color: ArenaListScreen.grey, fontSize: 15),
+                hintStyle: AppTextStyles.bodyMedium.copyWith(color: muted),
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
@@ -238,7 +212,7 @@ class _SearchField extends StatelessWidget {
               width: 38,
               height: 38,
               decoration: BoxDecoration(
-                color: ArenaListScreen.surfaceHigh,
+                color: theme.scaffoldBackgroundColor,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Obx(() => Stack(
@@ -246,7 +220,7 @@ class _SearchField extends StatelessWidget {
                     alignment: Alignment.center,
                     children: [
                       const Icon(Icons.tune,
-                          color: ArenaListScreen.blue, size: 20),
+                          color: AppColors.secondary, size: 20),
                       if (discovery.activeFilterCount > 0)
                         Positioned(
                           top: 4,
@@ -255,7 +229,7 @@ class _SearchField extends StatelessWidget {
                             width: 8,
                             height: 8,
                             decoration: const BoxDecoration(
-                              color: ArenaListScreen.green,
+                              color: AppColors.success,
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -270,7 +244,7 @@ class _SearchField extends StatelessWidget {
   }
 }
 
-// ── Sport type chips ─────────────────────────────────────────────────────────
+// ── Sport chips ───────────────────────────────────────────────────────────────
 
 class _SportChipsRow extends StatelessWidget {
   final DiscoveryController discovery;
@@ -339,26 +313,24 @@ class _SportChip extends StatelessWidget {
         margin: const EdgeInsets.only(right: 10),
         padding: const EdgeInsets.symmetric(horizontal: 16),
         decoration: BoxDecoration(
-          color: selected ? ArenaListScreen.blue : Colors.transparent,
+          color: selected ? AppColors.primary : Colors.transparent,
           borderRadius: BorderRadius.circular(22),
           border: Border.all(
             color: selected
-                ? ArenaListScreen.blue
-                : ArenaListScreen.blue.withValues(alpha: 0.45),
+                ? AppColors.primary
+                : AppColors.secondary.withValues(alpha: 0.45),
           ),
         ),
         child: Row(
           children: [
             Icon(icon,
                 size: 17,
-                color: selected ? Colors.white : ArenaListScreen.blue),
+                color: selected ? AppColors.onPrimary : AppColors.secondary),
             const SizedBox(width: 6),
             Text(
               label,
-              style: TextStyle(
-                color: selected ? Colors.white : ArenaListScreen.blue,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
+              style: AppTextStyles.label.copyWith(
+                color: selected ? AppColors.onPrimary : AppColors.secondary,
               ),
             ),
           ],
@@ -368,7 +340,7 @@ class _SportChip extends StatelessWidget {
   }
 }
 
-// ── Sort button + sheet ──────────────────────────────────────────────────────
+// ── Sort button ───────────────────────────────────────────────────────────────
 
 class _SortButton extends StatelessWidget {
   final DiscoveryController discovery;
@@ -376,27 +348,24 @@ class _SortButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return GestureDetector(
       onTap: () => _showSortSheet(context),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: ArenaListScreen.surface,
+          color: theme.cardColor,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: ArenaListScreen.outline),
+          border: Border.all(color: theme.dividerTheme.color ?? AppColors.border),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            Text(
-              'Sort',
-              style: TextStyle(
-                color: ArenaListScreen.blue,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            SizedBox(width: 4),
-            Icon(Icons.unfold_more, color: ArenaListScreen.blue, size: 16),
+            Text('Sort',
+                style: AppTextStyles.label
+                    .copyWith(color: AppColors.secondary)),
+            const SizedBox(width: 4),
+            const Icon(Icons.unfold_more,
+                color: AppColors.secondary, size: 16),
           ],
         ),
       ),
@@ -404,9 +373,11 @@ class _SortButton extends StatelessWidget {
   }
 
   void _showSortSheet(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
     showModalBottomSheet(
       context: context,
-      backgroundColor: ArenaListScreen.surface,
+      backgroundColor: theme.cardColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -422,20 +393,14 @@ class _SortButton extends StatelessWidget {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: ArenaListScreen.outline,
+                    color: theme.dividerTheme.color ?? AppColors.border,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
               const SizedBox(height: 16),
-              const Text(
-                'Sort by',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+              Text('Sort by',
+                  style: AppTextStyles.titleLarge.copyWith(color: onSurface)),
               const SizedBox(height: 8),
               ...SortBy.values.map(
                 (s) => Obx(() {
@@ -448,17 +413,14 @@ class _SortButton extends StatelessWidget {
                     },
                     title: Text(
                       s.label,
-                      style: TextStyle(
-                        color:
-                            selected ? ArenaListScreen.blue : Colors.white,
-                        fontWeight:
-                            selected ? FontWeight.w700 : FontWeight.w500,
-                        fontSize: 15,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: selected ? AppColors.primary : onSurface,
+                        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                       ),
                     ),
                     trailing: selected
                         ? const Icon(Icons.check_circle,
-                            color: ArenaListScreen.blue, size: 20)
+                            color: AppColors.primary, size: 20)
                         : null,
                   );
                 }),
@@ -471,7 +433,7 @@ class _SortButton extends StatelessWidget {
   }
 }
 
-// ── Arena grid card ──────────────────────────────────────────────────────────
+// ── Arena grid card ───────────────────────────────────────────────────────────
 
 class _ArenaGridCard extends StatelessWidget {
   final ArenaModel arena;
@@ -483,24 +445,26 @@ class _ArenaGridCard extends StatelessWidget {
     final dist = discovery.distanceOf(arena);
     final sport =
         arena.courts.isNotEmpty ? arena.courts.first.type : CourtType.other;
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+    final muted = theme.textTheme.bodySmall?.color;
 
     return GestureDetector(
       onTap: () =>
           Get.toNamed(AppRoutes.arenaDetailCustomer, arguments: arena.id),
       child: Container(
         decoration: BoxDecoration(
-          color: ArenaListScreen.surface,
+          color: theme.cardColor,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: ArenaListScreen.outline),
+          border: Border.all(color: theme.dividerTheme.color ?? AppColors.border),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image with overlays
+            // Image + overlays
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(19),
-              ),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(19)),
               child: Stack(
                 children: [
                   ArenaImage(
@@ -508,7 +472,7 @@ class _ArenaGridCard extends StatelessWidget {
                     height: 150,
                     width: double.infinity,
                   ),
-                  // Bottom fade into blue for the sport chip
+                  // Bottom fade into secondary
                   Positioned(
                     left: 0,
                     right: 0,
@@ -521,7 +485,7 @@ class _ArenaGridCard extends StatelessWidget {
                           end: Alignment.bottomCenter,
                           colors: [
                             Colors.transparent,
-                            ArenaListScreen.blue.withValues(alpha: 0.75),
+                            AppColors.secondary.withValues(alpha: 0.75),
                           ],
                         ),
                       ),
@@ -532,12 +496,11 @@ class _ArenaGridCard extends StatelessWidget {
                     top: 10,
                     left: 10,
                     child: _pill(
-                      color: ArenaListScreen.blue,
+                      color: AppColors.secondary,
                       child: Text(
                         '${dist.toStringAsFixed(1)} km',
-                        style: const TextStyle(
+                        style: AppTextStyles.caption.copyWith(
                           color: Colors.white,
-                          fontSize: 11,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -549,14 +512,13 @@ class _ArenaGridCard extends StatelessWidget {
                       top: 10,
                       right: 10,
                       child: _pill(
-                        color: const Color(0xCC0A1120),
-                        child: const Text(
+                        color: const Color(0xCC0B0E11),
+                        child: Text(
                           'FEATURED',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 9.5,
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.primary,
                             fontWeight: FontWeight.w800,
-                            letterSpacing: 0.6,
+                            letterSpacing: 0.8,
                           ),
                         ),
                       ),
@@ -566,7 +528,7 @@ class _ArenaGridCard extends StatelessWidget {
                     bottom: 10,
                     left: 10,
                     child: _pill(
-                      color: ArenaListScreen.blue,
+                      color: AppColors.secondary,
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -575,9 +537,8 @@ class _ArenaGridCard extends StatelessWidget {
                           const SizedBox(width: 4),
                           Text(
                             sport.label,
-                            style: const TextStyle(
+                            style: AppTextStyles.caption.copyWith(
                               color: Colors.white,
-                              fontSize: 11,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -598,27 +559,19 @@ class _ArenaGridCard extends StatelessWidget {
                     arena.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15.5,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: AppTextStyles.titleMedium.copyWith(color: onSurface),
                   ),
                   const SizedBox(height: 5),
                   Row(
                     children: [
-                      const Icon(Icons.location_on_outlined,
-                          size: 13, color: ArenaListScreen.grey),
+                      Icon(Icons.location_on_outlined, size: 13, color: muted),
                       const SizedBox(width: 3),
                       Expanded(
                         child: Text(
-                          arena.location.address,
+                          arena.location.displayAddress,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: ArenaListScreen.grey,
-                            fontSize: 12,
-                          ),
+                          style: AppTextStyles.bodySmall.copyWith(color: muted),
                         ),
                       ),
                     ],
@@ -626,27 +579,43 @@ class _ArenaGridCard extends StatelessWidget {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Icon(Icons.star,
-                          size: 14, color: ArenaListScreen.green),
-                      const SizedBox(width: 3),
-                      Text(
-                        '${arena.rating.toStringAsFixed(1)} (${arena.reviewCount})',
-                        style: const TextStyle(
-                          color: ArenaListScreen.green,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                      if (arena.reviewCount == 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.elevated,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            'New',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.textSecondary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        )
+                      else ...[
+                        const Icon(Icons.star,
+                            size: 14, color: AppColors.primary),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${arena.rating.toStringAsFixed(1)} (${arena.reviewCount})',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.success,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
+                      ],
                       const Spacer(),
                       Flexible(
                         child: Text(
                           'PKR ${arena.minPrice.toStringAsFixed(0)}/hr',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: ArenaListScreen.green,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
+                          style: AppTextStyles.scoreboard.copyWith(
+                            color: AppColors.primary,
+                            fontSize: 13,
                           ),
                         ),
                       ),
@@ -673,7 +642,7 @@ class _ArenaGridCard extends StatelessWidget {
   }
 }
 
-// ── Empty state with 50 km expand ────────────────────────────────────────────
+// ── Empty state ───────────────────────────────────────────────────────────────
 
 class _EmptyState extends StatelessWidget {
   final DiscoveryController discovery;
@@ -681,28 +650,26 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+    final muted = theme.textTheme.bodySmall?.color;
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.search_off,
-                size: 64, color: ArenaListScreen.grey),
+            Icon(Icons.search_off, size: 64, color: muted),
             const SizedBox(height: 16),
             Obx(() => Text(
                   'No arenas within ${discovery.searchRadius.value.toStringAsFixed(0)} km',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: AppTextStyles.titleLarge.copyWith(color: onSurface),
                   textAlign: TextAlign.center,
                 )),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               "We couldn't find any arenas matching your filters.",
-              style: TextStyle(color: ArenaListScreen.grey, fontSize: 14),
+              style: AppTextStyles.bodyMedium.copyWith(color: muted),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
@@ -712,8 +679,8 @@ class _EmptyState extends StatelessWidget {
                   icon: const Icon(Icons.expand_outlined),
                   label: const Text('Expand search to 50 km'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: ArenaListScreen.blue,
-                    foregroundColor: Colors.white,
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: AppColors.onPrimary,
                     padding: const EdgeInsets.symmetric(
                         horizontal: 24, vertical: 14),
                     shape: RoundedRectangleBorder(
@@ -727,9 +694,10 @@ class _EmptyState extends StatelessWidget {
             const SizedBox(height: 12),
             TextButton(
               onPressed: discovery.clearFilters,
-              child: const Text(
+              child: Text(
                 'Clear filters & reset radius',
-                style: TextStyle(color: ArenaListScreen.blue),
+                style:
+                    AppTextStyles.label.copyWith(color: AppColors.secondary),
               ),
             ),
           ],

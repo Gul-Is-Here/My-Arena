@@ -8,6 +8,7 @@ import '../../data/models/booking_model.dart';
 import '../../data/models/court_model.dart';
 import '../../services/blocked_slot_service.dart';
 import '../../services/booking_service.dart';
+import '../../theme/app_colors.dart';
 import '../../utils/slot_status.dart';
 import '../../widgets/slot_picker_widgets.dart';
 
@@ -262,7 +263,7 @@ class _ManualBookingScreenState extends State<ManualBookingScreen> {
                           'This arena has no available courts',
                           style: TextStyle(
                             fontSize: 13,
-                            color: Color(0xFFEF4444),
+                            color: AppColors.error,
                           ),
                         )
                       else
@@ -317,7 +318,7 @@ class _ManualBookingScreenState extends State<ManualBookingScreen> {
                             padding: EdgeInsets.symmetric(vertical: 40),
                             child: Center(
                               child: CircularProgressIndicator(
-                                color: SlotPickerColors.green,
+                                color: SlotPickerColors.greenCta,
                               ),
                             ),
                           )
@@ -395,7 +396,7 @@ class _ManualBookingScreenState extends State<ManualBookingScreen> {
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w800,
-                        color: SlotPickerColors.green,
+                        color: SlotPickerColors.greenCta,
                       ),
                     ),
                   ],
@@ -436,7 +437,7 @@ class _ManualBookingScreenState extends State<ManualBookingScreen> {
                                 letterSpacing: 0.3,
                                 color: (_court == null || _selectedHours.isEmpty)
                                     ? SlotPickerColors.muted
-                                    : const Color(0xFF0A1628),
+                                    : AppColors.onPrimary,
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -445,7 +446,7 @@ class _ManualBookingScreenState extends State<ManualBookingScreen> {
                               size: 16,
                               color: (_court == null || _selectedHours.isEmpty)
                                   ? SlotPickerColors.muted
-                                  : const Color(0xFF0A1628),
+                                  : AppColors.onPrimary,
                             ),
                           ],
                         ),
@@ -495,11 +496,11 @@ class _DarkChip extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? SlotPickerColors.green : SlotPickerColors.surface,
+          color: selected ? SlotPickerColors.greenCta : SlotPickerColors.surface,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: selected
-                ? SlotPickerColors.green
+                ? SlotPickerColors.greenCta
                 : Colors.white.withValues(alpha: 0.08),
           ),
         ),
@@ -508,7 +509,7 @@ class _DarkChip extends StatelessWidget {
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: selected ? const Color(0xFF0A1628) : SlotPickerColors.onBg,
+            color: selected ? AppColors.onPrimary : SlotPickerColors.onBg,
           ),
         ),
       ),
@@ -567,11 +568,11 @@ class _DarkField extends StatelessWidget {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: SlotPickerColors.green),
+              borderSide: const BorderSide(color: SlotPickerColors.greenCta),
             ),
             errorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFFEF4444)),
+              borderSide: const BorderSide(color: AppColors.error),
             ),
           ),
         ),

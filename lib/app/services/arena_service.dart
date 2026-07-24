@@ -57,14 +57,28 @@ class ArenaService {
           .map((d) => ArenaModel.fromMap({...d.data(), 'id': d.id}))
           .toList());
 
-  /// Customer discovery — approved + active arenas.
+  /// Customer discovery — approved + active arenas with courts pre-loaded.
   Stream<List<ArenaModel>> approvedArenas() => _arenas
       .where('status', isEqualTo: 'approved')
       .where('isActive', isEqualTo: true)
       .snapshots()
-      .map((s) => s.docs
-          .map((d) => ArenaModel.fromMap({...d.data(), 'id': d.id}))
-          .toList());
+      .asyncMap((s) async {
+        final arenas = s.docs
+            .map((d) => ArenaModel.fromMap({...d.data(), 'id': d.id}))
+            .toList();
+        final courtsResults = await Future.wait(
+          arenas.map((a) => _courts(a.id)
+              .where('isActive', isEqualTo: true)
+              .get()
+              .then((snap) => snap.docs
+                  .map((d) => CourtModel.fromMap({...d.data(), 'id': d.id}))
+                  .toList())),
+        );
+        return [
+          for (var i = 0; i < arenas.length; i++)
+            arenas[i].copyWith(courts: courtsResults[i]),
+        ];
+      });
 
   /// Toggle arena ON/OFF.
   Future<void> toggleActive(String arenaId, bool isActive) =>

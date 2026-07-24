@@ -10,21 +10,23 @@ import '../../data/models/arena_model.dart';
 import '../../data/models/booking_model.dart';
 import '../../data/models/court_model.dart';
 import '../../routes/app_routes.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_text_styles.dart';
 import 'rate_booking_sheet.dart';
 
 // ── Design tokens ──────────────────────────────────────────────────────────
-const _bg = Color(0xFF10131A);
-const _surface = Color(0xFF1D2026);
-const _surfaceLow = Color(0xFF191C22);
-const _outline = Color(0xFF3B494B);
-const _cyan = Color(0xFF00DBE9);
-const _cyanDim = Color(0xFF7DF4FF);
-const _green = Color(0xFF2FF801);
-const _greenFixed = Color(0xFF79FF5B);
-const _onSurface = Color(0xFFE1E2EB);
-const _onSurfaceVar = Color(0xFFB9CACB);
-const _amber = Color(0xFFFFB59C); // tertiary-fixed-dim for "pending"
-const _red = Color(0xFFFFB4AB);
+const _bg = AppColors.background;
+const _surface = AppColors.surface;
+const _surfaceLow = AppColors.elevated;
+const _outline = AppColors.border;
+const _cyan = AppColors.secondary;
+const _cyanDim = AppColors.secondary;
+const _green = AppColors.success;
+const _greenFixed = AppColors.success;
+const _onSurface = AppColors.textPrimary;
+const _onSurfaceVar = AppColors.textSecondary;
+const _amber = AppColors.warning; // "pending" accent
+const _red = AppColors.error;
 
 class MyBookingsTab extends StatefulWidget {
   const MyBookingsTab({super.key});
@@ -92,12 +94,10 @@ class _MyBookingsTabState extends State<MyBookingsTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'MY BOOKINGS',
-              style: TextStyle(
-                fontFamily: 'Archivo Narrow',
+              style: AppTextStyles.headlineLarge.copyWith(
                 fontSize: 24,
-                fontWeight: FontWeight.w700,
                 color: _cyanDim,
                 letterSpacing: 2,
               ),
@@ -105,7 +105,7 @@ class _MyBookingsTabState extends State<MyBookingsTab> {
             const SizedBox(height: 2),
             Text(
               'Manage your field reservations & track statuses.',
-              style: TextStyle(
+              style: AppTextStyles.bodySmall.copyWith(
                 fontSize: 13,
                 color: _onSurfaceVar,
               ),
@@ -130,20 +130,19 @@ class _MyBookingsTabState extends State<MyBookingsTab> {
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                 decoration: BoxDecoration(
                   color: active
-                      ? _cyan.withValues(alpha: 0.15)
+                      ? AppColors.primary.withValues(alpha: 0.15)
                       : _surface,
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(
-                    color: active ? _cyan : _outline.withValues(alpha: 0.4),
+                    color: active ? AppColors.primary : _outline.withValues(alpha: 0.4),
                   ),
                 ),
                 child: Text(
                   _tabs[i],
-                  style: TextStyle(
+                  style: AppTextStyles.label.copyWith(
                     fontSize: 11,
-                    fontWeight: FontWeight.w600,
                     letterSpacing: 0.8,
-                    color: active ? _cyan : _onSurfaceVar,
+                    color: active ? AppColors.primary : _onSurfaceVar,
                   ),
                 ),
               ),
@@ -210,13 +209,12 @@ class _MyBookingsTabState extends State<MyBookingsTab> {
           ),
           const SizedBox(height: 20),
           Text(title,
-              style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: _onSurface)),
+              style: AppTextStyles.titleMedium.copyWith(
+                  fontSize: 16, color: _onSurface)),
           const SizedBox(height: 6),
           Text(sub,
-              style: const TextStyle(fontSize: 13, color: _onSurfaceVar)),
+              style: AppTextStyles.bodySmall.copyWith(
+                  fontSize: 13, color: _onSurfaceVar)),
         ],
       ),
     );
@@ -263,7 +261,7 @@ class _BookingCard extends StatelessWidget {
 
   // Status → accent color
   Color get _accent {
-    if (booking.isActive) return _cyan;
+    if (booking.isActive) return AppColors.primary;
     switch (booking.status) {
       case BookingStatus.confirmed:
       case BookingStatus.completed:
@@ -274,7 +272,7 @@ class _BookingCard extends StatelessWidget {
         return _red;
       case BookingStatus.refundPending:
       case BookingStatus.refundSent:
-        return const Color(0xFFFFB4AB);
+        return _amber;
       case BookingStatus.pendingDeposit:
       case BookingStatus.depositSubmitted:
         return _amber;
@@ -353,16 +351,15 @@ class _BookingCard extends StatelessWidget {
                               booking.arenaName,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: AppTextStyles.titleMedium.copyWith(
                                 fontSize: 15,
-                                fontWeight: FontWeight.w700,
                                 color: _onSurface,
                               ),
                             ),
                             const SizedBox(height: 1),
                             Text(
                               booking.courtName,
-                              style: const TextStyle(
+                              style: AppTextStyles.caption.copyWith(
                                   fontSize: 11,
                                   color: _onSurfaceVar,
                                   letterSpacing: 0.5),
@@ -387,20 +384,20 @@ class _BookingCard extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Date & Time',
-                                style: TextStyle(
+                            Text('Date & Time',
+                                style: AppTextStyles.caption.copyWith(
                                     fontSize: 10,
                                     letterSpacing: 0.6,
                                     color: _onSurfaceVar)),
                             const SizedBox(height: 2),
                             Text(_fmtDate,
-                                style: const TextStyle(
+                                style: AppTextStyles.bodySmall.copyWith(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w500,
                                     color: _onSurface)),
                             Text(
                               '${booking.timeRange} · ${booking.totalHours}h',
-                              style: const TextStyle(
+                              style: AppTextStyles.caption.copyWith(
                                   fontSize: 11, color: _onSurfaceVar),
                             ),
                           ],
@@ -409,18 +406,16 @@ class _BookingCard extends StatelessWidget {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          const Text('Total',
-                              style: TextStyle(
+                          Text('Total',
+                              style: AppTextStyles.caption.copyWith(
                                   fontSize: 10,
                                   letterSpacing: 0.6,
                                   color: _onSurfaceVar)),
                           const SizedBox(height: 2),
                           Text(
                             'PKR ${booking.totalAmount.toStringAsFixed(0)}',
-                            style: TextStyle(
-                              fontFamily: 'Archivo Narrow',
+                            style: AppTextStyles.scoreboard.copyWith(
                               fontSize: 20,
-                              fontWeight: FontWeight.w700,
                               color: accent,
                             ),
                           ),
@@ -437,8 +432,8 @@ class _BookingCard extends StatelessWidget {
                       if (booking.cancellation != null)
                         Text(
                           'Refund PKR ${booking.cancellation!.refundAmount.toStringAsFixed(0)}',
-                          style: const TextStyle(
-                              fontSize: 12, color: Color(0xFFFFB59C)),
+                          style: AppTextStyles.bodySmall.copyWith(
+                              fontSize: 12, color: _amber),
                         )
                       else if (booking.status == BookingStatus.completed &&
                           !booking.hasReview)
@@ -494,13 +489,6 @@ class _BookingCard extends StatelessWidget {
                             ),
                             const SizedBox(width: 8),
                           ],
-                          // Chat
-                          _IconBtn(
-                            icon: Icons.chat_bubble_outline,
-                            color: _green,
-                            onTap: () => openBookingChatAndGo(booking),
-                            filled: true,
-                          ),
                         ],
                       ),
                     ],
@@ -585,7 +573,7 @@ class _StatusBadgeState extends State<_StatusBadge>
             ),
           Text(
             widget.label,
-            style: TextStyle(
+            style: AppTextStyles.caption.copyWith(
               fontSize: 10,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.4,
@@ -603,12 +591,9 @@ class _IconBtn extends StatelessWidget {
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
-  final bool filled;
+  static const bool filled = false;
   const _IconBtn(
-      {required this.icon,
-      required this.color,
-      required this.onTap,
-      this.filled = false});
+      {required this.icon, required this.color, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -649,10 +634,7 @@ class _ActionChip extends StatelessWidget {
           border: Border.all(color: color.withValues(alpha: 0.3)),
         ),
         child: Text(label,
-            style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: color)),
+            style: AppTextStyles.label.copyWith(fontSize: 11, color: color)),
       ),
     );
   }
@@ -662,7 +644,7 @@ class _ActionChip extends StatelessWidget {
 
 Future<void> bookAgain(BookingModel b) async {
   Get.dialog(
-    const Center(child: CircularProgressIndicator(color: _cyan)),
+    const Center(child: CircularProgressIndicator(color: AppColors.primary)),
     barrierDismissible: false,
   );
   try {
@@ -714,7 +696,7 @@ Color statusColor(BookingStatus s) {
     case BookingStatus.refundSent:
       return _amber;
     default:
-      return _cyan;
+      return AppColors.primary;
   }
 }
 

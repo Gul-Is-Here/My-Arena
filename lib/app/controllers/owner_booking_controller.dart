@@ -115,9 +115,12 @@ class OwnerBookingController extends GetxController {
     }
   }
 
-  Future<void> approve(String id) async {
+  /// [booking] lets callers outside this controller's stream (e.g. the chat
+  /// banner) supply the model directly, so the confirmation chat message is
+  /// sent even before the owner's bookings stream has loaded.
+  Future<void> approve(String id, {BookingModel? booking}) async {
     await _service.confirmBooking(id, _uid);
-    final b = bookings.firstWhereOrNull((x) => x.id == id);
+    final b = booking ?? bookings.firstWhereOrNull((x) => x.id == id);
     if (b != null) {
       // Tell the customer in the booking chat as well as via push.
       if (!Get.isRegistered<ChatController>()) {

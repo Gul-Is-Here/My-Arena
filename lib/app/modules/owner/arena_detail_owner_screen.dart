@@ -15,18 +15,20 @@ import '../../data/models/review_model.dart';
 import '../../routes/app_routes.dart';
 import '../../services/arena_service.dart';
 import '../../widgets/arena_image.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_text_styles.dart';
 
-const _bg = Color(0xFF10131A);
-const _surface = Color(0xFF1D2026);
-const _surfaceLow = Color(0xFF191C22);
-const _outline = Color(0xFF3B494B);
-const _cyan = Color(0xFF00DBE9);
-const _greenFixed = Color(0xFF79FF5B);
-const _amber = Color(0xFFFFB59C);
-const _orange = Color(0xFFFF7A45);
-const _red = Color(0xFFFFB4AB);
-const _onSurface = Color(0xFFE1E2EB);
-const _onSurfaceVar = Color(0xFFB9CACB);
+const _bg = AppColors.background;
+const _surface = AppColors.surface;
+const _surfaceLow = AppColors.elevated;
+const _outline = AppColors.border;
+const _cyan = AppColors.primary;
+const _greenFixed = AppColors.success;
+const _amber = AppColors.warning;
+const _orange = AppColors.accent;
+const _red = AppColors.error;
+const _onSurface = AppColors.textPrimary;
+const _onSurfaceVar = AppColors.textSecondary;
 
 String _fmtRevenue(double v) {
   if (v >= 100000) {
@@ -67,9 +69,9 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
       body: Obx(() {
         final arena = owner.myArenas.firstWhereOrNull((a) => a.id == arenaId);
         if (arena == null) {
-          return const Center(
+          return Center(
             child:
-                Text('Arena not found', style: TextStyle(color: _onSurface)),
+                Text('Arena not found', style: AppTextStyles.bodyMedium.copyWith(color: _onSurface)),
           );
         }
         OwnerBookingController.to.bookings.length; // rebuild on booking changes
@@ -223,7 +225,7 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(arena.name,
-                    style: const TextStyle(
+                    style: AppTextStyles.headlineMedium.copyWith(
                         color: Colors.white,
                         fontSize: 22,
                         fontWeight: FontWeight.w800)),
@@ -239,7 +241,7 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
                             : arena.location.address,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white70, fontSize: 13),
+                        style: AppTextStyles.bodySmall.copyWith(color: Colors.white70, fontSize: 13),
                       ),
                     ),
                   ],
@@ -286,7 +288,7 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
             Icon(icon, color: Colors.white, size: 16),
             const SizedBox(width: 6),
             Text(label,
-                style: const TextStyle(
+                style: AppTextStyles.label.copyWith(
                     color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
           ],
         ),
@@ -302,7 +304,7 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
           border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
         ),
         child: Text(label,
-            style: const TextStyle(
+            style: AppTextStyles.caption.copyWith(
                 color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
       );
 
@@ -324,7 +326,7 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
                       : Icons.visibility_outlined,
                   color: _onSurface),
               title: Text(arena.isActive ? 'Deactivate Arena' : 'Activate Arena',
-                  style: const TextStyle(color: _onSurface)),
+                  style: AppTextStyles.bodyMedium.copyWith(color: _onSurface)),
               onTap: () {
                 Get.back();
                 OwnerController.to.toggleArenaActive(arena.id);
@@ -332,7 +334,7 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
             ),
             ListTile(
               leading: const Icon(Icons.delete_outline, color: _red),
-              title: const Text('Delete Arena', style: TextStyle(color: _red)),
+              title: Text('Delete Arena', style: AppTextStyles.bodyMedium.copyWith(color: _red)),
               onTap: () {
                 Get.back();
                 _confirmDelete(arena);
@@ -348,10 +350,10 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
     Get.defaultDialog(
       backgroundColor: _surface,
       title: 'Delete Arena?',
-      titleStyle: const TextStyle(color: _onSurface, fontWeight: FontWeight.w800),
+      titleStyle: AppTextStyles.titleLarge.copyWith(color: _onSurface, fontWeight: FontWeight.w800),
       middleText:
           'This permanently removes "${arena.name}" and its courts. This cannot be undone.',
-      middleTextStyle: const TextStyle(color: _onSurfaceVar),
+      middleTextStyle: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar),
       textCancel: 'Cancel',
       textConfirm: 'Delete',
       confirmTextColor: Colors.white,
@@ -411,7 +413,7 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
               Icon(Icons.circle, size: 8, color: dotColor),
               const SizedBox(width: 5),
               Text(badgeLabel,
-                  style: TextStyle(
+                  style: AppTextStyles.caption.copyWith(
                       color: dotColor, fontSize: 11, fontWeight: FontWeight.w800)),
             ]),
           ),
@@ -421,16 +423,16 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title,
-                    style: const TextStyle(
+                    style: AppTextStyles.titleMedium.copyWith(
                         color: _onSurface, fontSize: 15, fontWeight: FontWeight.w800)),
                 Text(subtitle,
-                    style: const TextStyle(color: _onSurfaceVar, fontSize: 12)),
+                    style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar, fontSize: 12)),
               ],
             ),
           ),
           if (!pending && !rejectedLike) ...[
-            const Text('Arena Active',
-                style: TextStyle(
+            Text('Arena Active',
+                style: AppTextStyles.label.copyWith(
                     color: _onSurfaceVar, fontSize: 12, fontWeight: FontWeight.w600)),
             Switch(
               value: arena.isActive,
@@ -482,10 +484,10 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
           Text(value,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: valueColor, fontSize: 15, fontWeight: FontWeight.w800)),
+              style: AppTextStyles.titleMedium.copyWith(color: valueColor, fontSize: 15, fontWeight: FontWeight.w800)),
           const SizedBox(height: 4),
           Text(label,
-              style: const TextStyle(
+              style: AppTextStyles.caption.copyWith(
                   color: _onSurfaceVar,
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
@@ -503,16 +505,16 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text('Courts (${arena.courts.length})',
-                style: const TextStyle(
+                style: AppTextStyles.titleLarge.copyWith(
                     color: _onSurface, fontSize: 17, fontWeight: FontWeight.w800)),
             GestureDetector(
               onTap: () =>
                   Get.toNamed(AppRoutes.editArena, arguments: arena.id),
-              child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.add, size: 16, color: _cyan),
-                SizedBox(width: 4),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.add, size: 16, color: _cyan),
+                const SizedBox(width: 4),
                 Text('Add Court',
-                    style: TextStyle(color: _cyan, fontSize: 13, fontWeight: FontWeight.w700)),
+                    style: AppTextStyles.label.copyWith(color: _cyan, fontWeight: FontWeight.w700)),
               ]),
             ),
           ],
@@ -526,8 +528,8 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
                 color: _surfaceLow,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: _outline)),
-            child: const Text('No courts added yet',
-                style: TextStyle(color: _onSurfaceVar)),
+            child: Text('No courts added yet',
+                style: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar)),
           )
         else
           ...arena.courts.map((c) => _courtTile(arena, c)),
@@ -562,7 +564,7 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(court.name,
-                    style: TextStyle(
+                    style: AppTextStyles.titleMedium.copyWith(
                         color: maintenance ? _onSurfaceVar : _onSurface,
                         fontSize: 14.5,
                         fontWeight: FontWeight.w700)),
@@ -571,7 +573,7 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
                   maintenance
                       ? 'Under Maintenance'
                       : '${court.startTime} – ${court.endTime} · ${court.capacity} cap',
-                  style: TextStyle(color: maintenance ? _amber : _onSurfaceVar, fontSize: 12),
+                  style: AppTextStyles.bodySmall.copyWith(color: maintenance ? _amber : _onSurfaceVar, fontSize: 12),
                 ),
               ],
             ),
@@ -582,9 +584,8 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
               Row(
                 children: [
                   Text('PKR ${NumberFormat('#,##0').format(court.pricePerHour)}/hr',
-                      style: TextStyle(
+                      style: AppTextStyles.label.copyWith(
                           color: maintenance ? _onSurfaceVar : _onSurface,
-                          fontSize: 13,
                           fontWeight: FontWeight.w700)),
                   const SizedBox(width: 6),
                   GestureDetector(
@@ -634,12 +635,12 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text('Edit ${court.name}',
-                style: const TextStyle(color: _onSurface, fontSize: 18, fontWeight: FontWeight.w800)),
+                style: AppTextStyles.titleLarge.copyWith(color: _onSurface, fontSize: 18, fontWeight: FontWeight.w800)),
             const SizedBox(height: 16),
             TextField(
               controller: priceCtrl,
               keyboardType: TextInputType.number,
-              style: const TextStyle(color: _onSurface),
+              style: AppTextStyles.bodyMedium.copyWith(color: _onSurface),
               decoration: _sheetInput('Price per hour (PKR)'),
             ),
             const SizedBox(height: 10),
@@ -648,7 +649,7 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
                 Expanded(
                   child: TextField(
                     controller: startCtrl,
-                    style: const TextStyle(color: _onSurface),
+                    style: AppTextStyles.bodyMedium.copyWith(color: _onSurface),
                     decoration: _sheetInput('Start (e.g. 08:00)'),
                   ),
                 ),
@@ -656,7 +657,7 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
                 Expanded(
                   child: TextField(
                     controller: endCtrl,
-                    style: const TextStyle(color: _onSurface),
+                    style: AppTextStyles.bodyMedium.copyWith(color: _onSurface),
                     decoration: _sheetInput('End (e.g. 22:00)'),
                   ),
                 ),
@@ -686,14 +687,14 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
                       backgroundColor: _surfaceLow, colorText: _greenFixed);
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _cyan,
-                  foregroundColor: const Color(0xFF002022),
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: AppColors.onPrimary,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
                 child: saving.value
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF002022)))
-                    : const Text('Save Changes', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.onPrimary))
+                    : Text('Save Changes', style: AppTextStyles.button.copyWith(fontWeight: FontWeight.w800, fontSize: 15)),
               ),
             )),
           ],
@@ -705,7 +706,7 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
 
   InputDecoration _sheetInput(String hint) => InputDecoration(
     hintText: hint,
-    hintStyle: const TextStyle(color: _onSurfaceVar),
+    hintStyle: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar),
     filled: true,
     fillColor: _surface,
     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _outline)),
@@ -721,14 +722,14 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text('Arena Gallery',
-                style: TextStyle(
+            Text('Arena Gallery',
+                style: AppTextStyles.titleLarge.copyWith(
                     color: _onSurface, fontSize: 17, fontWeight: FontWeight.w800)),
             GestureDetector(
               onTap: () =>
                   Get.toNamed(AppRoutes.editArena, arguments: arena.id),
-              child: const Text('Manage Photos',
-                  style: TextStyle(color: _cyan, fontSize: 13, fontWeight: FontWeight.w700)),
+              child: Text('Manage Photos',
+                  style: AppTextStyles.label.copyWith(color: _cyan, fontWeight: FontWeight.w700)),
             ),
           ],
         ),
@@ -741,7 +742,7 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
                 color: _surfaceLow,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: _outline)),
-            child: const Text('No photos yet', style: TextStyle(color: _onSurfaceVar)),
+            child: Text('No photos yet', style: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar)),
           )
         else
           GridView.builder(
@@ -769,7 +770,7 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
                           color: Colors.black.withValues(alpha: 0.55),
                           alignment: Alignment.center,
                           child: Text('+${images.length - 4} more',
-                              style: const TextStyle(
+                              style: AppTextStyles.titleMedium.copyWith(
                                   color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800)),
                         ),
                     ],
@@ -816,8 +817,8 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Location',
-            style: TextStyle(color: _onSurface, fontSize: 17, fontWeight: FontWeight.w800)),
+        Text('Location',
+            style: AppTextStyles.titleLarge.copyWith(color: _onSurface, fontSize: 17, fontWeight: FontWeight.w800)),
         const SizedBox(height: 12),
         Container(
           decoration: BoxDecoration(
@@ -864,7 +865,7 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
                                 arena.location.address.isEmpty
                                     ? 'No address set'
                                     : arena.location.address,
-                                style: const TextStyle(color: _onSurfaceVar, fontSize: 13)),
+                                style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar, fontSize: 13)),
                           ),
                         ],
                       ),
@@ -913,22 +914,21 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Text(
+                Text(
                   'Customer Reviews',
-                  style: TextStyle(
+                  style: AppTextStyles.titleMedium.copyWith(
                     color: _onSurface,
-                    fontSize: 16,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(width: 8),
                 if (arena.rating > 0) ...[
                   const Icon(Icons.star_rounded,
-                      size: 16, color: Color(0xFFFFD700)),
+                      size: 16, color: AppColors.primary),
                   const SizedBox(width: 3),
                   Text(
                     '${arena.rating.toStringAsFixed(1)} · ${arena.reviewCount}',
-                    style: const TextStyle(
+                    style: AppTextStyles.bodySmall.copyWith(
                         color: _onSurfaceVar, fontSize: 13),
                   ),
                 ],
@@ -942,14 +942,14 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
                   color: _surface,
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Icon(Icons.rate_review_outlined,
+                    const Icon(Icons.rate_review_outlined,
                         color: _onSurfaceVar, size: 20),
-                    SizedBox(width: 10),
+                    const SizedBox(width: 10),
                     Text(
                       'No reviews yet',
-                      style: TextStyle(color: _onSurfaceVar, fontSize: 13),
+                      style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar, fontSize: 13),
                     ),
                   ],
                 ),
@@ -979,16 +979,16 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
             child: const Icon(Icons.rocket_launch_outlined, color: _orange),
           ),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Boost This Arena',
-                    style:
-                        TextStyle(color: _onSurface, fontSize: 14.5, fontWeight: FontWeight.w800)),
-                SizedBox(height: 2),
+                    style: AppTextStyles.titleMedium.copyWith(
+                        color: _onSurface, fontSize: 14.5, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 2),
                 Text('Get more visibility and bookings',
-                    style: TextStyle(color: _onSurfaceVar, fontSize: 12)),
+                    style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar, fontSize: 12)),
               ],
             ),
           ),
@@ -1008,8 +1008,8 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
               minimumSize: const Size(80, 40),
               padding: const EdgeInsets.symmetric(horizontal: 16),
             ),
-            child: const Text('BOOST',
-                style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+            child: Text('BOOST',
+                style: AppTextStyles.button.copyWith(fontWeight: FontWeight.w800, letterSpacing: 0.5)),
           ),
         ],
       ),
@@ -1044,9 +1044,8 @@ class _ReviewCard extends StatelessWidget {
                   review.customerName.isNotEmpty
                       ? review.customerName[0].toUpperCase()
                       : '?',
-                  style: const TextStyle(
+                  style: AppTextStyles.label.copyWith(
                       color: _cyan,
-                      fontSize: 13,
                       fontWeight: FontWeight.w700),
                 ),
               ),
@@ -1059,15 +1058,14 @@ class _ReviewCard extends StatelessWidget {
                       review.customerName.isNotEmpty
                           ? review.customerName
                           : 'Customer',
-                      style: const TextStyle(
+                      style: AppTextStyles.label.copyWith(
                           color: _onSurface,
-                          fontSize: 13,
                           fontWeight: FontWeight.w600),
                     ),
                     Text(
                       '${review.createdAt.day}/${review.createdAt.month}/${review.createdAt.year}',
-                      style: const TextStyle(
-                          color: _onSurfaceVar, fontSize: 11),
+                      style: AppTextStyles.caption.copyWith(
+                          color: _onSurfaceVar),
                     ),
                   ],
                 ),
@@ -1080,7 +1078,7 @@ class _ReviewCard extends StatelessWidget {
                         ? Icons.star_rounded
                         : Icons.star_outline_rounded,
                     size: 14,
-                    color: const Color(0xFFFFD700),
+                    color: AppColors.primary,
                   ),
                 ),
               ),
@@ -1090,7 +1088,7 @@ class _ReviewCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               review.comment,
-              style: const TextStyle(
+              style: AppTextStyles.bodySmall.copyWith(
                   color: _onSurfaceVar, fontSize: 12.5, height: 1.4),
             ),
           ],

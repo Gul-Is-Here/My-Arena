@@ -97,6 +97,14 @@
       ]
     },
     {
+      "collectionGroup": "chats",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "participants", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "pairKey", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "tickets",
       "queryScope": "COLLECTION",
       "fields": [

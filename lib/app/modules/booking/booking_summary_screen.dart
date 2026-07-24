@@ -6,6 +6,7 @@ import '../../controllers/booking_controller.dart';
 import '../../data/models/booking_model.dart';
 import '../../data/models/court_model.dart';
 import '../../routes/app_routes.dart';
+import '../../theme/app_colors.dart';
 import '../../widgets/arena_image.dart';
 import '../../widgets/slot_picker_widgets.dart';
 
@@ -31,7 +32,7 @@ class BookingSummaryScreen extends StatelessWidget {
         return SlotPickerColors.green;
       case BookingStatus.rejected:
       case BookingStatus.cancelled:
-        return const Color(0xFFFF5252);
+        return AppColors.error;
       default:
         return SlotPickerColors.pending;
     }
@@ -153,7 +154,7 @@ class BookingSummaryScreen extends StatelessWidget {
                   const Text(
                     'Payment Details',
                     style: TextStyle(
-                      color: SlotPickerColors.green,
+                      color: SlotPickerColors.greenCta,
                       fontWeight: FontWeight.w700,
                       fontSize: 14,
                     ),
@@ -226,7 +227,7 @@ class BookingSummaryScreen extends StatelessWidget {
                             Text(
                               'PKR ${b.depositAmount.toStringAsFixed(0)}',
                               style: const TextStyle(
-                                color: SlotPickerColors.green,
+                                color: SlotPickerColors.greenCta,
                                 fontSize: 22,
                                 fontWeight: FontWeight.w800,
                               ),
@@ -369,7 +370,7 @@ class _Header extends StatelessWidget {
             child: Text(
               'Booking Summary',
               style: TextStyle(
-                color: SlotPickerColors.green,
+                color: SlotPickerColors.onBg,
                 fontSize: 17,
                 fontWeight: FontWeight.w700,
               ),
@@ -412,10 +413,10 @@ class _InfoTile extends StatelessWidget {
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: SlotPickerColors.green.withValues(alpha: 0.12),
+              color: SlotPickerColors.greenCta.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, size: 18, color: SlotPickerColors.green),
+            child: Icon(icon, size: 18, color: SlotPickerColors.greenCta),
           ),
           const SizedBox(width: 12),
           Column(
@@ -476,12 +477,12 @@ class _BottomBar extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Icon(Icons.payments_outlined,
-                    size: 18, color: Color(0xFF0A1628)),
+                    size: 18, color: AppColors.onPrimary),
                 const SizedBox(width: 8),
                 Text(
                   label,
                   style: const TextStyle(
-                    color: Color(0xFF0A1628),
+                    color: AppColors.onPrimary,
                     fontWeight: FontWeight.w800,
                     fontSize: 15,
                   ),

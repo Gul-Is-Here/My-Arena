@@ -126,17 +126,16 @@ class AmbientBackground extends StatelessWidget {
 }
 
 /// Floating dark pill bottom navigation — "Arena Command" theme: icon-only,
-/// with a solid green rounded-square highlight on the active tab.
+/// with a volt rounded-square highlight on the active tab.
 /// Pair with `Scaffold(extendBody: true)` so content scrolls beneath it.
 class GlassNavBar extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onDestinationSelected;
   final List<NavigationDestination> destinations;
 
-  static const _surface = Color(0xFF191C22);
-  static const _outline = Color(0xFF3B494B);
-  static const _green = Color(0xFF79FF5B);
-  static const _onSurfaceVar = Color(0xFFB9CACB);
+  static const _surface = AppColors.elevated;
+  static const _outline = AppColors.border;
+  static const _onSurfaceVar = AppColors.textSecondary;
 
   const GlassNavBar({
     super.key,
@@ -190,12 +189,12 @@ class GlassNavBar extends StatelessWidget {
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.all(11),
           decoration: BoxDecoration(
-            color: selected ? _green : Colors.transparent,
+            color: selected ? AppColors.primary : Colors.transparent,
             borderRadius: BorderRadius.circular(14),
           ),
           child: IconTheme(
             data: IconThemeData(
-              color: selected ? const Color(0xFF0B0E14) : _onSurfaceVar,
+              color: selected ? AppColors.onPrimary : _onSurfaceVar,
               size: 22,
             ),
             child: selected ? dest.selectedIcon ?? dest.icon : dest.icon,

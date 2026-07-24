@@ -5,17 +5,20 @@ import '../../controllers/auth_controller.dart';
 import '../../data/models/booking_model.dart';
 import '../../data/models/review_model.dart';
 import '../../services/arena_service.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_text_styles.dart';
 
 // ── Design tokens (matches my_bookings_tab palette) ─────────────────────────
-const _bg = Color(0xFF10131A);
-const _surface = Color(0xFF1D2026);
-const _outline = Color(0xFF3B494B);
-const _cyan = Color(0xFF00DBE9);
-const _cyanDim = Color(0xFF7DF4FF);
-const _onSurface = Color(0xFFE1E2EB);
-const _onSurfaceVar = Color(0xFFB9CACB);
-const _amber = Color(0xFFFFB59C);
-const _green = Color(0xFF2FF801);
+const _bg = AppColors.background;
+const _surface = AppColors.surface;
+const _outline = AppColors.border;
+const _cyan = AppColors.secondary;
+const _cyanDim = AppColors.secondary;
+const _ctaColor = AppColors.primary;
+const _onSurface = AppColors.textPrimary;
+const _onSurfaceVar = AppColors.textSecondary;
+const _amber = AppColors.warning;
+const _green = AppColors.success;
 
 class RateBookingSheet extends StatefulWidget {
   final BookingModel booking;
@@ -116,12 +119,10 @@ class _RateBookingSheetState extends State<RateBookingSheet> {
               ),
               const SizedBox(height: 20),
               // Title
-              const Text(
+              Text(
                 'RATE YOUR EXPERIENCE',
-                style: TextStyle(
-                  fontFamily: 'Archivo Narrow',
+                style: AppTextStyles.titleLarge.copyWith(
                   fontSize: 18,
-                  fontWeight: FontWeight.w700,
                   color: _cyanDim,
                   letterSpacing: 1.5,
                 ),
@@ -129,7 +130,8 @@ class _RateBookingSheetState extends State<RateBookingSheet> {
               const SizedBox(height: 4),
               Text(
                 widget.booking.arenaName,
-                style: const TextStyle(fontSize: 13, color: _onSurfaceVar),
+                style: AppTextStyles.bodySmall.copyWith(
+                    fontSize: 13, color: _onSurfaceVar),
               ),
               const SizedBox(height: 24),
               // Star row
@@ -140,9 +142,8 @@ class _RateBookingSheetState extends State<RateBookingSheet> {
                   _stars == 0
                       ? 'Tap to rate'
                       : ['', 'Poor', 'Fair', 'Good', 'Very Good', 'Excellent'][_stars],
-                  style: TextStyle(
+                  style: AppTextStyles.label.copyWith(
                     fontSize: 13,
-                    fontWeight: FontWeight.w600,
                     color: _stars == 0 ? _onSurfaceVar : _amber,
                   ),
                 ),
@@ -159,13 +160,13 @@ class _RateBookingSheetState extends State<RateBookingSheet> {
                   controller: _commentCtrl,
                   maxLines: 3,
                   maxLength: 300,
-                  style: const TextStyle(color: _onSurface, fontSize: 14),
-                  decoration: const InputDecoration(
+                  style: AppTextStyles.bodyMedium.copyWith(color: _onSurface, fontSize: 14),
+                  decoration: InputDecoration(
                     hintText: 'Share your experience (optional)…',
-                    hintStyle: TextStyle(color: _onSurfaceVar, fontSize: 14),
-                    contentPadding: EdgeInsets.all(14),
+                    hintStyle: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar, fontSize: 14),
+                    contentPadding: const EdgeInsets.all(14),
                     border: InputBorder.none,
-                    counterStyle: TextStyle(color: _onSurfaceVar, fontSize: 11),
+                    counterStyle: AppTextStyles.caption.copyWith(color: _onSurfaceVar, fontSize: 11),
                   ),
                 ),
               ),
@@ -177,8 +178,8 @@ class _RateBookingSheetState extends State<RateBookingSheet> {
                 child: ElevatedButton(
                   onPressed: _submitting ? null : _submit,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _cyan,
-                    foregroundColor: _bg,
+                    backgroundColor: _ctaColor,
+                    foregroundColor: AppColors.onPrimary,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -190,14 +191,12 @@ class _RateBookingSheetState extends State<RateBookingSheet> {
                           height: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: _bg,
+                            color: AppColors.onPrimary,
                           ),
                         )
-                      : const Text(
+                      : Text(
                           'SUBMIT REVIEW',
-                          style: TextStyle(
-                            fontFamily: 'Archivo Narrow',
-                            fontWeight: FontWeight.w700,
+                          style: AppTextStyles.button.copyWith(
                             fontSize: 15,
                             letterSpacing: 1.2,
                           ),

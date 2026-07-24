@@ -28,17 +28,13 @@ class ArenaImage extends StatelessWidget {
       height: height,
       width: width,
       decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [AppColors.primaryDark, AppColors.primary],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: AppColors.surface,
       ),
       child: Center(
         child: Icon(
           placeholderIcon,
           size: 48,
-          color: Colors.white.withValues(alpha: 0.7),
+          color: AppColors.primary,
         ),
       ),
     );

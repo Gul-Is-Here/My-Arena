@@ -7,17 +7,20 @@ import 'package:get/get.dart';
 import '../../controllers/auth_controller.dart';
 import '../../data/models/ticket_model.dart';
 import '../../services/ticket_service.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_text_styles.dart';
 
-const _bg = Color(0xFF10131A);
-const _surface = Color(0xFF1D2026);
-const _surfaceLow = Color(0xFF191C22);
-const _outline = Color(0xFF3B494B);
-const _cyan = Color(0xFF00DBE9);
-const _greenFixed = Color(0xFF79FF5B);
-const _amber = Color(0xFFFFB59C);
-const _red = Color(0xFFFFB4AB);
-const _onSurface = Color(0xFFE1E2EB);
-const _onSurfaceVar = Color(0xFFB9CACB);
+const _bg = AppColors.background;
+const _surface = AppColors.surface;
+const _surfaceLow = AppColors.elevated;
+const _outline = AppColors.border;
+const _cyan = AppColors.primary;
+const _greenFixed = AppColors.success;
+const _amber = AppColors.warning;
+const _red = AppColors.error;
+const _onSurface = AppColors.textPrimary;
+const _onSurfaceVar = AppColors.textSecondary;
+const _onCyan = AppColors.onPrimary;
 
 const _months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 String _fmtDate(DateTime d) => '${d.day} ${_months[d.month - 1]} ${d.year}';
@@ -72,11 +75,11 @@ class _OwnerTicketsScreenState extends State<OwnerTicketsScreen> {
                       child: const Icon(Icons.arrow_back, color: _onSurface, size: 20),
                     ),
                   ),
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'Support Tickets',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: _onSurface, fontSize: 22, fontWeight: FontWeight.w800),
+                      style: AppTextStyles.headlineMedium.copyWith(color: _onSurface, fontSize: 22, fontWeight: FontWeight.w800),
                     ),
                   ),
                   const SizedBox(width: 40),
@@ -87,15 +90,15 @@ class _OwnerTicketsScreenState extends State<OwnerTicketsScreen> {
             Expanded(
               child: Obx(() {
                 if (_tickets.isEmpty) {
-                  return const Center(
+                  return Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.support_agent_outlined, color: _onSurfaceVar, size: 52),
-                        SizedBox(height: 12),
-                        Text('No tickets yet', style: TextStyle(color: _onSurface, fontSize: 16, fontWeight: FontWeight.w700)),
-                        SizedBox(height: 4),
-                        Text('Tap + to raise a support request', style: TextStyle(color: _onSurfaceVar, fontSize: 13)),
+                        const Icon(Icons.support_agent_outlined, color: _onSurfaceVar, size: 52),
+                        const SizedBox(height: 12),
+                        Text('No tickets yet', style: AppTextStyles.titleMedium.copyWith(color: _onSurface, fontSize: 16, fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 4),
+                        Text('Tap + to raise a support request', style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar, fontSize: 13)),
                       ],
                     ),
                   );
@@ -112,9 +115,9 @@ class _OwnerTicketsScreenState extends State<OwnerTicketsScreen> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: _cyan,
-        foregroundColor: const Color(0xFF002022),
+        foregroundColor: _onCyan,
         icon: const Icon(Icons.add),
-        label: const Text('New Ticket', style: TextStyle(fontWeight: FontWeight.w700)),
+        label: Text('New Ticket', style: AppTextStyles.button.copyWith(fontWeight: FontWeight.w700, color: _onCyan)),
         onPressed: () => _showCreateSheet(context),
       ),
     );
@@ -171,7 +174,7 @@ class _TicketCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   ticket.subject,
-                  style: const TextStyle(color: _onSurface, fontSize: 14, fontWeight: FontWeight.w700),
+                  style: AppTextStyles.titleMedium.copyWith(color: _onSurface, fontSize: 14, fontWeight: FontWeight.w700),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -189,7 +192,7 @@ class _TicketCard extends StatelessWidget {
                   children: [
                     Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
                     const SizedBox(width: 5),
-                    Text(ticket.status.label, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700)),
+                    Text(ticket.status.label, style: AppTextStyles.caption.copyWith(color: color, fontSize: 10, fontWeight: FontWeight.w700)),
                   ],
                 ),
               ),
@@ -201,7 +204,7 @@ class _TicketCard extends StatelessWidget {
               ticket.description,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: _onSurfaceVar, fontSize: 12.5),
+              style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar, fontSize: 12.5),
             ),
           ],
           const SizedBox(height: 8),
@@ -209,9 +212,9 @@ class _TicketCard extends StatelessWidget {
             children: [
               const Icon(Icons.tag, color: _onSurfaceVar, size: 13),
               const SizedBox(width: 4),
-              Text(ticket.category, style: const TextStyle(color: _onSurfaceVar, fontSize: 11.5)),
+              Text(ticket.category, style: AppTextStyles.caption.copyWith(color: _onSurfaceVar, fontSize: 11.5)),
               const Spacer(),
-              Text(_fmtDate(ticket.createdAt), style: const TextStyle(color: _onSurfaceVar, fontSize: 11.5)),
+              Text(_fmtDate(ticket.createdAt), style: AppTextStyles.caption.copyWith(color: _onSurfaceVar, fontSize: 11.5)),
             ],
           ),
           if (ticket.replies.isNotEmpty) ...[
@@ -228,14 +231,14 @@ class _TicketCard extends StatelessWidget {
                 children: [
                   Text(
                     'Latest reply — ${ticket.replies.last.senderName}',
-                    style: const TextStyle(color: _cyan, fontSize: 11, fontWeight: FontWeight.w700),
+                    style: AppTextStyles.caption.copyWith(color: _cyan, fontSize: 11, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     ticket.replies.last.message,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: _onSurfaceVar, fontSize: 12),
+                    style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar, fontSize: 12),
                   ),
                 ],
               ),
@@ -331,10 +334,10 @@ class _CreateTicketSheetState extends State<_CreateTicketSheet> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text('Raise Support Ticket', style: TextStyle(color: _onSurface, fontSize: 18, fontWeight: FontWeight.w800)),
+            Text('Raise Support Ticket', style: AppTextStyles.titleLarge.copyWith(color: _onSurface, fontWeight: FontWeight.w800)),
             const SizedBox(height: 16),
             // Category
-            const Text('Category', style: TextStyle(color: _onSurfaceVar, fontSize: 12)),
+            Text('Category', style: AppTextStyles.caption.copyWith(color: _onSurfaceVar, fontSize: 12)),
             const SizedBox(height: 6),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -347,7 +350,7 @@ class _CreateTicketSheetState extends State<_CreateTicketSheet> {
                 child: DropdownButton<String>(
                   value: _category,
                   dropdownColor: _surface,
-                  style: const TextStyle(color: _onSurface, fontSize: 14),
+                  style: AppTextStyles.bodyMedium.copyWith(color: _onSurface),
                   isExpanded: true,
                   onChanged: (v) { if (v != null) setState(() => _category = v); },
                   items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
@@ -358,7 +361,7 @@ class _CreateTicketSheetState extends State<_CreateTicketSheet> {
             // Subject
             TextFormField(
               controller: _subjectCtrl,
-              style: const TextStyle(color: _onSurface),
+              style: AppTextStyles.bodyMedium.copyWith(color: _onSurface),
               decoration: _inputDec('Subject'),
               validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
             ),
@@ -366,7 +369,7 @@ class _CreateTicketSheetState extends State<_CreateTicketSheet> {
             // Description
             TextFormField(
               controller: _descCtrl,
-              style: const TextStyle(color: _onSurface),
+              style: AppTextStyles.bodyMedium.copyWith(color: _onSurface),
               decoration: _inputDec('Describe your issue'),
               maxLines: 4,
               validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
@@ -378,13 +381,13 @@ class _CreateTicketSheetState extends State<_CreateTicketSheet> {
                 onPressed: _submitting ? null : _submit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _cyan,
-                  foregroundColor: const Color(0xFF002022),
+                  foregroundColor: _onCyan,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
                 child: _submitting
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF002022)))
-                    : const Text('Submit Ticket', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: _onCyan))
+                    : Text('Submit Ticket', style: AppTextStyles.button.copyWith(fontWeight: FontWeight.w800, fontSize: 15)),
               ),
             ),
           ],
@@ -395,7 +398,7 @@ class _CreateTicketSheetState extends State<_CreateTicketSheet> {
 
   InputDecoration _inputDec(String hint) => InputDecoration(
     hintText: hint,
-    hintStyle: const TextStyle(color: _onSurfaceVar),
+    hintStyle: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar),
     filled: true,
     fillColor: _surfaceLow,
     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _outline)),

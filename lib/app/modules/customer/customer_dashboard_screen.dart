@@ -5,6 +5,8 @@ import '../../controllers/booking_controller.dart';
 import '../../controllers/chat_controller.dart';
 import '../../controllers/discovery_controller.dart';
 import '../../controllers/favorites_controller.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_text_styles.dart';
 import '../../widgets/profile_tab.dart';
 import '../booking/my_bookings_tab.dart';
 import '../chat/my_chats_screen.dart';
@@ -13,11 +15,6 @@ import 'home_tab.dart';
 
 class CustomerDashboardScreen extends StatelessWidget {
   const CustomerDashboardScreen({super.key});
-
-  static const _surfaceLow = Color(0xFF191C22);
-  static const _cyan = Color(0xFF00DBE9);
-  static const _onSurfaceVar = Color(0xFFB9CACB);
-  static const _outlineVar = Color(0xFF3B494B);
 
   @override
   Widget build(BuildContext context) {
@@ -55,14 +52,14 @@ class CustomerDashboardScreen extends StatelessWidget {
 
     return Obx(
       () => Scaffold(
-        backgroundColor: const Color(0xFF10131A),
+        backgroundColor: AppColors.background,
         extendBody: true,
         body: tabs[tab.value],
         bottomNavigationBar: Container(
           decoration: BoxDecoration(
-            color: _surfaceLow,
+            color: AppColors.elevated,
             border: Border(
-              top: BorderSide(color: _outlineVar.withValues(alpha: 0.4)),
+              top: BorderSide(color: AppColors.border.withValues(alpha: 0.4)),
             ),
           ),
           child: SafeArea(
@@ -86,7 +83,7 @@ class CustomerDashboardScreen extends StatelessWidget {
                       ),
                       decoration: BoxDecoration(
                         color: active
-                            ? _cyan.withValues(alpha: 0.15)
+                            ? AppColors.primary.withValues(alpha: 0.12)
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(24),
                       ),
@@ -95,19 +92,23 @@ class CustomerDashboardScreen extends StatelessWidget {
                         children: [
                           Icon(
                             active ? item.activeIcon : item.icon,
-                            color: active ? _cyan : _onSurfaceVar,
+                            color: active
+                                ? AppColors.primary
+                                : AppColors.textSecondary,
                             size: 22,
                           ),
                           const SizedBox(height: 2),
                           Text(
                             item.label,
-                            style: TextStyle(
+                            style: AppTextStyles.caption.copyWith(
                               fontSize: 9,
                               fontWeight: active
                                   ? FontWeight.w700
                                   : FontWeight.w500,
                               letterSpacing: 0.4,
-                              color: active ? _cyan : _onSurfaceVar,
+                              color: active
+                                  ? AppColors.primary
+                                  : AppColors.textSecondary,
                             ),
                           ),
                         ],

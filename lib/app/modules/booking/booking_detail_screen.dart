@@ -9,11 +9,12 @@ import 'package:share_plus/share_plus.dart';
 import '../../data/models/arena_model.dart';
 import '../../data/models/booking_model.dart';
 import '../../services/arena_service.dart';
+import '../../theme/app_colors.dart';
 import '../../widgets/slot_picker_widgets.dart';
 import 'my_bookings_tab.dart' show openBookingChatAndGo;
 import 'rate_booking_sheet.dart';
 
-const _red = Color(0xFFFF5252);
+const _red = AppColors.error;
 
 /// Customer booking detail screen — full booking info plus a QR code the
 /// owner scans to activate (check-in) the booking at the arena.
@@ -88,7 +89,7 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
   }
 
   Color _activeStatusColor(BookingModel b) {
-    if (b.isActive) return const Color(0xFF00DBE9);
+    if (b.isActive) return AppColors.secondary;
     return _statusColor(b.status);
   }
 
@@ -206,7 +207,7 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                               icon: Icons.star_outline,
                               label: 'Rate this Arena',
                               filled: true,
-                              fillColor: const Color(0xFFFFB59C),
+                              fillColor: AppColors.primary,
                               onTap: () => RateBookingSheet.show(b),
                             ),
                           ),
@@ -630,7 +631,7 @@ class _QrSectionState extends State<_QrSection>
                 child: Text(
                   '${b.arenaName} · ${b.timeRange}',
                   style: const TextStyle(
-                    color: Color(0xFF0A1628),
+                    color: AppColors.onPrimary,
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
@@ -750,19 +751,19 @@ class _SessionExpiredSection extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFB4AB).withValues(alpha: 0.06),
+        color: AppColors.error.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFFFB4AB).withValues(alpha: 0.2)),
+        border: Border.all(color: AppColors.error.withValues(alpha: 0.2)),
       ),
       child: const Column(
         children: [
-          Icon(Icons.schedule_outlined, color: Color(0xFFFFB4AB), size: 44),
+          Icon(Icons.schedule_outlined, color: AppColors.error, size: 44),
           SizedBox(height: 12),
           Text(
             'Session Time Passed',
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: Color(0xFFFFB4AB),
+              color: AppColors.error,
               fontSize: 14,
               fontWeight: FontWeight.w700,
             ),
@@ -952,7 +953,7 @@ class _ActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final disabled = onTap == null;
     final activeFill = fillColor ?? SlotPickerColors.greenCta;
-    final iconTextColor = fillColor != null ? Colors.black87 : const Color(0xFF0A1628);
+    final iconTextColor = fillColor != null ? AppColors.onPrimary : AppColors.onPrimary;
     return Material(
       color: filled
           ? (disabled ? SlotPickerColors.surface : activeFill)

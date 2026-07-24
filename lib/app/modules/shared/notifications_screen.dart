@@ -7,15 +7,16 @@ import '../../controllers/notification_controller.dart';
 import '../../data/models/notification_model.dart';
 import '../../data/models/user_model.dart';
 import '../../routes/app_routes.dart';
+import '../../theme/app_colors.dart';
 
 class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({super.key});
 
-  static const _bg = Color(0xFF0A1120);
-  static const _surface = Color(0xFF121B2E);
-  static const _outline = Color(0xFF223052);
-  static const _blue = Color(0xFF2979FF);
-  static const _grey = Color(0xFF8A94A6);
+  static const _bg = AppColors.background;
+  static const _surface = AppColors.surface;
+  static const _outline = AppColors.border;
+  static const _blue = AppColors.secondary;
+  static const _grey = AppColors.textSecondary;
 
   @override
   Widget build(BuildContext context) {
@@ -33,14 +34,14 @@ class NotificationsScreen extends StatelessWidget {
               ? TextButton(
                   onPressed: c.markAllRead,
                   child: const Text('Mark all read',
-                      style: TextStyle(color: _blue, fontSize: 13)),
+                      style: TextStyle(color: AppColors.primary, fontSize: 13)),
                 )
               : const SizedBox.shrink()),
         ],
       ),
       body: Obx(() {
         if (c.isLoading.value) {
-          return const Center(child: CircularProgressIndicator(color: _blue));
+          return const Center(child: CircularProgressIndicator(color: AppColors.primary));
         }
         if (c.notifications.isEmpty) {
           return const Center(
@@ -195,7 +196,7 @@ class _NotificationTile extends StatelessWidget {
                 width: 8,
                 height: 8,
                 decoration: const BoxDecoration(
-                  color: NotificationsScreen._blue,
+                  color: AppColors.error,
                   shape: BoxShape.circle,
                 ),
               ),

@@ -109,6 +109,115 @@ exports.onBookingUpdated = onDocumentUpdated("bookings/{bookingId}", async (even
       )
     ));
   }
+
+  // Mirror the status change into the linked chat:
+  //  - pair chats (pairKey) get a system message so both parties see the
+  //    event inline; the pinned banner itself streams bookings live.
+  //  - all chats get a bookingSnapshot refresh — the chat-list status chip
+  //    reads it, and it's the only live source for legacy chats.
+  try {
+    const db = admin.firestore();
+    const pricePerHour = after.pricePerHour ?? 0;
+    const totalHours = after.totalHours ?? 0;
+    const totalAmount = after.totalAmount ?? (pricePerHour * totalHours);
+    const startHour = after.startHour ?? 0;
+    const fmt = h => `${String(h % 24).padStart(2, "0")}:00`;
+    const timeRange = `${fmt(startHour)} – ${fmt(startHour + totalHours)}`;
+
+    // Booking dates are stored as local (Pakistan) midnight; format in that
+    // zone or the UTC render shifts to the previous day.
+    let dateLabel = "";
+    if (after.date?.toDate) {
+      dateLabel = after.date.toDate()
+        .toLocaleDateString("en-GB", {
+          weekday: "short", day: "numeric", month: "short",
+          timeZone: "Asia/Karachi",
+        })
+        .replace(",", "");
+    }
+
+    // Canonical pair chat first, legacy per-booking chat as fallback.
+    let chatDoc = null;
+    let isPair = false;
+    if (after.arenaId && after.customerId) {
+      const pairSnap = await db.collection("chats")
+        .where("pairKey", "==", `${after.arenaId}_${after.customerId}`)
+        .limit(1)
+        .get();
+      if (!pairSnap.empty) {
+        chatDoc = pairSnap.docs[0];
+        isPair = true;
+      }
+    }
+    if (!chatDoc) {
+      const legacySnap = await db.collection("chats")
+        .where("bookingId", "==", event.params.bookingId)
+        .limit(1)
+        .get();
+      if (!legacySnap.empty) chatDoc = legacySnap.docs[0];
+    }
+
+    if (chatDoc) {
+      const systemTexts = {
+        deposit_submitted: "Deposit submitted — awaiting approval",
+        confirmed: "Booking approved ✅",
+        rejected: "Booking rejected",
+        cancelled: "Booking cancelled",
+        completed: "Session completed",
+        refund_pending: "Refund requested",
+        refund_sent: "Refund sent by owner",
+        refund_confirmed: "Refund confirmed by customer",
+      };
+      const text = systemTexts[after.status];
+
+      const batch = db.batch();
+
+      if (isPair && text) {
+        const context = [after.courtName, dateLabel].filter(Boolean).join(" · ");
+        const content = context ? `${text} — ${context}` : text;
+        batch.set(chatDoc.ref.collection("messages").doc(), {
+          senderId: "system",
+          senderRole: "system",
+          type: "system",
+          content,
+          isRead: true,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          bookingRef: {
+            bookingId: event.params.bookingId,
+            courtName: after.courtName ?? "",
+            dateLabel,
+            timeRange,
+          },
+        });
+        const chatUpdates = {
+          lastMessage: content,
+          lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+        for (const p of chatDoc.data().participants ?? []) {
+          chatUpdates[`unreadCounts.${p}`] =
+            admin.firestore.FieldValue.increment(1);
+        }
+        batch.update(chatDoc.ref, chatUpdates);
+      }
+
+      batch.set(chatDoc.ref, {
+        bookingSnapshot: {
+          arenaName: after.arenaName ?? "",
+          courtName: after.courtName ?? "",
+          date: after.date || null,
+          timeRange,
+          totalAmount,
+          depositAmount: totalAmount * 0.3,
+          status: after.status,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+      }, { merge: true });
+
+      await batch.commit();
+    }
+  } catch (e) {
+    console.error("chat status mirror failed:", e);
+  }
 });
 
 // ── Auto-transition bookings every 30 minutes ──────────────────────────

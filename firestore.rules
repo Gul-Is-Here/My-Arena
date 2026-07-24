@@ -88,21 +88,43 @@ service cloud.firestore {
     // ── Chats ─────────────────────────────────────────────────────────
     match /chats/{chatId} {
       // Admin/staff can monitor and join any conversation.
-      allow read, write: if isAuth() && (
+      allow read: if isAuth() && (
         uid() in resource.data.participants || isStaff()
       );
 
       allow create: if isAuth();
+
+      // Participants may only touch conversation-state fields; structural
+      // fields (participants, type, title, bookingId) stay fixed once set.
+      // pairKey/arenaId/customerId are writable for the one-time
+      // legacy→pair-chat upgrade. Staff keep broader access to join and
+      // manage conversations.
+      allow update: if isAuth() && (
+        isStaff() ||
+        (uid() in resource.data.participants &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'activeBookingId', 'unreadCounts', 'lastMessage',
+            'lastMessageAt', 'pairKey', 'arenaId', 'customerId'
+          ]))
+      );
+
+      allow delete: if isAdmin();
 
       match /messages/{msgId} {
         allow read: if isAuth() && (
           uid() in get(/databases/$(database)/documents/chats/$(chatId)).data.participants ||
           isStaff()
         );
-        allow create: if isAuth() && (
-          uid() in get(/databases/$(database)/documents/chats/$(chatId)).data.participants ||
-          isStaff()
-        );
+        // Clients must send as themselves and can never write 'system'
+        // messages — status events come from Cloud Functions (Admin SDK)
+        // only, so "Booking approved" can't be forged.
+        allow create: if isAuth() &&
+          request.resource.data.senderId == uid() &&
+          request.resource.data.type != 'system' &&
+          (
+            uid() in get(/databases/$(database)/documents/chats/$(chatId)).data.participants ||
+            isStaff()
+          );
         allow update, delete: if false;
       }
     }

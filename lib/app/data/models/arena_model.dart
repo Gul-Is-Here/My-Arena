@@ -20,6 +20,18 @@ class ArenaLocation {
     this.lat = 0,
     this.lng = 0,
   });
+
+  /// Returns the address if it's a proper name; otherwise falls back to a
+  /// coordinate-derived label so cards never show raw numbers.
+  String get displayAddress {
+    final a = address.trim();
+    if (a.isEmpty) return 'Location pinned';
+    // Looks like raw coordinates (e.g. "33.68, 73.04" or "33.6844° N")
+    final looksLikeCoords = RegExp(r'^-?\d+\.?\d*[°,\s]').hasMatch(a) &&
+        !RegExp(r'[a-zA-Z]{3,}').hasMatch(a);
+    if (looksLikeCoords) return 'Location pinned';
+    return a;
+  }
 }
 
 class ArenaModel {

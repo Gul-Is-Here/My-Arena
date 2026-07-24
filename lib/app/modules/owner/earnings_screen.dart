@@ -5,16 +5,18 @@ import 'package:intl/intl.dart';
 import '../../controllers/owner_booking_controller.dart';
 import '../../controllers/owner_controller.dart';
 import '../../data/models/booking_model.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_text_styles.dart';
 
-const _bg = Color(0xFF10131A);
-const _surface = Color(0xFF1D2026);
-const _surfaceLow = Color(0xFF191C22);
-const _outline = Color(0xFF3B494B);
-const _cyan = Color(0xFF00DBE9);
-const _greenFixed = Color(0xFF79FF5B);
-const _amber = Color(0xFFFFB59C);
-const _onSurface = Color(0xFFE1E2EB);
-const _onSurfaceVar = Color(0xFFB9CACB);
+const _bg = AppColors.background;
+const _surface = AppColors.surface;
+const _surfaceLow = AppColors.elevated;
+const _outline = AppColors.border;
+const _cyan = AppColors.secondary;
+const _greenFixed = AppColors.success;
+const _amber = AppColors.warning;
+const _onSurface = AppColors.textPrimary;
+const _onSurfaceVar = AppColors.textSecondary;
 
 final _pkr = NumberFormat('#,##0');
 
@@ -98,11 +100,11 @@ class EarningsScreen extends StatelessWidget {
                       child: const Icon(Icons.arrow_back, color: _onSurface, size: 20),
                     ),
                   ),
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'Earnings',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: _onSurface, fontSize: 22, fontWeight: FontWeight.w800),
+                      style: AppTextStyles.headlineMedium.copyWith(color: _onSurface, fontSize: 22, fontWeight: FontWeight.w800),
                     ),
                   ),
                   const SizedBox(width: 40),
@@ -133,16 +135,16 @@ class EarningsScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Total Earnings', style: TextStyle(color: _onSurfaceVar, fontSize: 13)),
+                          Text('Total Earnings', style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar, fontSize: 13)),
                           const SizedBox(height: 6),
                           Text(
                             'PKR ${_pkr.format(total)}',
-                            style: const TextStyle(color: _greenFixed, fontSize: 32, fontWeight: FontWeight.w900),
+                            style: AppTextStyles.scoreboardMedium.copyWith(color: _greenFixed, fontSize: 32, fontWeight: FontWeight.w900),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             '${filteredList.length} confirmed booking${filteredList.length == 1 ? '' : 's'}',
-                            style: const TextStyle(color: _onSurfaceVar, fontSize: 12),
+                            style: AppTextStyles.caption.copyWith(color: _onSurfaceVar, fontSize: 12),
                           ),
                           const SizedBox(height: 16),
                           // Range chips
@@ -158,19 +160,19 @@ class EarningsScreen extends StatelessWidget {
                                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                                       decoration: BoxDecoration(
                                         color: selectedRange.value == _ranges[i]
-                                            ? _cyan.withValues(alpha: 0.18)
+                                            ? AppColors.primary.withValues(alpha: 0.12)
                                             : _surface,
                                         borderRadius: BorderRadius.circular(20),
                                         border: Border.all(
                                           color: selectedRange.value == _ranges[i]
-                                              ? _cyan.withValues(alpha: 0.6)
+                                              ? AppColors.primary.withValues(alpha: 0.5)
                                               : _outline,
                                         ),
                                       ),
                                       child: Text(
                                         _rangeLabels[i],
-                                        style: TextStyle(
-                                          color: selectedRange.value == _ranges[i] ? _cyan : _onSurfaceVar,
+                                        style: AppTextStyles.bodySmall.copyWith(
+                                          color: selectedRange.value == _ranges[i] ? AppColors.primary : _onSurfaceVar,
                                           fontSize: 12,
                                           fontWeight: FontWeight.w700,
                                         ),
@@ -187,7 +189,7 @@ class EarningsScreen extends StatelessWidget {
 
                     // Per-arena breakdown
                     if (arenaMap.isNotEmpty) ...[
-                      const Text('By Arena', style: TextStyle(color: _onSurface, fontSize: 16, fontWeight: FontWeight.w800)),
+                      Text('By Arena', style: AppTextStyles.titleMedium.copyWith(color: _onSurface, fontSize: 16, fontWeight: FontWeight.w800)),
                       const SizedBox(height: 10),
                       ...arenaMap.entries.map((e) {
                         final pct = total > 0 ? e.value / total : 0.0;
@@ -216,14 +218,14 @@ class EarningsScreen extends StatelessWidget {
                                   Expanded(
                                     child: Text(
                                       e.key,
-                                      style: const TextStyle(color: _onSurface, fontSize: 14, fontWeight: FontWeight.w700),
+                                      style: AppTextStyles.bodyMedium.copyWith(color: _onSurface, fontSize: 14, fontWeight: FontWeight.w700),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                   Text(
                                     'PKR ${_pkr.format(e.value)}',
-                                    style: const TextStyle(color: _greenFixed, fontSize: 14, fontWeight: FontWeight.w800),
+                                    style: AppTextStyles.scoreboard.copyWith(color: _greenFixed, fontSize: 14, fontWeight: FontWeight.w800),
                                   ),
                                 ],
                               ),
@@ -233,14 +235,14 @@ class EarningsScreen extends StatelessWidget {
                                 child: LinearProgressIndicator(
                                   value: pct,
                                   backgroundColor: _outline.withValues(alpha: 0.4),
-                                  valueColor: const AlwaysStoppedAnimation(_cyan),
+                                  valueColor: const AlwaysStoppedAnimation(AppColors.primary),
                                   minHeight: 4,
                                 ),
                               ),
                               const SizedBox(height: 4),
                               Text(
                                 '${(pct * 100).toStringAsFixed(1)}% of total',
-                                style: const TextStyle(color: _onSurfaceVar, fontSize: 11),
+                                style: AppTextStyles.caption.copyWith(color: _onSurfaceVar, fontSize: 11),
                               ),
                             ],
                           ),
@@ -251,7 +253,7 @@ class EarningsScreen extends StatelessWidget {
 
                     // Per-court breakdown
                     if (courtMap.isNotEmpty) ...[
-                      const Text('By Court', style: TextStyle(color: _onSurface, fontSize: 16, fontWeight: FontWeight.w800)),
+                      Text('By Court', style: AppTextStyles.titleMedium.copyWith(color: _onSurface, fontSize: 16, fontWeight: FontWeight.w800)),
                       const SizedBox(height: 10),
                       ...courtMap.entries.map((e) => Container(
                         margin: const EdgeInsets.only(bottom: 8),
@@ -275,14 +277,14 @@ class EarningsScreen extends StatelessWidget {
                             Expanded(
                               child: Text(
                                 e.key,
-                                style: const TextStyle(color: _onSurface, fontSize: 13),
+                                style: AppTextStyles.bodySmall.copyWith(color: _onSurface, fontSize: 13),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
                             Text(
                               'PKR ${_pkr.format(e.value)}',
-                              style: const TextStyle(color: _onSurface, fontSize: 13, fontWeight: FontWeight.w700),
+                              style: AppTextStyles.scoreboard.copyWith(color: _onSurface, fontSize: 13, fontWeight: FontWeight.w700),
                             ),
                           ],
                         ),
@@ -291,13 +293,13 @@ class EarningsScreen extends StatelessWidget {
                     ],
 
                     // Transaction history
-                    const Text('Transaction History', style: TextStyle(color: _onSurface, fontSize: 16, fontWeight: FontWeight.w800)),
+                    Text('Transaction History', style: AppTextStyles.titleMedium.copyWith(color: _onSurface, fontSize: 16, fontWeight: FontWeight.w800)),
                     const SizedBox(height: 10),
                     if (filteredList.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 24),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 24),
                         child: Center(
-                          child: Text('No earnings in this period', style: TextStyle(color: _onSurfaceVar)),
+                          child: Text('No earnings in this period', style: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar)),
                         ),
                       )
                     else
@@ -314,7 +316,7 @@ class EarningsScreen extends StatelessWidget {
 
   Widget _txRow(BookingModel b) {
     final isCompleted = b.status == BookingStatus.completed;
-    final color = isCompleted ? _greenFixed : _cyan;
+    final color = isCompleted ? _greenFixed : AppColors.primary;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -341,14 +343,14 @@ class EarningsScreen extends StatelessWidget {
               children: [
                 Text(
                   b.courtName,
-                  style: const TextStyle(color: _onSurface, fontSize: 13, fontWeight: FontWeight.w600),
+                  style: AppTextStyles.bodySmall.copyWith(color: _onSurface, fontSize: 13, fontWeight: FontWeight.w600),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
                 Text(
                   '${b.arenaName} • ${_fmtDate(b.date)}',
-                  style: const TextStyle(color: _onSurfaceVar, fontSize: 11.5),
+                  style: AppTextStyles.caption.copyWith(color: _onSurfaceVar, fontSize: 11.5),
                 ),
               ],
             ),
@@ -359,12 +361,12 @@ class EarningsScreen extends StatelessWidget {
             children: [
               Text(
                 'PKR ${_pkr.format(b.totalAmount)}',
-                style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w800),
+                style: AppTextStyles.scoreboard.copyWith(color: color, fontSize: 13, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 2),
               Text(
                 b.status.label,
-                style: const TextStyle(color: _onSurfaceVar, fontSize: 10.5),
+                style: AppTextStyles.caption.copyWith(color: _onSurfaceVar, fontSize: 10.5),
               ),
             ],
           ),

@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_colors.dart';
+import '../theme/app_text_styles.dart';
 import '../utils/slot_status.dart';
 
-/// Shared dark palette for the slot-picker UI (customer booking flow +
-/// owner walk-in booking) — deliberately fixed, not theme-driven, to match
-/// the booking flow's immersive dark design.
+/// Shared palette for the slot-picker UI (customer booking flow + owner
+/// walk-in booking) — aliases into the app's global [AppColors] so the
+/// booking flow stays visually consistent with the rest of the app.
 abstract final class SlotPickerColors {
-  static const bg = Color(0xFF0B1120);
-  static const surface = Color(0xFF112240);
-  static const surface2 = Color(0xFF0D1B35);
-  static const green = Color(0xFF4ADE80);
-  static const greenCta = Color(0xFF39FF14);
-  static const onBg = Color(0xFFFFFFFF);
-  static const muted = Color(0xFF8899AA);
-  static const pending = Color(0xFFFFA726);
+  static const bg = AppColors.background;
+  static const surface = AppColors.surface;
+  static const surface2 = AppColors.elevated;
+  static const green = AppColors.success;
+  static const greenCta = AppColors.primary;
+  static const onBg = AppColors.textPrimary;
+  static const muted = AppColors.textSecondary;
+  static const pending = AppColors.warning;
 }
 
 String fmtHour12(int hour) {
@@ -80,23 +82,23 @@ class SlotDateStrip extends StatelessWidget {
                 children: [
                   Text(
                     _weekdays[d.weekday - 1],
-                    style: TextStyle(
+                    style: AppTextStyles.caption.copyWith(
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.5,
                       color: sel
-                          ? const Color(0xFF0A1628)
+                          ? AppColors.onPrimary
                           : SlotPickerColors.muted,
                     ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     '${d.day}',
-                    style: TextStyle(
+                    style: AppTextStyles.titleMedium.copyWith(
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
                       color: sel
-                          ? const Color(0xFF0A1628)
+                          ? AppColors.onPrimary
                           : SlotPickerColors.onBg,
                     ),
                   ),
@@ -107,7 +109,7 @@ class SlotDateStrip extends StatelessWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: sel
-                          ? const Color(0xFF0A1628)
+                          ? AppColors.onPrimary
                           : SlotPickerColors.green,
                     ),
                   ),
@@ -152,19 +154,19 @@ class DurationSelector extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 decoration: BoxDecoration(
                   color: sel
-                      ? SlotPickerColors.green.withValues(alpha: 0.12)
+                      ? SlotPickerColors.greenCta.withValues(alpha: 0.12)
                       : SlotPickerColors.surface,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: sel
-                        ? SlotPickerColors.green
+                        ? SlotPickerColors.greenCta
                         : Colors.white.withValues(alpha: 0.06),
                     width: sel ? 1.5 : 1,
                   ),
                   boxShadow: sel
                       ? [
                           BoxShadow(
-                            color: SlotPickerColors.green.withValues(alpha: 0.25),
+                            color: SlotPickerColors.greenCta.withValues(alpha: 0.25),
                             blurRadius: 14,
                           ),
                         ]
@@ -173,10 +175,9 @@ class DurationSelector extends StatelessWidget {
                 alignment: Alignment.center,
                 child: Text(
                   h == 1 ? '1 hr' : '$h hrs',
-                  style: TextStyle(
+                  style: AppTextStyles.label.copyWith(
                     fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: sel ? SlotPickerColors.green : SlotPickerColors.onBg,
+                    color: sel ? SlotPickerColors.greenCta : SlotPickerColors.onBg,
                   ),
                 ),
               ),
@@ -254,7 +255,7 @@ class _LegendItem extends StatelessWidget {
         const SizedBox(width: 6),
         Text(
           label,
-          style: const TextStyle(fontSize: 11, color: SlotPickerColors.muted),
+          style: AppTextStyles.caption.copyWith(fontSize: 11, color: SlotPickerColors.muted),
         ),
       ],
     );
@@ -318,13 +319,13 @@ class _Step extends StatelessWidget {
           ),
           alignment: Alignment.center,
           child: state == StepState.done
-              ? const Icon(Icons.check, size: 18, color: Color(0xFF0A1628))
+              ? const Icon(Icons.check, size: 18, color: AppColors.onPrimary)
               : Container(
                   width: 10,
                   height: 10,
                   decoration: BoxDecoration(
                     color: state == StepState.current
-                        ? const Color(0xFF0A1628)
+                        ? AppColors.onPrimary
                         : SlotPickerColors.muted.withValues(alpha: 0.4),
                     shape: BoxShape.circle,
                   ),
@@ -333,7 +334,7 @@ class _Step extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           label,
-          style: TextStyle(
+          style: AppTextStyles.caption.copyWith(
             fontSize: 10,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.6,
@@ -401,13 +402,13 @@ class SlotTile extends StatelessWidget {
     if (isSelected) {
       border = SlotPickerColors.greenCta;
       fill = SlotPickerColors.greenCta;
-      textColor = const Color(0xFF0A1628);
+      textColor = AppColors.onPrimary;
       subLabel = 'SELECTED';
       trailing = Container(
         width: 18,
         height: 18,
         decoration: const BoxDecoration(
-          color: Color(0xFF0A1628),
+          color: AppColors.onPrimary,
           shape: BoxShape.circle,
         ),
         child: const Icon(Icons.check, size: 12, color: SlotPickerColors.greenCta),
@@ -416,7 +417,7 @@ class SlotTile extends StatelessWidget {
       switch (status) {
         case SlotStatus.available:
           border = isPeak
-              ? const Color(0xFFFFB59C).withValues(alpha: 0.6)
+              ? AppColors.accent.withValues(alpha: 0.6)
               : SlotPickerColors.green.withValues(alpha: 0.4);
           fill = SlotPickerColors.surface;
           textColor = SlotPickerColors.onBg;
@@ -480,9 +481,8 @@ class SlotTile extends StatelessWidget {
           children: [
             Text(
               time,
-              style: TextStyle(
+              style: AppTextStyles.label.copyWith(
                 fontSize: 14,
-                fontWeight: FontWeight.w700,
                 color: textColor,
               ),
             ),
@@ -493,16 +493,16 @@ class SlotTile extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFB59C).withValues(alpha: 0.18),
+                  color: AppColors.accent.withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: const Text(
+                child: Text(
                   'PEAK',
-                  style: TextStyle(
+                  style: AppTextStyles.caption.copyWith(
                     fontSize: 8,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.5,
-                    color: Color(0xFFFFB59C),
+                    color: AppColors.accent,
                   ),
                 ),
               ),
@@ -511,12 +511,12 @@ class SlotTile extends StatelessWidget {
               children: [
                 Text(
                   subLabel,
-                  style: TextStyle(
+                  style: AppTextStyles.caption.copyWith(
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.4,
                     color: isSelected
-                        ? const Color(0xFF0A1628).withValues(alpha: 0.7)
+                        ? AppColors.onPrimary.withValues(alpha: 0.7)
                         : textColor.withValues(alpha: 0.85),
                   ),
                 ),

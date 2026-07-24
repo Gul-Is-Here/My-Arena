@@ -10,29 +10,19 @@ import '../../data/models/arena_model.dart';
 import '../../data/models/booking_model.dart';
 import '../../data/models/court_model.dart';
 import '../../routes/app_routes.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_text_styles.dart';
 import '../../widgets/arena_image.dart';
 
 class HomeTab extends StatelessWidget {
   const HomeTab({super.key});
-
-  // ── Design tokens ─────────────────────────────────────────────────
-  static const _bg = Color(0xFF10131A);
-  static const _surface = Color(0xFF1D2026);
-  static const _surfaceLow = Color(0xFF191C22);
-  static const _cyan = Color(0xFF00DBE9);
-  static const _onSurface = Color(0xFFE1E2EB);
-  static const _onSurfaceVar = Color(0xFFB9CACB);
-  static const _outline = Color(0xFF849495);
-  static const _outlineVar = Color(0xFF3B494B);
-  static const _starColor = Color(0xFFFFB59C);
-  static const _green = Color(0xFF2AE500);
 
   @override
   Widget build(BuildContext context) {
     final discovery = DiscoveryController.to;
 
     return Container(
-      color: _bg,
+      color: AppColors.background,
       child: SafeArea(
         child: CustomScrollView(
           slivers: [
@@ -168,33 +158,32 @@ class _TopBarDelegate extends SliverPersistentHeaderDelegate {
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(
-      color: HomeTab._surface,
+      color: AppColors.surface,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
           // Location
-          const Icon(Icons.location_on, color: HomeTab._cyan, size: 20),
+          const Icon(Icons.location_on, color: AppColors.secondary, size: 20),
           const SizedBox(width: 6),
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'CURRENT HUB',
-                  style: TextStyle(
+                  style: AppTextStyles.caption.copyWith(
                     fontSize: 9,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 1.2,
-                    color: HomeTab._outline,
+                    color: AppColors.textSecondary,
                   ),
                 ),
                 Obx(() => Text(
                       discovery.cityName.value,
-                      style: const TextStyle(
+                      style: AppTextStyles.titleMedium.copyWith(
                         fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: HomeTab._onSurface,
+                        color: AppColors.textPrimary,
                         letterSpacing: -0.3,
                       ),
                       overflow: TextOverflow.ellipsis,
@@ -203,12 +192,11 @@ class _TopBarDelegate extends SliverPersistentHeaderDelegate {
             ),
           ),
           // Brand
-          const Text(
+          Text(
             'ArenaPro',
-            style: TextStyle(
+            style: AppTextStyles.titleLarge.copyWith(
               fontSize: 17,
-              fontWeight: FontWeight.w800,
-              color: HomeTab._cyan,
+              color: AppColors.secondary,
               letterSpacing: -0.5,
             ),
           ),
@@ -224,11 +212,11 @@ class _TopBarDelegate extends SliverPersistentHeaderDelegate {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: const BoxDecoration(
-                      color: HomeTab._surfaceLow,
+                      color: AppColors.elevated,
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.notifications_outlined,
-                        color: HomeTab._cyan, size: 20),
+                        color: AppColors.secondary, size: 20),
                   ),
                   if (unread > 0)
                     Positioned(
@@ -238,13 +226,13 @@ class _TopBarDelegate extends SliverPersistentHeaderDelegate {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 5, vertical: 2),
                         decoration: BoxDecoration(
-                          color: HomeTab._cyan,
+                          color: AppColors.error,
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
                           unread > 9 ? '9+' : '$unread',
-                          style: const TextStyle(
-                            color: Color(0xFF002022),
+                          style: AppTextStyles.caption.copyWith(
+                            color: Colors.white,
                             fontSize: 10,
                             fontWeight: FontWeight.w800,
                           ),
@@ -261,11 +249,11 @@ class _TopBarDelegate extends SliverPersistentHeaderDelegate {
             onTap: () => Get.toNamed(AppRoutes.arenaList),
             child: Container(
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: HomeTab._surfaceLow,
+              decoration: const BoxDecoration(
+                color: AppColors.elevated,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.search, color: HomeTab._cyan, size: 20),
+              child: const Icon(Icons.search, color: AppColors.secondary, size: 20),
             ),
           ),
         ],
@@ -287,21 +275,20 @@ class _SearchBar extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: HomeTab._surfaceLow,
-          border: Border(
-            bottom: BorderSide(color: HomeTab._outlineVar, width: 2),
+          color: AppColors.elevated,
+          border: const Border(
+            bottom: BorderSide(color: AppColors.border, width: 2),
           ),
         ),
         child: Row(
-          children: const [
-            Icon(Icons.search, color: HomeTab._outline, size: 20),
-            SizedBox(width: 12),
+          children: [
+            const Icon(Icons.search, color: AppColors.textSecondary, size: 20),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
                 'Search sports, arenas, or events…',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: HomeTab._outline,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
                 ),
               ),
             ),
@@ -311,8 +298,6 @@ class _SearchBar extends StatelessWidget {
     );
   }
 }
-
-// ── Promo Banner ───────────────────────────────────────────────────────────────
 
 // ── Promo Banner Carousel ──────────────────────────────────────────────────────
 
@@ -359,7 +344,7 @@ class _PromoBannerCarouselState extends State<_PromoBannerCarousel> {
                 width: active ? 20 : 6,
                 height: 6,
                 decoration: BoxDecoration(
-                  color: active ? HomeTab._cyan : HomeTab._outline,
+                  color: active ? AppColors.primary : AppColors.textSecondary,
                   borderRadius: BorderRadius.circular(3),
                 ),
               );
@@ -400,8 +385,8 @@ class _PromoBanner extends StatelessWidget {
                     end: Alignment.bottomCenter,
                     colors: [
                       Colors.transparent,
-                      HomeTab._bg.withValues(alpha: 0.5),
-                      HomeTab._bg.withValues(alpha: 0.92),
+                      AppColors.background.withValues(alpha: 0.5),
+                      AppColors.background.withValues(alpha: 0.92),
                     ],
                     stops: const [0.0, 0.45, 1.0],
                   ),
@@ -419,14 +404,14 @@ class _PromoBanner extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
-                      color: HomeTab._cyan,
-                      child: const Text(
+                      color: AppColors.secondary,
+                      child: Text(
                         'SEASON PASS',
-                        style: TextStyle(
+                        style: AppTextStyles.caption.copyWith(
                           fontSize: 9,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 1.4,
-                          color: Color(0xFF002022),
+                          color: Colors.white,
                         ),
                       ),
                     ),
@@ -435,28 +420,27 @@ class _PromoBanner extends StatelessWidget {
                       arena.name,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: AppTextStyles.headlineMedium.copyWith(
                         fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                        color: HomeTab._onSurface,
+                        color: AppColors.textPrimary,
                         letterSpacing: -0.4,
                         height: 1.2,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      arena.location.address,
+                      arena.location.displayAddress,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: AppTextStyles.bodyMedium.copyWith(
                         fontSize: 13,
-                        color: HomeTab._onSurfaceVar,
+                        color: AppColors.textSecondary,
                       ),
                     ),
                     const SizedBox(height: 14),
                     Row(
                       children: [
-                        _CyanButton(
+                        _SecondaryButton(
                           label: 'BOOK NOW',
                           icon: Icons.arrow_forward,
                           onTap: () => Get.toNamed(
@@ -491,9 +475,9 @@ class _UpcomingCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: HomeTab._surface,
-        border: Border(
-          top: BorderSide(color: HomeTab._cyan, width: 2),
+        color: AppColors.surface,
+        border: const Border(
+          top: BorderSide(color: AppColors.primary, width: 2),
         ),
         borderRadius: BorderRadius.circular(8),
       ),
@@ -508,22 +492,21 @@ class _UpcomingCard extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'CONFIRMED BOOKING',
-                    style: TextStyle(
+                    style: AppTextStyles.caption.copyWith(
                       fontSize: 9,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1.4,
-                      color: HomeTab._cyan,
+                      color: AppColors.primary,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     booking.arenaName,
-                    style: const TextStyle(
+                    style: AppTextStyles.titleLarge.copyWith(
                       fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      color: HomeTab._onSurface,
+                      color: AppColors.textPrimary,
                       letterSpacing: -0.3,
                     ),
                   ),
@@ -531,12 +514,12 @@ class _UpcomingCard extends StatelessWidget {
               ),
               Container(
                 padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: HomeTab._surfaceLow,
+                decoration: const BoxDecoration(
+                  color: AppColors.elevated,
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(Icons.check_circle,
-                    color: HomeTab._green, size: 20),
+                    color: AppColors.success, size: 20),
               ),
             ],
           ),
@@ -565,15 +548,15 @@ class _UpcomingCard extends StatelessWidget {
             child: OutlinedButton(
               onPressed: () => Get.offAllNamed(AppRoutes.customerDashboard, arguments: 1),
               style: OutlinedButton.styleFrom(
-                foregroundColor: HomeTab._cyan,
-                side: const BorderSide(color: HomeTab._cyan),
+                foregroundColor: AppColors.primary,
+                side: const BorderSide(color: AppColors.primary),
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4)),
               ),
-              child: const Text(
+              child: Text(
                 'VIEW DIGITAL TICKET',
-                style: TextStyle(
+                style: AppTextStyles.label.copyWith(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.2,
@@ -598,7 +581,7 @@ class _BookingInfoTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, color: HomeTab._outline, size: 18),
+        Icon(icon, color: AppColors.textSecondary, size: 18),
         const SizedBox(width: 8),
         Expanded(
           child: Column(
@@ -606,9 +589,9 @@ class _BookingInfoTile extends StatelessWidget {
             children: [
               Text(
                 label,
-                style: const TextStyle(
+                style: AppTextStyles.caption.copyWith(
                   fontSize: 9,
-                  color: HomeTab._outline,
+                  color: AppColors.textSecondary,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 1.0,
                 ),
@@ -617,10 +600,10 @@ class _BookingInfoTile extends StatelessWidget {
                 value,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: AppTextStyles.bodySmall.copyWith(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: HomeTab._onSurface,
+                  color: AppColors.textPrimary,
                 ),
               ),
             ],
@@ -645,14 +628,13 @@ class _SectionHeader extends StatelessWidget {
       children: [
         Row(
           children: [
-            Container(width: 4, height: 20, color: HomeTab._cyan),
+            Container(width: 4, height: 20, color: AppColors.secondary),
             const SizedBox(width: 10),
             Text(
               title,
-              style: const TextStyle(
+              style: AppTextStyles.titleLarge.copyWith(
                 fontSize: 17,
-                fontWeight: FontWeight.w700,
-                color: HomeTab._onSurface,
+                color: AppColors.textPrimary,
                 letterSpacing: -0.2,
               ),
             ),
@@ -660,13 +642,13 @@ class _SectionHeader extends StatelessWidget {
         ),
         GestureDetector(
           onTap: onViewAll,
-          child: const Text(
+          child: Text(
             'VIEW ALL',
-            style: TextStyle(
+            style: AppTextStyles.caption.copyWith(
               fontSize: 10,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.2,
-              color: HomeTab._cyan,
+              color: AppColors.secondary,
             ),
           ),
         ),
@@ -689,8 +671,8 @@ class _FeaturedCard extends StatelessWidget {
       child: Container(
         width: 200,
         decoration: BoxDecoration(
-          color: HomeTab._surfaceLow,
-          border: Border.all(color: HomeTab._outlineVar.withValues(alpha: 0.4)),
+          color: AppColors.elevated,
+          border: Border.all(color: AppColors.border.withValues(alpha: 0.4)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -710,25 +692,34 @@ class _FeaturedCard extends StatelessWidget {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                     decoration: BoxDecoration(
-                      color: HomeTab._bg.withValues(alpha: 0.82),
+                      color: AppColors.background.withValues(alpha: 0.82),
                       borderRadius: BorderRadius.circular(4),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.star,
-                            size: 12, color: HomeTab._starColor),
-                        const SizedBox(width: 3),
-                        Text(
-                          arena.rating.toStringAsFixed(1),
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: HomeTab._onSurface,
+                    child: arena.reviewCount == 0
+                        ? Text(
+                            'New',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textSecondary,
+                            ),
+                          )
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.star,
+                                  size: 12, color: AppColors.primary),
+                              const SizedBox(width: 3),
+                              Text(
+                                arena.rating.toStringAsFixed(1),
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
-                    ),
                   ),
                 ),
                 Positioned(
@@ -746,14 +737,14 @@ class _FeaturedCard extends StatelessWidget {
                         width: 28,
                         height: 28,
                         decoration: BoxDecoration(
-                          color: HomeTab._bg.withValues(alpha: 0.82),
+                          color: AppColors.background.withValues(alpha: 0.82),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Icon(
                           fav ? Icons.favorite : Icons.favorite_border,
                           color: fav
-                              ? const Color(0xFFFF6B6B)
-                              : HomeTab._outline,
+                              ? AppColors.error
+                              : AppColors.textSecondary,
                           size: 15,
                         ),
                       ),
@@ -772,26 +763,25 @@ class _FeaturedCard extends StatelessWidget {
                     arena.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: AppTextStyles.titleMedium.copyWith(
                       fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: HomeTab._onSurface,
+                      color: AppColors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Row(
                     children: [
                       const Icon(Icons.near_me_outlined,
-                          size: 12, color: HomeTab._outline),
+                          size: 12, color: AppColors.textSecondary),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          arena.location.address,
+                          arena.location.displayAddress,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: AppTextStyles.caption.copyWith(
                             fontSize: 10,
-                            color: HomeTab._outline,
+                            color: AppColors.textSecondary,
                             letterSpacing: 0.5,
                           ),
                         ),
@@ -807,24 +797,23 @@ class _FeaturedCard extends StatelessWidget {
                           children: [
                             TextSpan(
                               text: 'PKR ${arena.minPrice.toStringAsFixed(0)}',
-                              style: const TextStyle(
+                              style: AppTextStyles.scoreboard.copyWith(
                                 fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: HomeTab._cyan,
+                                color: AppColors.primary,
                               ),
                             ),
-                            const TextSpan(
+                            TextSpan(
                               text: '/hr',
-                              style: TextStyle(
+                              style: AppTextStyles.caption.copyWith(
                                 fontSize: 10,
-                                color: HomeTab._outline,
+                                color: AppColors.textSecondary,
                               ),
                             ),
                           ],
                         ),
                       ),
                       const Icon(Icons.chevron_right,
-                          color: HomeTab._outline, size: 18),
+                          color: AppColors.textSecondary, size: 18),
                     ],
                   ),
                 ],
@@ -851,7 +840,7 @@ class _NearbyCard extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: Container(
-          color: HomeTab._surfaceLow,
+          color: AppColors.elevated,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -870,25 +859,34 @@ class _NearbyCard extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: HomeTab._bg.withValues(alpha: 0.82),
+                        color: AppColors.background.withValues(alpha: 0.82),
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.star,
-                              size: 13, color: HomeTab._starColor),
-                          const SizedBox(width: 4),
-                          Text(
-                            arena.rating.toStringAsFixed(1),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: HomeTab._onSurface,
+                      child: arena.reviewCount == 0
+                          ? Text(
+                              'New',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textSecondary,
+                              ),
+                            )
+                          : Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.star,
+                                    size: 13, color: AppColors.primary),
+                                const SizedBox(width: 4),
+                                Text(
+                                  arena.rating.toStringAsFixed(1),
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ],
-                      ),
                     ),
                   ),
                   Positioned(
@@ -906,14 +904,14 @@ class _NearbyCard extends StatelessWidget {
                           width: 34,
                           height: 34,
                           decoration: BoxDecoration(
-                            color: HomeTab._bg.withValues(alpha: 0.82),
+                            color: AppColors.background.withValues(alpha: 0.82),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Icon(
                             fav ? Icons.favorite : Icons.favorite_border,
                             color: fav
-                                ? const Color(0xFFFF6B6B)
-                                : HomeTab._outline,
+                                ? AppColors.error
+                                : AppColors.textSecondary,
                             size: 18,
                           ),
                         ),
@@ -935,10 +933,9 @@ class _NearbyCard extends StatelessWidget {
                         children: [
                           Text(
                             arena.name,
-                            style: const TextStyle(
+                            style: AppTextStyles.titleMedium.copyWith(
                               fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: HomeTab._onSurface,
+                              color: AppColors.textPrimary,
                               letterSpacing: -0.2,
                             ),
                           ),
@@ -946,15 +943,15 @@ class _NearbyCard extends StatelessWidget {
                           Row(
                             children: [
                               const Icon(Icons.location_on,
-                                  size: 13, color: HomeTab._outline),
+                                  size: 13, color: AppColors.textSecondary),
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
                                   '${DiscoveryController.to.distanceOf(arena).toStringAsFixed(1)} KM AWAY',
-                                  style: const TextStyle(
+                                  style: AppTextStyles.caption.copyWith(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w600,
-                                    color: HomeTab._outline,
+                                    color: AppColors.textSecondary,
                                     letterSpacing: 0.6,
                                   ),
                                 ),
@@ -969,17 +966,16 @@ class _NearbyCard extends StatelessWidget {
                         children: [
                           TextSpan(
                             text: 'PKR ${arena.minPrice.toStringAsFixed(0)}',
-                            style: const TextStyle(
+                            style: AppTextStyles.scoreboard.copyWith(
                               fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: HomeTab._cyan,
+                              color: AppColors.primary,
                             ),
                           ),
-                          const TextSpan(
+                          TextSpan(
                             text: '/hr',
-                            style: TextStyle(
+                            style: AppTextStyles.caption.copyWith(
                               fontSize: 10,
-                              color: HomeTab._outline,
+                              color: AppColors.textSecondary,
                             ),
                           ),
                         ],
@@ -1048,11 +1044,11 @@ class _QuickFilterRow extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: count > 0
-                    ? HomeTab._cyan.withValues(alpha: 0.12)
-                    : HomeTab._surfaceLow,
+                    ? AppColors.primary.withValues(alpha: 0.12)
+                    : AppColors.elevated,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: count > 0 ? HomeTab._cyan : HomeTab._outlineVar,
+                  color: count > 0 ? AppColors.primary : AppColors.border,
                 ),
               ),
               child: Row(
@@ -1061,7 +1057,7 @@ class _QuickFilterRow extends StatelessWidget {
                   Icon(
                     Icons.tune,
                     size: 16,
-                    color: count > 0 ? HomeTab._cyan : HomeTab._outline,
+                    color: count > 0 ? AppColors.primary : AppColors.textSecondary,
                   ),
                   if (count > 0) ...[
                     const SizedBox(width: 5),
@@ -1069,15 +1065,15 @@ class _QuickFilterRow extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 5, vertical: 1),
                       decoration: BoxDecoration(
-                        color: HomeTab._cyan,
+                        color: AppColors.primary,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
                         '$count',
-                        style: const TextStyle(
+                        style: AppTextStyles.caption.copyWith(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF002022),
+                          color: AppColors.onPrimary,
                         ),
                       ),
                     ),
@@ -1106,20 +1102,18 @@ class _QuickChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          color: selected ? HomeTab._cyan : HomeTab._surfaceLow,
+          color: selected ? AppColors.primary : AppColors.elevated,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: selected ? HomeTab._cyan : HomeTab._outlineVar,
+            color: selected ? AppColors.primary : AppColors.border,
           ),
         ),
         child: Text(
           label,
-          style: TextStyle(
+          style: AppTextStyles.label.copyWith(
             fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: selected
-                ? const Color(0xFF002022)
-                : HomeTab._onSurfaceVar,
+            color: selected ? AppColors.onPrimary : AppColors.textSecondary,
           ),
         ),
       ),
@@ -1133,12 +1127,6 @@ class _FilterSheet extends StatelessWidget {
   final DiscoveryController discovery;
   const _FilterSheet({required this.discovery});
 
-  static const _bg = Color(0xFF1A1E27);
-  static const _divider = Color(0xFF252B34);
-  static const _cyan = Color(0xFF00DBE9);
-  static const _onSurface = Color(0xFFE1E2EB);
-  static const _muted = Color(0xFF849495);
-
   @override
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
@@ -1148,7 +1136,7 @@ class _FilterSheet extends StatelessWidget {
       expand: false,
       builder: (_, sc) => Container(
         decoration: const BoxDecoration(
-          color: _bg,
+          color: AppColors.elevated,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(
@@ -1158,7 +1146,8 @@ class _FilterSheet extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                  color: _muted, borderRadius: BorderRadius.circular(2)),
+                  color: AppColors.textSecondary,
+                  borderRadius: BorderRadius.circular(2)),
             ),
             const SizedBox(height: 16),
             Padding(
@@ -1166,20 +1155,18 @@ class _FilterSheet extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Filters',
-                      style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: _onSurface)),
+                  Text('Filters',
+                      style: AppTextStyles.titleLarge.copyWith(
+                          fontSize: 18, color: AppColors.textPrimary)),
                   Obx(() => discovery.activeFilterCount > 0
                       ? GestureDetector(
                           onTap: () {
                             discovery.clearFilters();
                             Navigator.pop(context);
                           },
-                          child: const Text('Reset All',
-                              style: TextStyle(
-                                  color: _cyan,
+                          child: Text('Reset All',
+                              style: AppTextStyles.label.copyWith(
+                                  color: AppColors.secondary,
                                   fontWeight: FontWeight.w700,
                                   fontSize: 14)),
                         )
@@ -1189,7 +1176,7 @@ class _FilterSheet extends StatelessWidget {
             ),
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
-              child: Divider(height: 1, color: _divider),
+              child: Divider(height: 1, color: AppColors.border),
             ),
             Expanded(
               child: ListView(
@@ -1283,13 +1270,14 @@ class _FilterSheet extends StatelessWidget {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('Up to',
-                                style:
-                                    TextStyle(color: _muted, fontSize: 13)),
+                            Text('Up to',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 13)),
                             Text(
                               'PKR ${discovery.maxPrice.value.toStringAsFixed(0)}',
-                              style: const TextStyle(
-                                  color: _cyan,
+                              style: AppTextStyles.label.copyWith(
+                                  color: AppColors.primary,
                                   fontWeight: FontWeight.w700,
                                   fontSize: 14),
                             ),
@@ -1298,11 +1286,11 @@ class _FilterSheet extends StatelessWidget {
                         const SizedBox(height: 6),
                         SliderTheme(
                           data: SliderThemeData(
-                            activeTrackColor: _cyan,
-                            inactiveTrackColor: _divider,
-                            thumbColor: _cyan,
+                            activeTrackColor: AppColors.primary,
+                            inactiveTrackColor: AppColors.border,
+                            thumbColor: AppColors.primary,
                             overlayColor:
-                                _cyan.withValues(alpha: 0.18),
+                                AppColors.primary.withValues(alpha: 0.18),
                             trackHeight: 3,
                           ),
                           child: Slider(
@@ -1316,13 +1304,15 @@ class _FilterSheet extends StatelessWidget {
                         ),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: const [
+                          children: [
                             Text('PKR 500',
-                                style: TextStyle(
-                                    color: _muted, fontSize: 11)),
+                                style: AppTextStyles.caption.copyWith(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 11)),
                             Text('PKR 10,000',
-                                style: TextStyle(
-                                    color: _muted, fontSize: 11)),
+                                style: AppTextStyles.caption.copyWith(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 11)),
                           ],
                         ),
                       ],
@@ -1367,11 +1357,11 @@ class _FilterSheet extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: AppTextStyles.caption.copyWith(
               fontSize: 10,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.2,
-              color: _muted,
+              color: AppColors.textSecondary,
             ),
           ),
           const SizedBox(height: 12),
@@ -1396,19 +1386,15 @@ class _SheetChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: selected
-              ? const Color(0xFF00DBE9)
-              : const Color(0xFF252B34),
+          color: selected ? AppColors.primary : AppColors.background,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(
           label,
-          style: TextStyle(
+          style: AppTextStyles.label.copyWith(
             fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: selected
-                ? const Color(0xFF002022)
-                : const Color(0xFFB9CACB),
+            color: selected ? AppColors.onPrimary : AppColors.textSecondary,
           ),
         ),
       ),
@@ -1416,13 +1402,13 @@ class _SheetChip extends StatelessWidget {
   }
 }
 
-// ── Cyan CTA Button ────────────────────────────────────────────────────────────
+// ── Secondary CTA Button ───────────────────────────────────────────────────────
 
-class _CyanButton extends StatelessWidget {
+class _SecondaryButton extends StatelessWidget {
   final String label;
   final IconData icon;
   final VoidCallback onTap;
-  const _CyanButton(
+  const _SecondaryButton(
       {required this.label, required this.icon, required this.onTap});
 
   @override
@@ -1432,21 +1418,20 @@ class _CyanButton extends StatelessWidget {
       child: Container(
         padding:
             const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
-        color: HomeTab._cyan,
+        color: AppColors.primary,
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               label,
-              style: const TextStyle(
+              style: AppTextStyles.button.copyWith(
                 fontSize: 11,
-                fontWeight: FontWeight.w800,
                 letterSpacing: 1.4,
-                color: Color(0xFF002022),
+                color: AppColors.onPrimary,
               ),
             ),
             const SizedBox(width: 6),
-            Icon(icon, size: 16, color: const Color(0xFF002022)),
+            Icon(icon, size: 16, color: AppColors.onPrimary),
           ],
         ),
       ),

@@ -124,7 +124,7 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
     canvas.drawCircle(
       Offset(cx, cy),
       circleR + 1,
-      Paint()..color = AppColors.primary,
+      Paint()..color = AppColors.secondary,
     );
 
     // Clip to circle then draw image or placeholder
@@ -152,7 +152,7 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
       canvas.drawCircle(
         Offset(cx, cy),
         circleR,
-        Paint()..color = AppColors.primary,
+        Paint()..color = AppColors.secondary,
       );
       final iconPainter = TextPainter(
         text: const TextSpan(
@@ -214,7 +214,7 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
         ),
         const Radius.circular(14),
       ),
-      Paint()..color = AppColors.primary,
+      Paint()..color = AppColors.secondary,
     );
 
     // Label text
@@ -263,8 +263,8 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
       circleId: const CircleId('radius'),
       center: _center,
       radius: radius,
-      fillColor: AppColors.primary.withValues(alpha: 0.10),
-      strokeColor: AppColors.primary,
+      fillColor: AppColors.secondary.withValues(alpha: 0.10),
+      strokeColor: AppColors.secondary,
       strokeWidth: 2,
     );
 
@@ -368,7 +368,7 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(Icons.radio_button_checked,
-                        color: AppColors.primary, size: 14),
+                        color: AppColors.secondary, size: 14),
                     const SizedBox(width: 6),
                     Text(
                       '${_discovery.searchRadius.value.toStringAsFixed(0)} km',
@@ -434,7 +434,7 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
                     ],
                   ),
                   child: const Icon(Icons.my_location,
-                      color: AppColors.primary),
+                      color: AppColors.secondary),
                 ),
               ),
             ),
@@ -460,7 +460,7 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
                 color: Colors.black45,
                 child: const Center(
                   child: CircularProgressIndicator(
-                      color: AppColors.primary),
+                      color: AppColors.secondary),
                 ),
               ),
           ],
@@ -513,7 +513,7 @@ class _ArenaPopupCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Row(children: [
                     const Icon(Icons.near_me_outlined,
-                        size: 13, color: AppColors.primary),
+                        size: 13, color: AppColors.secondary),
                     const SizedBox(width: 4),
                     Text(
                       '${distance.toStringAsFixed(1)} km',
@@ -521,13 +521,32 @@ class _ArenaPopupCard extends StatelessWidget {
                           .copyWith(color: AppColors.textGrey),
                     ),
                     const SizedBox(width: 12),
-                    const Icon(Icons.star,
-                        size: 13, color: AppColors.warning),
-                    const SizedBox(width: 4),
-                    Text(
-                      arena.rating.toStringAsFixed(1),
-                      style: AppTextStyles.bodySmall,
-                    ),
+                    if (arena.reviewCount == 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceElevated,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'New',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.textSecondary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      )
+                    else ...[
+                      const Icon(Icons.star,
+                          size: 13, color: AppColors.primary),
+                      const SizedBox(width: 4),
+                      Text(
+                        arena.rating.toStringAsFixed(1),
+                        style: AppTextStyles.bodySmall,
+                      ),
+                    ],
                   ]),
                   const SizedBox(height: 4),
                   Text(
@@ -541,7 +560,7 @@ class _ArenaPopupCard extends StatelessWidget {
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
+                        foregroundColor: AppColors.onPrimary,
                         padding:
                             const EdgeInsets.symmetric(vertical: 8),
                         shape: RoundedRectangleBorder(
@@ -551,8 +570,8 @@ class _ArenaPopupCard extends StatelessWidget {
                         AppRoutes.arenaDetailCustomer,
                         arguments: arena.id,
                       ),
-                      child: const Text('View Details',
-                          style: TextStyle(fontSize: 13)),
+                      child: Text('View Details',
+                          style: AppTextStyles.label.copyWith(fontSize: 13)),
                     ),
                   ),
                 ],
@@ -630,7 +649,7 @@ class _NoArenasSheet extends StatelessWidget {
                   onPressed: onExpand,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
+                    foregroundColor: AppColors.onPrimary,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14)),

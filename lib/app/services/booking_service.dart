@@ -201,6 +201,18 @@ class BookingService {
           .map((d) => BookingModel.fromMap({...d.data(), 'id': d.id}))
           .toList());
 
+  /// All bookings between one customer and one arena — powers the live
+  /// booking-context banner in the pair chat. Equality-only filters, so no
+  /// composite index is needed; callers sort client-side.
+  Stream<List<BookingModel>> pairBookings(String arenaId, String customerId) =>
+      _bookings
+          .where('arenaId', isEqualTo: arenaId)
+          .where('customerId', isEqualTo: customerId)
+          .snapshots()
+          .map((s) => s.docs
+              .map((d) => BookingModel.fromMap({...d.data(), 'id': d.id}))
+              .toList());
+
   Stream<List<BookingModel>> arenaBookings(String arenaId) => _bookings
       .where('arenaId', isEqualTo: arenaId)
       .orderBy('createdAt', descending: true)
