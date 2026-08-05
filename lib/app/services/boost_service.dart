@@ -15,8 +15,9 @@ class BoostService {
 
   Future<String> createRequest(BoostRequestModel req, File screenshot) async {
     final ref = _col.doc();
+    final ownerId = FirebaseAuth.instance.currentUser?.uid ?? ref.id;
     final storageRef = _storage.ref(
-        'boostRequests/${ref.id}/payment_${DateTime.now().millisecondsSinceEpoch}.jpg');
+        'boostRequests/$ownerId/payment_${ref.id}_${DateTime.now().millisecondsSinceEpoch}.jpg');
     await storageRef.putFile(screenshot);
     final url = await storageRef.getDownloadURL();
 

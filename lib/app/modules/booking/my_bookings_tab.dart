@@ -222,17 +222,19 @@ class _MyBookingsTabState extends State<MyBookingsTab> {
 }
 
 // ── Ambient glow blob ──────────────────────────────────────────────────────
+// Radial gradient replaces BackdropFilter(sigma=60) — same visual, zero GPU cost.
 Widget _glowBlob(Color color) => IgnorePointer(
       child: Container(
         width: 220,
         height: 220,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: color.withValues(alpha: 0.18),
-        ),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
-          child: const SizedBox.expand(),
+          gradient: RadialGradient(
+            colors: [
+              color.withValues(alpha: 0.22),
+              color.withValues(alpha: 0.0),
+            ],
+          ),
         ),
       ),
     );
@@ -275,6 +277,7 @@ class _BookingCard extends StatelessWidget {
         return _amber;
       case BookingStatus.pendingDeposit:
       case BookingStatus.depositSubmitted:
+      case BookingStatus.rescheduleRequested:
         return _amber;
     }
   }
@@ -377,6 +380,31 @@ class _BookingCard extends StatelessWidget {
                   // Divider
                   Divider(color: _outline.withValues(alpha: 0.25), height: 1),
                   const SizedBox(height: 12),
+                  // Recurring / group chips
+                  if (booking.isRecurring || booking.isGroupBooking) ...[
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        if (booking.isRecurring)
+                          _MiniChip(
+                            icon: Icons.repeat,
+                            label: booking.recurringWeek != null &&
+                                    booking.recurringTotal != null
+                                ? 'Recurring · Week ${booking.recurringWeek}/${booking.recurringTotal}'
+                                : 'Recurring',
+                            color: const Color(0xFF7C83FD),
+                          ),
+                        if (booking.isGroupBooking)
+                          _MiniChip(
+                            icon: Icons.group,
+                            label: 'Group · ${booking.groupSize} players',
+                            color: const Color(0xFF43C59E),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                  ],
                   // Row 2: date/time + amount
                   Row(
                     children: [
@@ -499,6 +527,42 @@ class _BookingCard extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ── Small info chip (recurring / group) ──────────────────────────────────
+class _MiniChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  const _MiniChip({required this.icon, required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: AppTextStyles.caption.copyWith(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: color,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
       ),
     );
   }

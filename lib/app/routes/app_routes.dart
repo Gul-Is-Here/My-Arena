@@ -11,9 +11,12 @@ abstract class AppRoutes {
   static const String forgotPassword = '/forgot-password';
   static const String resetPasswordOtp = '/reset-password-otp';
   static const String profileSetup = '/profile-setup';
+  static const String roleSelect = '/role-select';
+  static const String workspaceSelector = '/workspace-select';
 
   // Shared
   static const String notifications = '/notifications';
+  static const String editProfile = '/edit-profile';
 
   // Role dashboards
   static const String customerDashboard = '/customer';
@@ -34,6 +37,8 @@ abstract class AppRoutes {
   static const String arenaDetailCustomer = '/customer/arena-detail';
 
   // Phase 3 — Booking
+  static const String availabilityAlerts = '/booking/alerts';
+  static const String joinGroupBooking = '/booking/join-group';
   static const String bookingSlot = '/booking/slot';
   static const String bookingSummary = '/booking/summary';
   static const String depositPayment = '/booking/deposit';
@@ -80,4 +85,40 @@ abstract class AppRoutes {
   static const String createTournament = '/tournaments/create';
   static const String tournamentManage = '/tournaments/manage';
   static const String adminTournaments = '/admin/tournaments';
+  static const String helpSupport = '/help-support';
+
+  // Admin: Booking management
+  static const String adminBookings = '/admin/bookings';
+  static const String adminBookingDetail = '/admin/booking-detail';
+
+  // Admin: Customer management
+  static const String adminCustomers = '/admin/customers';
+  static const String adminCustomerDetail = '/admin/customer-detail';
+
+  // Admin: Finance
+  static const String adminFinance = '/admin/finance';
+
+  // Profile photo upload (customer post-registration)
+  static const String profilePhotoUpload = '/profile-photo-upload';
+
+  // Owner account activation (admin-invited owners)
+  static const String activateOwner = '/activate-owner';
+
+  // Staff account activation (owner-invited staff)
+  static const String activateStaff = '/activate-staff';
+
+  // Owner: staff management
+  static const String myTeam = '/owner/my-team';
+  static const String staffDetail = '/owner/staff-detail';
+
+  // Arena-assigned staff dashboard
+  static const String arenaStaffDashboard = '/arena-staff';
+
+  // Access control
+  static const String unauthorized = '/unauthorized';
+
+  // Customer support tickets
+  static const String customerTickets = '/customer/tickets';
+  static const String customerTicketDetail = '/customer/ticket-detail';
+  static const String submitTicket = '/customer/submit-ticket';
 }

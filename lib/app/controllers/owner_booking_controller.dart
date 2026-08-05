@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
@@ -100,14 +98,7 @@ class OwnerBookingController extends GetxController {
           b.endDateTime.isBefore(now) &&
           !_autoCompleting.contains(b.id)) {
         _autoCompleting.add(b.id);
-        FirebaseFirestore.instance
-            .collection('bookings')
-            .doc(b.id)
-            .update({
-          'status': BookingStatus.completed.key,
-          'completedAt': FieldValue.serverTimestamp(),
-          if (!b.checkedIn) 'noShow': true,
-        }).catchError((e) {
+        _service.autoComplete(b.id, noShow: !b.checkedIn).catchError((e) {
           _autoCompleting.remove(b.id);
           debugPrint('auto-complete failed for ${b.id}: $e');
         });
@@ -161,20 +152,21 @@ class OwnerBookingController extends GetxController {
     if (start.difference(now).inHours > 2) {
       return 'Too early — check-in opens 2 hours before the slot';
     }
-    await FirebaseFirestore.instance.collection('bookings').doc(bookingId).update({
-      'checkedIn': true,
-      'checkedInAt': FieldValue.serverTimestamp(),
-    });
+    await _service.checkIn(bookingId);
     return null; // null = success
   }
 
-  Future<void> markNoShow(String bookingId) async {
-    await FirebaseFirestore.instance.collection('bookings').doc(bookingId).update({
-      'noShow': true,
-      'status': BookingStatus.completed.key,
-      'completedAt': FieldValue.serverTimestamp(),
-    });
+  Future<void> markNoShow(String bookingId) => _service.markNoShow(bookingId);
+
+  Future<void> approveReschedule(String bookingId) async {
+    final b = bookings.firstWhereOrNull((x) => x.id == bookingId);
+    final req = b?.rescheduleRequest;
+    if (req == null) return;
+    await _service.approveReschedule(bookingId, req);
   }
+
+  Future<void> rejectReschedule(String bookingId) =>
+      _service.rejectReschedule(bookingId);
 
   Future<void> addManualBooking(BookingModel booking) async {
     await _service.createManualBooking(

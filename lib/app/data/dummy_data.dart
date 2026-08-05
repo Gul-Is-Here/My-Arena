@@ -192,7 +192,7 @@ class DummyData {
       arenaName: 'Champions Arena',
       duration: BoostDuration.oneMonth,
       price: BoostDuration.oneMonth.price,
-      status: 'approved',
+      status: BoostStatus.approved,
       createdAt: DateTime.now().subtract(const Duration(days: 4)),
     ),
     BoostRequestModel(
@@ -201,7 +201,7 @@ class DummyData {
       arenaName: 'Victory Sports Club',
       duration: BoostDuration.oneWeek,
       price: BoostDuration.oneWeek.price,
-      status: 'pending',
+      status: BoostStatus.pending,
       createdAt: DateTime.now().subtract(const Duration(hours: 6)),
     ),
   ];

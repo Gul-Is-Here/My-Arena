@@ -75,6 +75,38 @@ extension ChatTypeX on ChatType {
 
 enum MessageType { text, image, document, system }
 
+/// Ticket context a message was sent under in a support chat.
+class TicketRef {
+  final String ticketId;
+  final String ticketNumber;
+  final String subject;
+  final String status;
+
+  const TicketRef({
+    required this.ticketId,
+    required this.ticketNumber,
+    required this.subject,
+    required this.status,
+  });
+
+  factory TicketRef.fromMap(Map<String, dynamic> m) => TicketRef(
+        ticketId: m['ticketId'] ?? '',
+        ticketNumber: m['ticketNumber'] ?? '',
+        subject: m['subject'] ?? '',
+        status: m['status'] ?? 'open',
+      );
+
+  Map<String, dynamic> toMap() => {
+        'ticketId': ticketId,
+        'ticketNumber': ticketNumber,
+        'subject': subject,
+        'status': status,
+      };
+
+  String get label =>
+      ticketNumber.isNotEmpty ? '$ticketNumber · $subject' : subject;
+}
+
 /// Booking context a message was sent under. Captured at send time so
 /// history stays unambiguous even after the pinned booking changes.
 class BookingRef {
@@ -126,6 +158,7 @@ class MessageModel {
   final bool isRead;
   final DateTime createdAt;
   final BookingRef? bookingRef;
+  final TicketRef? ticketRef;
 
   const MessageModel({
     required this.id,
@@ -137,6 +170,7 @@ class MessageModel {
     this.isRead = false,
     required this.createdAt,
     this.bookingRef,
+    this.ticketRef,
   });
 
   factory MessageModel.fromMap(Map<String, dynamic> m) => MessageModel(
@@ -152,6 +186,10 @@ class MessageModel {
             ? BookingRef.fromMap(
                 Map<String, dynamic>.from(m['bookingRef'] as Map))
             : null,
+        ticketRef: m['ticketRef'] != null
+            ? TicketRef.fromMap(
+                Map<String, dynamic>.from(m['ticketRef'] as Map))
+            : null,
       );
 
   Map<String, dynamic> toMap() => {
@@ -163,6 +201,7 @@ class MessageModel {
         'isRead': isRead,
         'createdAt': FieldValue.serverTimestamp(),
         if (bookingRef != null) 'bookingRef': bookingRef!.toMap(),
+        if (ticketRef != null) 'ticketRef': ticketRef!.toMap(),
       };
 }
 

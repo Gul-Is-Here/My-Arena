@@ -17,6 +17,7 @@ import '../../services/arena_service.dart';
 import '../../widgets/arena_image.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text_styles.dart';
+import 'add_court_bottom_sheet.dart';
 
 const _bg = AppColors.background;
 const _surface = AppColors.surface;
@@ -61,7 +62,10 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final owner = OwnerController.to;
-    final String arenaId = Get.arguments as String;
+    final String? arenaId = Get.arguments as String?;
+    if (arenaId == null) {
+      return const Scaffold(body: Center(child: Text('No arena selected')));
+    }
     final pageIndex = 0.obs;
 
     return Scaffold(
@@ -89,7 +93,7 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
                     const SizedBox(height: 14),
                     _statsRow(arena),
                     const SizedBox(height: 22),
-                    _courtsSection(arena),
+                    _courtsSection(context, arena),
                     const SizedBox(height: 22),
                     _photosSection(context, arena),
                     const SizedBox(height: 22),
@@ -347,24 +351,64 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
   }
 
   void _confirmDelete(ArenaModel arena) {
-    Get.defaultDialog(
-      backgroundColor: _surface,
-      title: 'Delete Arena?',
-      titleStyle: AppTextStyles.titleLarge.copyWith(color: _onSurface, fontWeight: FontWeight.w800),
-      middleText:
-          'This permanently removes "${arena.name}" and its courts. This cannot be undone.',
-      middleTextStyle: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar),
-      textCancel: 'Cancel',
-      textConfirm: 'Delete',
-      confirmTextColor: Colors.white,
-      buttonColor: _red,
-      onConfirm: () async {
-        Get.back();
-        await OwnerController.to.deleteArena(arena.id);
-        Get.back();
-        Get.snackbar('Arena Deleted', '${arena.name} has been removed',
-            backgroundColor: _surfaceLow, colorText: _onSurface);
-      },
+    showDialog(
+      context: Get.context!,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        icon: const Icon(Icons.warning_amber_rounded, color: _red, size: 48),
+        title: Text(
+          'Delete Arena?',
+          textAlign: TextAlign.center,
+          style: AppTextStyles.titleLarge
+              .copyWith(color: _onSurface, fontWeight: FontWeight.w800),
+        ),
+        content: Text(
+          'This permanently removes "${arena.name}" and all its courts. This action cannot be undone.',
+          textAlign: TextAlign.center,
+          style: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar),
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actionsPadding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
+        actions: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _onSurface,
+                side: const BorderSide(color: _outline),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('Cancel'),
+            ),
+          ),
+          const SizedBox(width: 20),
+          Expanded(
+            child: ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                try {
+                  await OwnerController.to.deleteArena(arena.id);
+                  Get.back();
+                  Get.snackbar(
+                      'Arena Deleted', '${arena.name} has been removed',
+                      backgroundColor: _surfaceLow, colorText: _onSurface);
+                } catch (_) {}
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _red,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('Delete'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -391,9 +435,13 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
             : 'Approved';
     final String subtitle = pending
         ? 'Awaiting admin review'
-        : rejectedLike
-            ? 'Contact admin for details'
-            : (arena.isActive ? 'Visible to customers' : 'Hidden from customers');
+        : (arena.status == ArenaStatus.rejected &&
+                  arena.rejectionReason != null &&
+                  arena.rejectionReason!.isNotEmpty)
+            ? 'Reason: ${arena.rejectionReason}'
+            : rejectedLike
+                ? 'Contact admin for details'
+                : (arena.isActive ? 'Visible to customers' : 'Hidden from customers');
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -497,7 +545,7 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
     );
   }
 
-  Widget _courtsSection(ArenaModel arena) {
+  Widget _courtsSection(BuildContext context, ArenaModel arena) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -508,8 +556,7 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
                 style: AppTextStyles.titleLarge.copyWith(
                     color: _onSurface, fontSize: 17, fontWeight: FontWeight.w800)),
             GestureDetector(
-              onTap: () =>
-                  Get.toNamed(AppRoutes.editArena, arguments: arena.id),
+              onTap: () => _addCourtSheet(context, arena),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 const Icon(Icons.add, size: 16, color: _cyan),
                 const SizedBox(width: 4),
@@ -528,16 +575,16 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
                 color: _surfaceLow,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: _outline)),
-            child: Text('No courts added yet',
+            child: Text('No courts added yet — tap + to create one',
                 style: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar)),
           )
         else
-          ...arena.courts.map((c) => _courtTile(arena, c)),
+          ...arena.courts.map((c) => _courtTile(context, arena, c)),
       ],
     );
   }
 
-  Widget _courtTile(ArenaModel arena, CourtModel court) {
+  Widget _courtTile(BuildContext context, ArenaModel arena, CourtModel court) {
     final maintenance = !court.isActive;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -589,7 +636,7 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
                           fontWeight: FontWeight.w700)),
                   const SizedBox(width: 6),
                   GestureDetector(
-                    onTap: () => _editCourtSheet(arena, court),
+                    onTap: () => _editCourtViaSheet(context, arena, court),
                     child: const Icon(Icons.edit_outlined, size: 16, color: _cyan),
                   ),
                 ],
@@ -607,112 +654,50 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
     );
   }
 
-  void _editCourtSheet(ArenaModel arena, CourtModel court) {
-    final priceCtrl = TextEditingController(text: court.pricePerHour.toStringAsFixed(0));
-    final startCtrl = TextEditingController(text: court.startTime);
-    final endCtrl = TextEditingController(text: court.endTime);
-    final saving = false.obs;
-
-    Get.bottomSheet(
-      Container(
-        decoration: const BoxDecoration(
-          color: _surfaceLow,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: EdgeInsets.only(
-          left: 20, right: 20, top: 20,
-          bottom: MediaQuery.of(Get.context!).viewInsets.bottom + 24,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40, height: 4,
-                decoration: BoxDecoration(color: _outline, borderRadius: BorderRadius.circular(2)),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text('Edit ${court.name}',
-                style: AppTextStyles.titleLarge.copyWith(color: _onSurface, fontSize: 18, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 16),
-            TextField(
-              controller: priceCtrl,
-              keyboardType: TextInputType.number,
-              style: AppTextStyles.bodyMedium.copyWith(color: _onSurface),
-              decoration: _sheetInput('Price per hour (PKR)'),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: startCtrl,
-                    style: AppTextStyles.bodyMedium.copyWith(color: _onSurface),
-                    decoration: _sheetInput('Start (e.g. 08:00)'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: TextField(
-                    controller: endCtrl,
-                    style: AppTextStyles.bodyMedium.copyWith(color: _onSurface),
-                    decoration: _sheetInput('End (e.g. 22:00)'),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Obx(() => SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: saving.value ? null : () async {
-                  final price = double.tryParse(priceCtrl.text.trim());
-                  if (price == null || price <= 0) {
-                    Get.snackbar('Invalid', 'Enter a valid price.',
-                        snackPosition: SnackPosition.BOTTOM);
-                    return;
-                  }
-                  saving.value = true;
-                  await ArenaService().updateCourt(arena.id, court.id, {
-                    'pricePerHour': price,
-                    'startTime': startCtrl.text.trim(),
-                    'endTime': endCtrl.text.trim(),
-                  });
-                  saving.value = false;
-                  Get.back();
-                  Get.snackbar('Court Updated', 'Changes saved.',
-                      snackPosition: SnackPosition.BOTTOM,
-                      backgroundColor: _surfaceLow, colorText: _greenFixed);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: AppColors.onPrimary,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                ),
-                child: saving.value
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.onPrimary))
-                    : Text('Save Changes', style: AppTextStyles.button.copyWith(fontWeight: FontWeight.w800, fontSize: 15)),
-              ),
-            )),
-          ],
-        ),
-      ),
-      isScrollControlled: true,
+  void _addCourtSheet(BuildContext context, ArenaModel arena) {
+    AddCourtBottomSheet.show(
+      context,
+      onAdd: (court) async {
+        try {
+          await ArenaService().addCourt(arena.id, court);
+          await OwnerController.to.refreshCourts(arena.id);
+          Get.snackbar('Court Added', '${court.name} has been created.',
+              snackPosition: SnackPosition.BOTTOM,
+              backgroundColor: _surfaceLow, colorText: _greenFixed);
+        } catch (e) {
+          debugPrint('Add court failed: $e');
+          Get.snackbar('Failed',
+              e.toString().contains('permission-denied')
+                  ? 'You don\'t have permission to add courts.'
+                  : 'Could not add court. Please try again.',
+              snackPosition: SnackPosition.BOTTOM);
+        }
+      },
     );
   }
 
-  InputDecoration _sheetInput(String hint) => InputDecoration(
-    hintText: hint,
-    hintStyle: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar),
-    filled: true,
-    fillColor: _surface,
-    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _outline)),
-    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _outline)),
-    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _cyan)),
-  );
+  void _editCourtViaSheet(BuildContext context, ArenaModel arena, CourtModel court) {
+    AddCourtBottomSheet.show(
+      context,
+      initial: court,
+      onAdd: (updated) async {
+        try {
+          await ArenaService().updateCourt(arena.id, court.id, updated.toMap());
+          await OwnerController.to.refreshCourts(arena.id);
+          Get.snackbar('Court Updated', 'Changes saved.',
+              snackPosition: SnackPosition.BOTTOM,
+              backgroundColor: _surfaceLow, colorText: _greenFixed);
+        } catch (e) {
+          debugPrint('Court update failed: $e');
+          Get.snackbar('Update failed',
+              e.toString().contains('permission-denied')
+                  ? 'You don\'t have permission to edit this court.'
+                  : 'Could not save changes. Please try again.',
+              snackPosition: SnackPosition.BOTTOM);
+        }
+      },
+    );
+  }
 
   Widget _photosSection(BuildContext context, ArenaModel arena) {
     final images = arena.images;

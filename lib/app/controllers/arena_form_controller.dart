@@ -7,14 +7,19 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../data/models/arena_model.dart';
-import '../data/models/court_model.dart';
 import '../services/arena_service.dart';
 
 class ArenaFormController extends GetxController {
   final ArenaService _arenaService = ArenaService();
 
+  /// When set by an admin creating an arena on behalf of an owner,
+  /// this overrides the current user's uid as the arena's ownerId.
+  String? ownerIdOverride;
+  String? ownerNameOverride;
+  String? adminCreatedFor; // invitationId — used for orphan cleanup if invite is revoked
+
   final RxInt currentStep = 0.obs;
-  static const int totalSteps = 5;
+  static const int totalSteps = 3;
 
   // Step 1 — basic info
   final nameCtrl = TextEditingController();
@@ -27,9 +32,6 @@ class ArenaFormController extends GetxController {
   // Step 3 — location
   final addressCtrl = TextEditingController();
   final Rx<LatLng?> pickedLatLng = Rx<LatLng?>(null);
-
-  // Step 4 — courts
-  final RxList<CourtModel> courts = <CourtModel>[].obs;
 
   final RxBool isSubmitting = false.obs;
 
@@ -54,12 +56,6 @@ class ArenaFormController extends GetxController {
       case 2:
         if (addressCtrl.text.trim().isEmpty) {
           _warn('Enter the arena address');
-          return false;
-        }
-        return true;
-      case 3:
-        if (courts.isEmpty) {
-          _warn('Add at least one court');
           return false;
         }
         return true;
@@ -98,17 +94,18 @@ class ArenaFormController extends GetxController {
     addressCtrl.text = address;
   }
 
-  void addCourt(CourtModel court) => courts.add(court);
-
-  void removeCourt(int index) => courts.removeAt(index);
-
   Future<void> submit() async {
+    if (!validateStep()) return;
     isSubmitting.value = true;
     try {
-      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final uid = ownerIdOverride ?? FirebaseAuth.instance.currentUser?.uid ?? '';
+      if (uid.isEmpty) {
+        _warn('You must be signed in to create an arena.');
+        isSubmitting.value = false;
+        return;
+      }
       final location = pickedLatLng.value;
 
-      // 1. Create arena doc first to get its ID
       final arena = ArenaModel(
         id: '',
         ownerId: uid,
@@ -122,16 +119,37 @@ class ArenaFormController extends GetxController {
         ),
         status: ArenaStatus.pending,
       );
-      final arenaId = await _arenaService.createArena(arena);
 
-      // 2. Upload images then update arena doc with URLs
-      final files = images.map((x) => File(x.path)).toList();
-      final imageUrls = await _arenaService.uploadArenaImages(arenaId, files);
-      await _arenaService.updateArena(arenaId, {'images': imageUrls});
+      String arenaId;
+      try {
+        arenaId = await _arenaService.createArena(arena);
+      } catch (e) {
+        debugPrint('Arena create failed: $e');
+        isSubmitting.value = false;
+        _warn(e.toString().contains('permission-denied')
+            ? 'Permission denied. Make sure your account has the owner role.'
+            : 'Could not create arena: $e');
+        return;
+      }
 
-      // 3. Save courts as subcollection
-      for (final court in courts) {
-        await _arenaService.addCourt(arenaId, court);
+      // Write admin-on-behalf-of metadata so revocation can find orphaned arenas.
+      if (adminCreatedFor != null || ownerIdOverride != null) {
+        final adminUid = FirebaseAuth.instance.currentUser?.uid;
+        await _arenaService.updateArena(arenaId, {
+          'adminCreatedFor': adminCreatedFor,
+          if (adminUid != null) 'adminCreatedBy': adminUid,
+        });
+      }
+
+      try {
+        final files = images.map((x) => File(x.path)).toList();
+        if (files.isNotEmpty) {
+          final imageUrls =
+              await _arenaService.uploadArenaImages(arenaId, files);
+          await _arenaService.updateArena(arenaId, {'images': imageUrls});
+        }
+      } catch (e) {
+        debugPrint('Image upload failed (arena created): $e');
       }
 
       isSubmitting.value = false;
@@ -144,7 +162,8 @@ class ArenaFormController extends GetxController {
       );
     } catch (e) {
       isSubmitting.value = false;
-      _warn('Failed to submit: ${e.toString()}');
+      debugPrint('Arena submit failed: $e');
+      _warn('Failed to submit: $e');
     }
   }
 
@@ -155,6 +174,16 @@ class ArenaFormController extends GetxController {
       snackPosition: SnackPosition.BOTTOM,
       margin: const EdgeInsets.all(16),
     );
+  }
+
+  void reset() {
+    currentStep.value = 0;
+    nameCtrl.clear();
+    descriptionCtrl.clear();
+    images.clear();
+    addressCtrl.clear();
+    pickedLatLng.value = null;
+    isSubmitting.value = false;
   }
 
   @override

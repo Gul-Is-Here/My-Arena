@@ -17,14 +17,11 @@ class BoostStatusScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = Get.put(BoostController(), permanent: true);
 
-    return SafeArea(
-      child: Column(
+    return Scaffold(
+      appBar: AppBar(title: const Text('My Boost Requests')),
+      body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text('Boosts & Events', style: AppTextStyles.displayLarge),
-          ),
           Expanded(
             child: Obx(
               () => c.requests.isEmpty
@@ -84,7 +81,7 @@ class BoostStatusScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              StatusBadge(status: request.status),
+              StatusBadge(status: request.status.key),
             ],
           ),
           const SizedBox(height: 12),

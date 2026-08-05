@@ -9,14 +9,19 @@ import 'package:image_picker/image_picker.dart';
 import '../controllers/auth_controller.dart';
 import '../data/models/booking_model.dart';
 import '../data/models/chat_model.dart';
+import '../data/models/ticket_model.dart';
 import '../services/booking_service.dart';
 import '../services/chat_service.dart';
+import '../services/ticket_service.dart';
+
+enum SupportContextMode { general, ticket, booking }
 
 class ChatController extends GetxController {
   static ChatController get to => Get.find();
 
   final _service = ChatService();
   final _bookingService = BookingService();
+  final _ticketService = TicketService();
   final _picker = ImagePicker();
 
   String get myUid => FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -35,6 +40,17 @@ class ChatController extends GetxController {
   final Map<String, StreamSubscription> _pairSubs = {};
   final Map<String, RxList<BookingModel>> _pairRx = {};
 
+  // Support chat context: what kind of context the user wants to attach.
+  final Rx<SupportContextMode> supportContextMode = SupportContextMode.general.obs;
+  final Rx<TicketModel?> selectedTicket = Rx<TicketModel?>(null);
+  final Rx<BookingModel?> selectedSupportBooking = Rx<BookingModel?>(null);
+
+  // User's tickets and bookings for support context picker.
+  final RxList<TicketModel> userTickets = <TicketModel>[].obs;
+  final RxList<BookingModel> userBookings = <BookingModel>[].obs;
+  StreamSubscription? _ticketSub;
+  StreamSubscription? _bookingSub;
+
   StreamSubscription? _authSub;
 
   @override
@@ -42,14 +58,22 @@ class ChatController extends GetxController {
     super.onInit();
     _authSub = FirebaseAuth.instance
         .authStateChanges()
-        .listen((_) => _listenChats());
-    if (myUid.isNotEmpty) _listenChats();
+        .listen((_) {
+      _listenChats();
+      _listenSupportData();
+    });
+    if (myUid.isNotEmpty) {
+      _listenChats();
+      _listenSupportData();
+    }
   }
 
   @override
   void onClose() {
     _authSub?.cancel();
     _chatsSub?.cancel();
+    _ticketSub?.cancel();
+    _bookingSub?.cancel();
     for (final sub in _msgSubs.values) {
       sub.cancel();
     }
@@ -207,12 +231,36 @@ class ChatController extends GetxController {
         requesterUid: myUid,
       );
 
+  Map<String, dynamic>? _ticketRefForSupport() {
+    final t = selectedTicket.value;
+    if (t == null) return null;
+    return TicketRef(
+      ticketId: t.id,
+      ticketNumber: t.ticketNumber,
+      subject: t.subject,
+      status: t.status.key,
+    ).toMap();
+  }
+
+  Map<String, dynamic>? _bookingRefForSupport() {
+    final b = selectedSupportBooking.value;
+    if (b == null) return null;
+    return BookingRef(
+      bookingId: b.id,
+      courtName: b.courtName,
+      dateLabel: dateLabelFor(b.date),
+      timeRange: b.timeRange,
+    ).toMap();
+  }
+
   Future<void> sendMessage(String chatId, String text,
       {MessageType type = MessageType.text, String? fileName}) async {
     final chat = byId(chatId);
     if (chat == null) return;
 
-    final bookingRef = _bookingRefFor(chat);
+    final isSupport = chat.type != ChatType.booking;
+    final bookingRef = isSupport ? _bookingRefForSupport() : _bookingRefFor(chat);
+    final ticketRef = isSupport ? _ticketRefForSupport() : null;
 
     if (type == MessageType.text) {
       if (text.trim().isEmpty) return;
@@ -223,6 +271,7 @@ class ChatController extends GetxController {
         text: text.trim(),
         participants: chat.participants,
         bookingRef: bookingRef,
+        ticketRef: ticketRef,
       );
     } else if (type == MessageType.image) {
       final picked = await _picker.pickImage(
@@ -285,6 +334,74 @@ class ChatController extends GetxController {
       chats[i] = chats[i].copyWith(activeBookingId: bookingId);
     }
     await _service.setActiveBooking(chatId, bookingId);
+  }
+
+  // ── Support context data ──────────────────────────────────────────────
+
+  void _listenSupportData() {
+    _ticketSub?.cancel();
+    _bookingSub?.cancel();
+    if (myUid.isEmpty) return;
+    _ticketSub = _ticketService.userTickets(myUid).listen(
+      (list) => userTickets.assignAll(list),
+      onError: (e) => debugPrint('userTickets stream error: $e'),
+    );
+    _bookingSub = _bookingService.customerBookings(myUid).listen(
+      (list) => userBookings.assignAll(list),
+      onError: (e) => debugPrint('userBookings stream error: $e'),
+    );
+  }
+
+  void setSupportContext(SupportContextMode mode) {
+    supportContextMode.value = mode;
+    if (mode == SupportContextMode.general) {
+      selectedTicket.value = null;
+      selectedSupportBooking.value = null;
+    }
+  }
+
+  void selectTicket(TicketModel ticket) {
+    supportContextMode.value = SupportContextMode.ticket;
+    selectedTicket.value = ticket;
+    selectedSupportBooking.value = null;
+  }
+
+  void selectSupportBooking(BookingModel booking) {
+    supportContextMode.value = SupportContextMode.booking;
+    selectedSupportBooking.value = booking;
+    selectedTicket.value = null;
+  }
+
+  void clearSupportContext() {
+    supportContextMode.value = SupportContextMode.general;
+    selectedTicket.value = null;
+    selectedSupportBooking.value = null;
+  }
+
+  Future<String> createTicketFromChat({
+    required String subject,
+    required String description,
+    required String category,
+    String? bookingId,
+    TicketBookingSnapshot? bookingSnapshot,
+  }) async {
+    final user = Get.isRegistered<AuthController>()
+        ? AuthController.to.currentUser.value
+        : null;
+    final ticket = TicketModel(
+      id: '',
+      subject: subject,
+      description: description,
+      raisedByUid: myUid,
+      raisedByName: user?.name ?? 'User',
+      raisedByRole: myRole,
+      category: category,
+      bookingId: bookingId,
+      bookingSnapshot: bookingSnapshot,
+      arenaName: bookingSnapshot?.arenaName,
+      createdAt: DateTime.now(),
+    );
+    return _ticketService.createTicket(ticket);
   }
 
   /// Sent by the owner when a booking is approved.

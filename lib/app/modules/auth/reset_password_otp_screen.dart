@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -9,102 +11,202 @@ import '../../widgets/app_button.dart';
 import '../../widgets/app_text_field.dart';
 import '../../widgets/otp_fields.dart';
 
-/// Password reset step 2 — enter the emailed 6-digit code
-/// plus the new password (no reset links).
 class ResetPasswordOtpScreen extends StatefulWidget {
   const ResetPasswordOtpScreen({super.key});
 
   @override
-  State<ResetPasswordOtpScreen> createState() => _ResetPasswordOtpScreenState();
+  State<ResetPasswordOtpScreen> createState() =>
+      _ResetPasswordOtpScreenState();
 }
 
-class _ResetPasswordOtpScreenState extends State<ResetPasswordOtpScreen> {
+class _ResetPasswordOtpScreenState extends State<ResetPasswordOtpScreen>
+    with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
-  final _passwordCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
   final auth = AuthController.to;
+
   late final String email = (Get.arguments as String?) ?? '';
   String _otp = '';
 
-  void _submit() {
-    if (!_formKey.currentState!.validate()) return;
-    if (_otp.length < 6) {
-      Get.snackbar('Incomplete code', 'Enter the 6-digit code from the email',
-          snackPosition: SnackPosition.BOTTOM);
-      return;
-    }
-    auth.confirmPasswordReset(
-      email: email,
-      otp: _otp,
-      newPassword: _passwordCtrl.text,
-    );
+  int _countdown = 60;
+  Timer? _timer;
+
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 500));
+    _ctrl.forward();
+    _startCountdown();
+  }
+
+  void _startCountdown() {
+    _countdown = 60;
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_countdown > 0) {
+        setState(() => _countdown--);
+      } else {
+        _timer?.cancel();
+      }
+    });
   }
 
   @override
   void dispose() {
-    _passwordCtrl.dispose();
+    _timer?.cancel();
+    _ctrl.dispose();
+    _passCtrl.dispose();
     _confirmCtrl.dispose();
     super.dispose();
+  }
+
+  void _submit() {
+    if (_otp.length < 6) {
+      Get.snackbar('Enter the code', 'Enter the 6-digit code first.',
+          snackPosition: SnackPosition.BOTTOM,
+          margin: const EdgeInsets.all(16));
+      return;
+    }
+    if (!_formKey.currentState!.validate()) return;
+    auth.confirmPasswordReset(
+      email: email,
+      otp: _otp,
+      newPassword: _passCtrl.text,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Enter Reset Code')),
+      backgroundColor: AppColors.background,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
+        child: FadeTransition(
+          opacity: _ctrl,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 28),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 16),
-                Text('Set a new password', style: AppTextStyles.headlineLarge),
-                const SizedBox(height: 8),
-                Text(
-                  'Enter the 6-digit code we sent to $email '
-                  'and choose a new password.',
-                  style: AppTextStyles.bodyMedium
-                      .copyWith(color: AppColors.textGrey),
+                GestureDetector(
+                  onTap: () => Get.back(),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: const Icon(Icons.arrow_back_ios_new_rounded,
+                        size: 16, color: AppColors.textSecondary),
+                  ),
                 ),
-                const SizedBox(height: 32),
-                OtpFields(onChanged: (v) => _otp = v),
+                const SizedBox(height: 40),
+
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(Icons.shield_outlined,
+                      size: 36, color: AppColors.primary),
+                ),
                 const SizedBox(height: 24),
-                AppTextField(
-                  label: 'New Password',
-                  hint: 'Min 6 characters',
-                  controller: _passwordCtrl,
-                  obscureText: true,
-                  prefixIcon: Icons.lock_outline,
-                  validator: Validators.password,
+
+                Text('Set new\npassword', style: AppTextStyles.headlineLarge),
+                const SizedBox(height: 10),
+                RichText(
+                  text: TextSpan(
+                    text: 'Enter the code sent to ',
+                    style: AppTextStyles.bodyLarge
+                        .copyWith(color: AppColors.textSecondary),
+                    children: [
+                      TextSpan(
+                        text: email,
+                        style: AppTextStyles.bodyLarge.copyWith(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 16),
-                AppTextField(
-                  label: 'Confirm New Password',
-                  hint: 'Re-enter password',
-                  controller: _confirmCtrl,
-                  obscureText: true,
-                  prefixIcon: Icons.lock_outline,
-                  validator: (v) =>
-                      Validators.confirmPassword(v, _passwordCtrl.text),
-                  textInputAction: TextInputAction.done,
+                const SizedBox(height: 40),
+
+                // OTP fields
+                OtpFields(
+                  onChanged: (v) => setState(() => _otp = v),
+                ),
+                const SizedBox(height: 10),
+
+                // Resend countdown
+                _countdown > 0
+                    ? Text(
+                        'Resend code in ${_countdown}s',
+                        style: AppTextStyles.caption
+                            .copyWith(color: AppColors.textDisabled),
+                      )
+                    : TextButton(
+                        style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                        onPressed: () {
+                          auth.resetPassword(email);
+                          _startCountdown();
+                        },
+                        child: Text(
+                          'Resend Code',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                const SizedBox(height: 32),
+
+                // New password fields
+                Form(
+                  key: _formKey,
+                  child: Column(
+                    children: [
+                      AppTextField(
+                        label: 'New Password',
+                        hint: 'Min 6 characters',
+                        controller: _passCtrl,
+                        obscureText: true,
+                        prefixIcon: Icons.lock_outline,
+                        validator: Validators.password,
+                      ),
+                      const SizedBox(height: 16),
+                      AppTextField(
+                        label: 'Confirm New Password',
+                        hint: 'Re-enter password',
+                        controller: _confirmCtrl,
+                        obscureText: true,
+                        prefixIcon: Icons.lock_outline,
+                        validator: (v) =>
+                            Validators.confirmPassword(v, _passCtrl.text),
+                        textInputAction: TextInputAction.done,
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 32),
-                Obx(
-                  () => AppButton(
-                    label: 'Reset Password',
-                    isLoading: auth.isLoading.value,
-                    onPressed: _submit,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Center(
-                  child: TextButton(
-                    onPressed: () => auth.resetPassword(email),
-                    child: const Text('Resend Code'),
-                  ),
-                ),
+
+                Obx(() => AppButton(
+                      label: 'Update Password',
+                      isLoading: auth.isLoading.value,
+                      onPressed: _submit,
+                    )),
+                const SizedBox(height: 40),
               ],
             ),
           ),

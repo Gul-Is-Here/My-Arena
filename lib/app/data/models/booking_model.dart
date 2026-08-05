@@ -11,6 +11,7 @@ enum BookingStatus {
   refundPending,
   refundSent,
   refundConfirmed,
+  rescheduleRequested,
 }
 
 extension BookingStatusX on BookingStatus {
@@ -34,6 +35,8 @@ extension BookingStatusX on BookingStatus {
         return 'refund_sent';
       case BookingStatus.refundConfirmed:
         return 'refund_confirmed';
+      case BookingStatus.rescheduleRequested:
+        return 'reschedule_requested';
     }
   }
 
@@ -57,7 +60,45 @@ extension BookingStatusX on BookingStatus {
         return 'Refund Sent';
       case BookingStatus.refundConfirmed:
         return 'Refund Confirmed';
+      case BookingStatus.rescheduleRequested:
+        return 'Reschedule Requested';
     }
+  }
+}
+
+class RescheduleRequest {
+  final DateTime proposedDate;
+  final int proposedStartHour;
+  final int proposedTotalHours;
+  final DateTime requestedAt;
+
+  const RescheduleRequest({
+    required this.proposedDate,
+    required this.proposedStartHour,
+    required this.proposedTotalHours,
+    required this.requestedAt,
+  });
+
+  Map<String, dynamic> toMap() => {
+        'proposedDate': Timestamp.fromDate(proposedDate),
+        'proposedStartHour': proposedStartHour,
+        'proposedTotalHours': proposedTotalHours,
+        'requestedAt': Timestamp.fromDate(requestedAt),
+      };
+
+  factory RescheduleRequest.fromMap(Map<String, dynamic> m) => RescheduleRequest(
+        proposedDate: (m['proposedDate'] as dynamic).toDate(),
+        proposedStartHour: (m['proposedStartHour'] ?? 0) as int,
+        proposedTotalHours: (m['proposedTotalHours'] ?? 1) as int,
+        requestedAt: m['requestedAt'] != null
+            ? (m['requestedAt'] as dynamic).toDate()
+            : DateTime.now(),
+      );
+
+  String get timeRange {
+    final end = proposedStartHour + proposedTotalHours;
+    String fmt(int h) => '${h.toString().padLeft(2, '0')}:00';
+    return '${fmt(proposedStartHour)} – ${fmt(end)}';
   }
 }
 
@@ -117,6 +158,23 @@ class BookingModel {
   /// here instead of relying on the flat pricePerHour * totalHours formula.
   final double? totalAmountStored;
 
+  final RescheduleRequest? rescheduleRequest;
+
+  // ── Recurring ─────────────────────────────────────────────────────────
+  /// UUID shared by all bookings in the same recurring series.
+  final String? recurringGroupId;
+  /// 1-based index of this booking within its series (e.g. 2 of 8).
+  final int? recurringWeek;
+  /// Total number of weeks in the series (e.g. 8).
+  final int? recurringTotal;
+
+  // ── Group booking ─────────────────────────────────────────────────────
+  final bool isGroupBooking;
+  /// Total number of players sharing the slot.
+  final int groupSize;
+  /// 6-char alphanumeric code that others use to join this group booking.
+  final String? joinCode;
+
   const BookingModel({
     required this.id,
     required this.arenaId,
@@ -140,6 +198,13 @@ class BookingModel {
     this.hasReview = false,
     this.noShow = false,
     this.totalAmountStored,
+    this.rescheduleRequest,
+    this.recurringGroupId,
+    this.recurringWeek,
+    this.recurringTotal,
+    this.isGroupBooking = false,
+    this.groupSize = 1,
+    this.joinCode,
   });
 
   double get totalAmount => totalAmountStored ?? pricePerHour * totalHours;
@@ -179,6 +244,11 @@ class BookingModel {
       status == BookingStatus.refundSent ||
       status == BookingStatus.refundConfirmed;
 
+  bool get canReschedule =>
+      (status == BookingStatus.confirmed ||
+          status == BookingStatus.depositSubmitted) &&
+      startDateTime.difference(DateTime.now()).inHours >= 24;
+
   bool get canCancel =>
       isUpcoming &&
       startDateTime.difference(DateTime.now()).inMinutes >=
@@ -206,6 +276,12 @@ class BookingModel {
         'endTime': endTime,
         'status': status.key,
         if (totalAmountStored != null) 'totalAmount': totalAmountStored,
+        if (recurringGroupId != null) 'recurringGroupId': recurringGroupId,
+        if (recurringWeek != null) 'recurringWeek': recurringWeek,
+        if (recurringTotal != null) 'recurringTotal': recurringTotal,
+        if (isGroupBooking) 'isGroupBooking': true,
+        if (isGroupBooking) 'groupSize': groupSize,
+        if (joinCode != null) 'joinCode': joinCode,
       };
 
   factory BookingModel.fromMap(Map<String, dynamic> m) => BookingModel(
@@ -241,7 +317,21 @@ class BookingModel {
         totalAmountStored: m['totalAmount'] != null
             ? (m['totalAmount'] as num).toDouble()
             : null,
+        rescheduleRequest: m['rescheduleRequest'] != null
+            ? RescheduleRequest.fromMap(
+                m['rescheduleRequest'] as Map<String, dynamic>)
+            : null,
+        recurringGroupId: m['recurringGroupId'] as String?,
+        recurringWeek: m['recurringWeek'] as int?,
+        recurringTotal: m['recurringTotal'] as int?,
+        isGroupBooking: m['isGroupBooking'] ?? false,
+        groupSize: (m['groupSize'] ?? 1) as int,
+        joinCode: m['joinCode'] as String?,
       );
+
+  bool get isRecurring => recurringGroupId != null;
+
+  double get splitAmount => groupSize > 1 ? totalAmount / groupSize : totalAmount;
 
   BookingModel copyWith({
     BookingStatus? status,
@@ -250,6 +340,7 @@ class BookingModel {
     String? customerId,
     String? ownerId,
     bool? hasReview,
+    RescheduleRequest? rescheduleRequest,
   }) =>
       BookingModel(
         id: id,
@@ -273,5 +364,12 @@ class BookingModel {
         checkedInAt: checkedInAt,
         hasReview: hasReview ?? this.hasReview,
         noShow: noShow,
+        rescheduleRequest: rescheduleRequest ?? this.rescheduleRequest,
+        recurringGroupId: recurringGroupId,
+        recurringWeek: recurringWeek,
+        recurringTotal: recurringTotal,
+        isGroupBooking: isGroupBooking,
+        groupSize: groupSize,
+        joinCode: joinCode,
       );
 }

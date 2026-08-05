@@ -150,6 +150,8 @@ class _TicketCard extends StatelessWidget {
         return _cyan;
       case TicketStatus.resolved:
         return _greenFixed;
+      case TicketStatus.waitingForCustomer:
+        return _amber;
       case TicketStatus.closed:
         return _onSurfaceVar;
     }

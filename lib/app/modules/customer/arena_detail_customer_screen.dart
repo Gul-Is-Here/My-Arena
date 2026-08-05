@@ -42,7 +42,7 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
 
   final ArenaService _svc = ArenaService();
 
-  late final String _arenaId = Get.arguments as String;
+  late final String _arenaId = (Get.arguments as String?) ?? '';
   late final Stream<ArenaModel?> _arenaStream = _svc.streamArena(_arenaId);
   late final Stream<List<CourtModel>> _courtsStream = _svc.courts(_arenaId);
 

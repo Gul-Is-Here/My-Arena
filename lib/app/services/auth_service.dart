@@ -1,7 +1,8 @@
-import 'dart:io' show Platform;
+import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import '../data/models/user_model.dart';
@@ -136,5 +137,39 @@ class AuthService {
 
   Future<void> signOut() async {
     await _auth.signOut();
+  }
+
+  // ── Profile photo ────────────────────────────────────────────────────
+
+  /// Uploads [file] to Firebase Storage under `avatars/{uid}.jpg` and
+  /// returns the download URL. Also writes it to the user's Firestore doc.
+  Future<String> uploadProfilePhoto(
+    String uid,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async {
+    // Path: users/{uid}/avatar.jpg — covered by the deployed wildcard rule
+    // match /users/{userId}/{allPaths=**}, so no new Storage rule deploy needed.
+    final ref = FirebaseStorage.instance
+        .ref()
+        .child('users')
+        .child(uid)
+        .child('avatar.jpg');
+
+    final task = ref.putFile(
+      file,
+      SettableMetadata(contentType: 'image/jpeg'),
+    );
+
+    task.snapshotEvents.listen((snap) {
+      if (snap.totalBytes > 0) {
+        onProgress?.call(snap.bytesTransferred / snap.totalBytes);
+      }
+    });
+
+    await task;
+    final url = await ref.getDownloadURL();
+    await _users.doc(uid).update({'avatar': url});
+    return url;
   }
 }

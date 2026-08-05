@@ -44,12 +44,18 @@ class HomeTab extends StatelessWidget {
                     _QuickFilterRow(discovery: discovery),
                     const SizedBox(height: 14),
 
-                    // Promo hero banner carousel
+                    // Skeleton loaders — shown while the arena stream is loading
                     Obx(() {
-                      if (discovery.featured.isEmpty) return const SizedBox.shrink();
+                      if (!discovery.isLoading.value) return const SizedBox.shrink();
+                      return const _HomeSkeleton();
+                    }),
+
+                    // Admin-curated home carousel
+                    Obx(() {
+                      if (discovery.carousel.isEmpty) return const SizedBox.shrink();
                       return Column(
                         children: [
-                          _PromoBannerCarousel(arenas: discovery.featured),
+                          _PromoBannerCarousel(arenas: discovery.carousel),
                           const SizedBox(height: 28),
                         ],
                       );
@@ -101,38 +107,53 @@ class HomeTab extends StatelessWidget {
                       );
                     }),
 
-                    // Featured arenas
-                    _SectionHeader(
-                      title: 'Featured Arenas',
-                      onViewAll: () => Get.toNamed(AppRoutes.arenaList),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      height: 232,
-                      child: Obx(() => ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: discovery.featured.length,
-                        separatorBuilder: (c, i) => const SizedBox(width: 12),
-                        itemBuilder: (_, i) =>
-                            _FeaturedCard(arena: discovery.featured[i]),
-                      )),
-                    ),
-                    const SizedBox(height: 28),
+                    // Featured arenas — sorted by distance from user
+                    Obx(() {
+                      if (discovery.isLoading.value) return const SizedBox.shrink();
+                      final featured = discovery.featured;
+                      if (featured.isEmpty) return const SizedBox.shrink();
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _SectionHeader(
+                            title: 'Featured Arenas Near You',
+                            onViewAll: () => Get.toNamed(AppRoutes.arenaList),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            height: 232,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: featured.length,
+                              separatorBuilder: (c, i) => const SizedBox(width: 12),
+                              itemBuilder: (_, i) =>
+                                  _FeaturedCard(arena: featured[i]),
+                            ),
+                          ),
+                          const SizedBox(height: 28),
+                        ],
+                      );
+                    }),
 
                     // Nearby arenas
-                    _SectionHeader(
-                      title: 'Nearby Arenas',
-                      onViewAll: () => Get.toNamed(AppRoutes.arenaList),
-                    ),
-                    const SizedBox(height: 12),
-                    Obx(() => Column(
-                      children: discovery.nearby
-                          .map((a) => Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: _NearbyCard(arena: a),
-                              ))
-                          .toList(),
-                    )),
+                    Obx(() {
+                      if (discovery.isLoading.value) return const SizedBox.shrink();
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _SectionHeader(
+                            title: 'Nearby Arenas',
+                            onViewAll: () => Get.toNamed(AppRoutes.arenaList),
+                          ),
+                          const SizedBox(height: 12),
+                          ...discovery.nearby
+                              .map((a) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: _NearbyCard(arena: a),
+                                  )),
+                        ],
+                      );
+                    }),
                   ],
                 ),
               ),
@@ -816,6 +837,11 @@ class _FeaturedCard extends StatelessWidget {
                           color: AppColors.textSecondary, size: 18),
                     ],
                   ),
+                  if (arena.nextAvailableSlot != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: _AvailabilityBadge(slot: arena.nextAvailableSlot!),
+                    ),
                 ],
               ),
             ),
@@ -923,70 +949,126 @@ class _NearbyCard extends StatelessWidget {
               // Info
               Padding(
                 padding: const EdgeInsets.all(16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            arena.name,
-                            style: AppTextStyles.titleMedium.copyWith(
-                              fontSize: 16,
-                              color: AppColors.textPrimary,
-                              letterSpacing: -0.2,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Icon(Icons.location_on,
-                                  size: 13, color: AppColors.textSecondary),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  '${DiscoveryController.to.distanceOf(arena).toStringAsFixed(1)} KM AWAY',
-                                  style: AppTextStyles.caption.copyWith(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textSecondary,
-                                    letterSpacing: 0.6,
+                              Text(
+                                arena.name,
+                                style: AppTextStyles.titleMedium.copyWith(
+                                  fontSize: 16,
+                                  color: AppColors.textPrimary,
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  const Icon(Icons.location_on,
+                                      size: 13, color: AppColors.textSecondary),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      '${DiscoveryController.to.distanceOf(arena).toStringAsFixed(1)} KM AWAY',
+                                      style: AppTextStyles.caption.copyWith(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.textSecondary,
+                                        letterSpacing: 0.6,
+                                      ),
+                                    ),
                                   ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        RichText(
+                          text: TextSpan(
+                            children: [
+                              TextSpan(
+                                text: 'PKR ${arena.minPrice.toStringAsFixed(0)}',
+                                style: AppTextStyles.scoreboard.copyWith(
+                                  fontSize: 16,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                              TextSpan(
+                                text: '/hr',
+                                style: AppTextStyles.caption.copyWith(
+                                  fontSize: 10,
+                                  color: AppColors.textSecondary,
                                 ),
                               ),
                             ],
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                    RichText(
-                      text: TextSpan(
-                        children: [
-                          TextSpan(
-                            text: 'PKR ${arena.minPrice.toStringAsFixed(0)}',
-                            style: AppTextStyles.scoreboard.copyWith(
-                              fontSize: 16,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                          TextSpan(
-                            text: '/hr',
-                            style: AppTextStyles.caption.copyWith(
-                              fontSize: 10,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
+                    if (arena.nextAvailableSlot != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: _AvailabilityBadge(slot: arena.nextAvailableSlot!),
                       ),
-                    ),
                   ],
                 ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ── Availability Badge ─────────────────────────────────────────────────────────
+
+class _AvailabilityBadge extends StatelessWidget {
+  final DateTime slot;
+  const _AvailabilityBadge({required this.slot});
+
+  String get _label {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final slotDay = DateTime(slot.year, slot.month, slot.day);
+    final hourStr = DateFormat('HH:mm').format(slot);
+    if (slotDay == today) return 'Available today from $hourStr';
+    final diff = slotDay.difference(today).inDays;
+    if (diff == 1) return 'Available tomorrow $hourStr';
+    return 'Next available: ${DateFormat('EEE d MMM').format(slot)} $hourStr';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.circle, size: 6, color: AppColors.primary),
+          const SizedBox(width: 5),
+          Text(
+            _label,
+            style: AppTextStyles.caption.copyWith(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: AppColors.primary,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1434,6 +1516,143 @@ class _SecondaryButton extends StatelessWidget {
             Icon(icon, size: 16, color: AppColors.onPrimary),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Skeleton / shimmer loaders ────────────────────────────────────────────────
+
+/// Shimmer skeleton for the home screen.
+///
+/// Uses a single [AnimationController] shared across all skeleton items.
+/// The shimmer is a bright diagonal stripe that sweeps left→right by animating
+/// the gradient's begin/end alignment — no external packages needed.
+class _HomeSkeleton extends StatefulWidget {
+  const _HomeSkeleton();
+
+  @override
+  State<_HomeSkeleton> createState() => _HomeSkeletonState();
+}
+
+class _HomeSkeletonState extends State<_HomeSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  // Shimmer palette on the dark theme.
+  static const Color _base      = AppColors.elevated;       // 0xFF1E252C
+  static const Color _highlight = Color(0xFF2E3A46);        // slightly lighter
+  static const Color _shine     = Color(0xFF3A4856);        // the bright stripe
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  /// Builds a [LinearGradient] where the bright stripe sits at position [t]
+  /// across the x-axis. t runs 0→1 over the animation duration.
+  LinearGradient _gradient(double t) {
+    // Stripe occupies ~25 % of the width and travels from -0.5 to 1.5.
+    final center = -0.5 + t * 2.0;
+    return LinearGradient(
+      begin: Alignment.centerLeft,
+      end: Alignment.centerRight,
+      colors: const [_base, _base, _highlight, _shine, _highlight, _base, _base],
+      stops: [
+        0.0,
+        (center - 0.25).clamp(0.0, 1.0),
+        (center - 0.10).clamp(0.0, 1.0),
+        center.clamp(0.0, 1.0),
+        (center + 0.10).clamp(0.0, 1.0),
+        (center + 0.25).clamp(0.0, 1.0),
+        1.0,
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (ctx, _) {
+        final grad = _gradient(_ctrl.value);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Banner skeleton ──────────────────────────────────────
+            _SkeletonBox(gradient: grad, width: double.infinity, height: 160, radius: 16),
+            const SizedBox(height: 28),
+
+            // ── Featured section header + 4 horizontal cards ─────────
+            _SkeletonBox(gradient: grad, width: 130, height: 14),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 232,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: 4,
+                separatorBuilder: (ctx2, i) => const SizedBox(width: 12),
+                itemBuilder: (ctx2, i) =>
+                    _SkeletonBox(gradient: grad, width: 175, height: 232, radius: 16),
+              ),
+            ),
+            const SizedBox(height: 28),
+
+            // ── Nearby section header + 5 vertical cards ────────────
+            _SkeletonBox(gradient: grad, width: 110, height: 14),
+            const SizedBox(height: 12),
+            ...List.generate(
+              5,
+              (_) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _SkeletonBox(
+                  gradient: grad,
+                  width: double.infinity,
+                  height: 110,
+                  radius: 14,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// A single rounded rectangle filled with a shimmer gradient.
+class _SkeletonBox extends StatelessWidget {
+  final LinearGradient gradient;
+  final double width;
+  final double height;
+  final double radius;
+
+  const _SkeletonBox({
+    required this.gradient,
+    required this.width,
+    required this.height,
+    this.radius = 8,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        gradient: gradient,
+        borderRadius: BorderRadius.circular(radius),
       ),
     );
   }

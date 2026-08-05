@@ -40,6 +40,8 @@ Color _statusColor(BookingModel b) {
     case BookingStatus.refundPending:
     case BookingStatus.refundSent:
       return _grey;
+    case BookingStatus.rescheduleRequested:
+      return AppColors.warning;
   }
 }
 
@@ -90,6 +92,8 @@ class _CustomerInfo {
   const _CustomerInfo(this.name, this.phone);
 }
 
+// Instance-level caches are attached to _BookingCardState via an inherited
+// helper; file-level maps are replaced by a session cache on the controller.
 final Map<String, _CustomerInfo> _customerCache = {};
 final Map<String, String> _customerNameCache = {};
 
@@ -243,6 +247,9 @@ class _OwnerBookingsScreenState extends State<OwnerBookingsScreen> {
   @override
   void dispose() {
     _searchCtrl.dispose();
+    // Clear session-scoped caches when the screen leaves memory.
+    _customerCache.clear();
+    _customerNameCache.clear();
     super.dispose();
   }
 

@@ -48,16 +48,21 @@ class _MyChatsScreenState extends State<MyChatsScreen>
 
     return Scaffold(
       backgroundColor: _bg,
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.onPrimary,
-        icon: const Icon(Icons.support_agent),
-        label: Text('Contact Support',
-            style: AppTextStyles.label.copyWith(color: AppColors.onPrimary)),
-        onPressed: () async {
-          final chatId = await c.getOrCreateSupportChat();
-          Get.toNamed(AppRoutes.chatRoom, arguments: chatId);
-        },
+      // The dashboard shells use extendBody with a floating glass nav pill,
+      // so the FAB needs extra lift to clear it.
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 84),
+        child: FloatingActionButton.extended(
+          backgroundColor: AppColors.primary,
+          foregroundColor: AppColors.onPrimary,
+          icon: const Icon(Icons.support_agent),
+          label: Text('Contact Support',
+              style: AppTextStyles.label.copyWith(color: AppColors.onPrimary)),
+          onPressed: () async {
+            final chatId = await c.getOrCreateSupportChat();
+            Get.toNamed(AppRoutes.chatRoom, arguments: chatId);
+          },
+        ),
       ),
       body: SafeArea(
         child: Column(

@@ -3,6 +3,41 @@ enum BoostType { boost, event }
 
 enum BoostDuration { oneWeek, twoWeeks, oneMonth }
 
+enum BoostStatus {
+  pending,
+  approved,
+  rejected;
+
+  String get key {
+    switch (this) {
+      case BoostStatus.pending:
+        return 'pending';
+      case BoostStatus.approved:
+        return 'approved';
+      case BoostStatus.rejected:
+        return 'rejected';
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case BoostStatus.pending:
+        return 'Pending';
+      case BoostStatus.approved:
+        return 'Approved';
+      case BoostStatus.rejected:
+        return 'Rejected';
+    }
+  }
+
+  static BoostStatus fromKey(String key) {
+    return BoostStatus.values.firstWhere(
+      (s) => s.key == key,
+      orElse: () => BoostStatus.pending,
+    );
+  }
+}
+
 extension BoostDurationX on BoostDuration {
   String get label {
     switch (this) {
@@ -15,7 +50,6 @@ extension BoostDurationX on BoostDuration {
     }
   }
 
-  /// Dummy pricing until settings/boostPricing is wired to Firestore.
   double get price {
     switch (this) {
       case BoostDuration.oneWeek:
@@ -38,7 +72,7 @@ class BoostRequestModel {
   final double price;
   final String paymentScreenshot;
   final String accountUsed;
-  final String status; // pending | approved | rejected
+  final BoostStatus status;
   final Map<String, dynamic>? eventDetails;
   final DateTime createdAt;
 
@@ -52,12 +86,12 @@ class BoostRequestModel {
     required this.price,
     this.paymentScreenshot = '',
     this.accountUsed = '',
-    this.status = 'pending',
+    this.status = BoostStatus.pending,
     this.eventDetails,
     required this.createdAt,
   });
 
-  BoostRequestModel copyWith({String? status}) => BoostRequestModel(
+  BoostRequestModel copyWith({BoostStatus? status}) => BoostRequestModel(
         id: id,
         arenaId: arenaId,
         arenaName: arenaName,
@@ -83,7 +117,7 @@ extension BoostRequestModelX on BoostRequestModel {
         'price': price,
         'paymentScreenshot': paymentScreenshot,
         'accountUsed': accountUsed,
-        'status': status,
+        'status': status.key,
         if (eventDetails != null) 'eventDetails': eventDetails,
       };
 
@@ -103,7 +137,7 @@ extension BoostRequestModelX on BoostRequestModel {
         price: (m['price'] ?? 0).toDouble(),
         paymentScreenshot: m['paymentScreenshot'] ?? '',
         accountUsed: m['accountUsed'] ?? '',
-        status: m['status'] ?? 'pending',
+        status: BoostStatus.fromKey(m['status'] ?? 'pending'),
         eventDetails: m['eventDetails'] as Map<String, dynamic>?,
         createdAt: m['createdAt'] != null
             ? (m['createdAt'] as dynamic).toDate()

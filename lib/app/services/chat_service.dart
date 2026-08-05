@@ -237,6 +237,7 @@ class ChatService {
     required String text,
     required List<String> participants,
     Map<String, dynamic>? bookingRef,
+    Map<String, dynamic>? ticketRef,
   }) async {
     final msgRef = _chats.doc(chatId).collection('messages').doc();
     final batch = _db.batch();
@@ -249,6 +250,7 @@ class ChatService {
       'isRead': false,
       'createdAt': FieldValue.serverTimestamp(),
       'bookingRef': ?bookingRef,
+      'ticketRef': ?ticketRef,
     });
 
     final increments = <String, dynamic>{

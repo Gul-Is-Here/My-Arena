@@ -121,7 +121,6 @@ class _AddCourtBottomSheetState extends State<AddCourtBottomSheet> {
         id: widget.initial?.id ??
             'court-${DateTime.now().millisecondsSinceEpoch}',
         arenaId: widget.initial?.arenaId ?? '',
-        images: widget.initial?.images ?? const [],
         isActive: widget.initial?.isActive ?? true,
         name: _nameCtrl.text.trim(),
         description: _descCtrl.text.trim(),
@@ -186,8 +185,9 @@ class _AddCourtBottomSheetState extends State<AddCourtBottomSheet> {
                     label: Text(t.label),
                     selected: sel,
                     selectedColor: AppColors.primary,
+                    checkmarkColor: AppColors.onPrimary,
                     labelStyle: TextStyle(
-                      color: sel ? Colors.white : null,
+                      color: sel ? AppColors.onPrimary : null,
                       fontWeight: FontWeight.w600,
                     ),
                     onSelected: (_) => setState(() => _type = t),

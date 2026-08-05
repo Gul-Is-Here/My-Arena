@@ -53,6 +53,18 @@ class BookingController extends GetxController {
   final BlockedSlotService _blockedService = BlockedSlotService();
   final RxBool loadingSlots = false.obs;
 
+  // ── Recurring ──────────────────────────────────────────────────────────
+  final RxBool isRecurring = false.obs;
+  final RxInt recurringWeeks = RxInt(4);
+
+  // ── Group booking ──────────────────────────────────────────────────────
+  final RxBool isGroupBooking = false.obs;
+  final RxInt groupSize = RxInt(2);
+
+  // ── Waitlist ───────────────────────────────────────────────────────────
+  final RxList<Map<String, dynamic>> waitlistItems = <Map<String, dynamic>>[].obs;
+  StreamSubscription? _waitlistSub;
+
   BookingModel? draft;
 
   // JazzCash number from settings/booking
@@ -67,8 +79,12 @@ class BookingController extends GetxController {
     // changes so the list never goes stale across logins.
     _authSub = FirebaseAuth.instance
         .authStateChanges()
-        .listen((user) => _listenBookings(user?.uid));
+        .listen((user) {
+      _listenBookings(user?.uid);
+      _listenWaitlist(user?.uid);
+    });
     _listenBookings(_uid);
+    _listenWaitlist(_uid);
     _loadSettings();
   }
 
@@ -133,7 +149,7 @@ class BookingController extends GetxController {
     } catch (_) {}
   }
 
-  Future<void> joinWaitlist({
+  Future<String?> joinWaitlist({
     required String arenaId,
     required String arenaName,
     required String courtId,
@@ -141,7 +157,26 @@ class BookingController extends GetxController {
     required int hour,
   }) async {
     final uid = _uid;
-    if (uid.isEmpty) return;
+    if (uid.isEmpty) return 'Not logged in';
+
+    // Block if the customer already has an active booking on this slot
+    final slotDate = Timestamp.fromDate(DateTime(date.year, date.month, date.day));
+    final activeStatuses = ['deposit_submitted', 'confirmed'];
+    final existing = await FirebaseFirestore.instance
+        .collection('bookings')
+        .where('customerId', isEqualTo: uid)
+        .where('courtId', isEqualTo: courtId)
+        .where('date', isEqualTo: slotDate)
+        .where('status', whereIn: activeStatuses)
+        .get();
+    final overlap = existing.docs.any((d) {
+      final data = d.data();
+      final start = (data['startHour'] as int?) ?? 0;
+      final total = (data['totalHours'] as int?) ?? 1;
+      return hour >= start && hour < start + total;
+    });
+    if (overlap) return 'You already have a booking for this slot';
+
     final dateKey =
         '${date.year}${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}';
     await FirebaseFirestore.instance
@@ -151,11 +186,24 @@ class BookingController extends GetxController {
       'arenaId': arenaId,
       'arenaName': arenaName,
       'courtId': courtId,
-      'date': Timestamp.fromDate(DateTime(date.year, date.month, date.day)),
+      'date': slotDate,
       'hour': hour,
       'customerId': uid,
       'createdAt': FieldValue.serverTimestamp(),
     });
+    return null; // success
+  }
+
+  void _listenWaitlist(String? uid) {
+    _waitlistSub?.cancel();
+    if (uid == null || uid.isEmpty) {
+      waitlistItems.clear();
+      return;
+    }
+    _waitlistSub = _service.waitlistItems(uid).listen(
+      (items) => waitlistItems.assignAll(items),
+      onError: (_) {},
+    );
   }
 
   void startFlow(ArenaModel a, CourtModel c) {
@@ -164,6 +212,10 @@ class BookingController extends GetxController {
     date.value = DateTime.now();
     selectedHours.clear();
     selectedDuration.value = 1;
+    isRecurring.value = false;
+    recurringWeeks.value = 4;
+    isGroupBooking.value = false;
+    groupSize.value = 2;
     draft = null;
     _bookedSlots.clear();
     _blockedHours.clear();
@@ -255,6 +307,10 @@ class BookingController extends GetxController {
   void buildDraft() {
     final a = arena.value!;
     final c = court.value!;
+    final groupId = isRecurring.value
+        ? _generateId()
+        : null;
+    final code = isGroupBooking.value ? _generateJoinCode() : null;
     draft = BookingModel(
       id: '',
       arenaId: a.id,
@@ -272,7 +328,24 @@ class BookingController extends GetxController {
       totalAmountStored: totalAmount != c.pricePerHour * totalHours
           ? totalAmount
           : null,
+      recurringGroupId: groupId,
+      recurringTotal: isRecurring.value ? recurringWeeks.value : null,
+      isGroupBooking: isGroupBooking.value,
+      groupSize: isGroupBooking.value ? groupSize.value : 1,
+      joinCode: code,
     );
+  }
+
+  String _generateId() {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    final rand = DateTime.now().microsecondsSinceEpoch;
+    return List.generate(20, (i) => chars[(rand >> i) % chars.length]).join();
+  }
+
+  String _generateJoinCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    final rand = DateTime.now().microsecondsSinceEpoch;
+    return List.generate(6, (i) => chars[(rand >> (i * 5)) % chars.length]).join();
   }
 
   // Returns picked file or null if user cancelled
@@ -281,15 +354,39 @@ class BookingController extends GetxController {
 
   Future<String> submitDeposit(File screenshot, String accountUsed) async {
     final b = draft!;
-    final bookingId = await _service.createBookingWithDeposit(
-      b,
-      screenshot: screenshot,
-      accountUsed: accountUsed,
-    );
+    String bookingId;
+    if (b.isRecurring && b.recurringTotal != null && b.recurringTotal! > 1) {
+      final ids = await _service.createRecurringBookings(
+        b,
+        b.recurringTotal!,
+        depositScreenshot: screenshot,
+        depositAccount: accountUsed,
+      );
+      bookingId = ids.first;
+    } else {
+      bookingId = await _service.createBookingWithDeposit(
+        b,
+        screenshot: screenshot,
+        accountUsed: accountUsed,
+      );
+    }
     draft = null;
     selectedHours.clear();
     return bookingId;
   }
+
+  Future<void> cancelRecurringSeries(String recurringGroupId) async {
+    await _service.cancelRecurringSeries(recurringGroupId, _uid);
+  }
+
+  Future<BookingModel?> joinGroupBooking(String joinCode) async {
+    final user = AuthController.to.currentUser.value;
+    if (user == null) return null;
+    return _service.joinGroupBooking(joinCode, user.uid, user.name);
+  }
+
+  Future<void> cancelWaitlistItem(String docId) =>
+      _service.cancelWaitlistItem(docId);
 
   Future<void> cancelBooking(
       String id, String bankName, String accountNumber) async {
@@ -309,6 +406,7 @@ class BookingController extends GetxController {
     _retryTimer?.cancel();
     _authSub?.cancel();
     _bookingsSub?.cancel();
+    _waitlistSub?.cancel();
     super.onClose();
   }
 }

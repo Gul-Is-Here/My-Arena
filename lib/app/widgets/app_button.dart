@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 
-/// Primary CTA with sporty gradient, plus outlined variant.
+/// Primary CTA — solid primary fill with onPrimary (black) content —
+/// plus outlined variant.
 class AppButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
@@ -32,7 +33,7 @@ class AppButton extends StatelessWidget {
             height: 24,
             child: CircularProgressIndicator(
               strokeWidth: 2.5,
-              color: Colors.white,
+              color: AppColors.onPrimary,
             ),
           )
         : Row(
@@ -63,7 +64,7 @@ class AppButton extends StatelessWidget {
         height: height,
         width: double.infinity,
         decoration: BoxDecoration(
-          gradient: AppColors.primaryGradient,
+          color: AppColors.primary,
           borderRadius: BorderRadius.circular(16),
           boxShadow: disabled
               ? null
@@ -82,9 +83,10 @@ class AppButton extends StatelessWidget {
             onTap: disabled ? null : onPressed,
             child: Center(
               child: DefaultTextStyle(
-                style: AppTextStyles.button.copyWith(color: Colors.white),
+                style:
+                    AppTextStyles.button.copyWith(color: AppColors.onPrimary),
                 child: IconTheme(
-                  data: const IconThemeData(color: Colors.white),
+                  data: const IconThemeData(color: AppColors.onPrimary),
                   child: child,
                 ),
               ),

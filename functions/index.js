@@ -10,17 +10,22 @@
  */
 
 const { onRequest } = require("firebase-functions/v2/https");
-const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentUpdated, onDocumentDeleted } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const admin = require("firebase-admin");
+const { getStorage } = require("firebase-admin/storage");
 
 admin.initializeApp();
 
 const verifyEmail = require("./verifyEmail");
 const passwordReset = require("./passwordReset");
+const inviteOwner = require("./inviteOwner");
+const staffManagement = require("./staffManagement");
 
 exports.verifyEmail = onRequest(verifyEmail);
 exports.passwordReset = onRequest(passwordReset);
+exports.inviteOwner = onRequest({ cors: true }, inviteOwner);
+exports.staffManagement = onRequest({ cors: true }, staffManagement);
 
 // ── FCM helpers ──────────────────────────────────────────────────────
 
@@ -54,14 +59,23 @@ async function sendPush(uid, title, body, type = "general", relatedId = null) {
 // ── Booking: deposit submitted → notify owner ─────────────────────────
 exports.onBookingCreated = onDocumentCreated("bookings/{bookingId}", async (event) => {
   const data = event.data.data();
-  if (!data?.ownerId) return;
-  await sendPush(
-    data.ownerId,
-    "New Booking Request",
-    `${data.customerName ?? "A customer"} submitted a deposit for ${data.courtName ?? "your court"}.`,
-    "booking",
-    event.params.bookingId
-  );
+  const db = admin.firestore();
+
+  // Notify owner of new booking
+  if (data?.ownerId) {
+    await sendPush(
+      data.ownerId,
+      "New Booking Request",
+      `${data.customerName ?? "A customer"} submitted a deposit for ${data.courtName ?? "your court"}.`,
+      "booking",
+      event.params.bookingId
+    );
+  }
+
+  // Refresh next-available slot for the arena
+  if (data?.arenaId) {
+    await refreshNextAvailable(db, data.arenaId);
+  }
 });
 
 // ── Booking: status changed → notify customer + waitlist ──────────────
@@ -218,6 +232,14 @@ exports.onBookingUpdated = onDocumentUpdated("bookings/{bookingId}", async (even
   } catch (e) {
     console.error("chat status mirror failed:", e);
   }
+
+  // Refresh next-available slot for the arena
+  try {
+    const db2 = admin.firestore();
+    if (after.arenaId) await refreshNextAvailable(db2, after.arenaId);
+  } catch (e) {
+    console.error("refreshNextAvailable failed:", e);
+  }
 });
 
 // ── Auto-transition bookings every 30 minutes ──────────────────────────
@@ -355,6 +377,317 @@ exports.sendBookingReminders = onSchedule({ schedule: "every 15 minutes", timeZo
   console.log(`sendBookingReminders: ${sent} reminders sent.`);
 });
 
+// ── Account deletion (GDPR / App Store compliance) ───────────────────
+// Called by the app with a valid Firebase ID token in the Authorization
+// header. Deletes Firebase Auth user, anonymizes Firestore docs, removes
+// Storage avatar. Pending bookings are cancelled; confirmed bookings are
+// left intact for owner records but customer PII is anonymised.
+exports.deleteAccount = onRequest(async (req, res) => {
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+  if (req.method !== "POST") { res.status(405).json({ success: false, message: "Method not allowed." }); return; }
+
+  // Verify the caller's Firebase ID token.
+  const authHeader = req.headers.authorization || "";
+  const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (!idToken) {
+    return res.status(401).json({ success: false, message: "Missing auth token." });
+  }
+
+  let decodedToken;
+  try {
+    decodedToken = await admin.auth().verifyIdToken(idToken);
+  } catch (_) {
+    return res.status(401).json({ success: false, message: "Invalid or expired token." });
+  }
+
+  const uid = decodedToken.uid;
+  const db  = admin.firestore();
+
+  try {
+    // 1. Cancel any pending/deposit-submitted bookings so slots are freed.
+    const pendingStatuses = ["pending_deposit", "deposit_submitted"];
+    const bookingSnap = await db.collection("bookings")
+      .where("customerId", "==", uid)
+      .where("status", "in", pendingStatuses)
+      .get();
+    const batch = db.batch();
+    for (const doc of bookingSnap.docs) {
+      batch.update(doc.ref, {
+        status: "cancelled",
+        "cancellation.requestedAt": admin.firestore.FieldValue.serverTimestamp(),
+        "cancellation.reason": "account_deleted",
+      });
+    }
+    await batch.commit();
+
+    // 2. Anonymize the Firestore user document — keep uid for referential
+    //    integrity in bookings/chats, but remove all PII.
+    await db.collection("users").doc(uid).set({
+      uid,
+      name: "Deleted User",
+      email: "",
+      phone: "",
+      avatar: "",
+      role: "customer",
+      isActive: false,
+      fcmToken: admin.firestore.FieldValue.delete(),
+      deletedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: false });
+
+    // 3. Delete Storage avatar (best-effort — path may not exist).
+    try {
+      const bucket = getStorage().bucket();
+      await bucket.deleteFiles({ prefix: `avatars/${uid}/` });
+    } catch (_) { /* no avatar to delete */ }
+
+    // 4. Delete the Firebase Auth account — this invalidates all tokens.
+    await admin.auth().deleteUser(uid);
+
+    return res.status(200).json({ success: true, message: "Account deleted." });
+  } catch (error) {
+    console.error("deleteAccount error:", error);
+    return res.status(500).json({ success: false, message: "Failed to delete account." });
+  }
+});
+
+// ── Home screen summary — CDN-cached, no auth required ───────────────
+// Returns featured arenas + 20 newest approved arenas for the initial home
+// load. Cache-Control instructs CDN / Firebase Hosting to cache the response
+// for 5 minutes (s-maxage=300) and serve stale for up to 10 minutes while
+// revalidating in the background (stale-while-revalidate=600).
+exports.homeScreenSummary = onRequest(async (req, res) => {
+  res.set(
+    "Cache-Control",
+    "public, s-maxage=300, stale-while-revalidate=600"
+  );
+  try {
+    const db = admin.firestore();
+    const [featuredSnap, recentSnap] = await Promise.all([
+      db.collection("arenas")
+        .where("status", "==", "approved")
+        .where("isActive", "==", true)
+        .where("isFeatured", "==", true)
+        .orderBy("createdAt", "desc")
+        .limit(5)
+        .get(),
+      db.collection("arenas")
+        .where("status", "==", "approved")
+        .where("isActive", "==", true)
+        .orderBy("createdAt", "desc")
+        .limit(20)
+        .get(),
+    ]);
+
+    const toArena = (doc) => {
+      const data = doc.data();
+      // Strip sensitive/heavy fields before sending to client.
+      const { position, ...safe } = data;
+      return { id: doc.id, ...safe };
+    };
+
+    res.json({
+      success: true,
+      featured: featuredSnap.docs.map(toArena),
+      recent: recentSnap.docs.map(toArena),
+      generatedAt: Date.now(),
+    });
+  } catch (e) {
+    console.error("homeScreenSummary error:", e);
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// ── nextAvailableSlot — compute and denormalize onto arena doc ────────
+
+const CANCELLED_STATUSES = new Set([
+  "cancelled", "rejected", "refund_pending", "refund_sent", "refund_confirmed",
+]);
+
+async function computeNextAvailableSlot(db, arenaId) {
+  const courtsSnap = await db
+    .collection("arenas").doc(arenaId)
+    .collection("courts")
+    .where("isActive", "==", true)
+    .get();
+
+  if (courtsSnap.empty) return null;
+
+  const courts = courtsSnap.docs.map((d) => {
+    const data = d.data();
+    const startStr = data.startTime || "08:00";
+    const endStr   = data.endTime   || "23:00";
+    return {
+      id: d.id,
+      startHour: parseInt(startStr.split(":")[0], 10),
+      endHour:   parseInt(endStr.split(":")[0], 10),
+    };
+  });
+
+  const now   = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+    const date = new Date(today);
+    date.setDate(today.getDate() + dayOffset);
+
+    const pad  = (n) => String(n).padStart(2, "0");
+    const dateKey = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    const minHour = dayOffset === 0 ? now.getHours() + 1 : 0;
+
+    const dayStart = new Date(date);
+    const dayEnd   = new Date(date);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+
+    const [bookingsSnap, blockedSnap] = await Promise.all([
+      db.collection("bookings")
+        .where("arenaId", "==", arenaId)
+        .where("date", ">=", admin.firestore.Timestamp.fromDate(dayStart))
+        .where("date", "<",  admin.firestore.Timestamp.fromDate(dayEnd))
+        .get(),
+      db.collection("blockedSlots")
+        .where("arenaId", "==", arenaId)
+        .where("dateKey", "==", dateKey)
+        .get(),
+    ]);
+
+    // Build occupied-hours maps
+    const booked  = {};
+    const blocked = {};
+
+    for (const doc of bookingsSnap.docs) {
+      const d = doc.data();
+      if (CANCELLED_STATUSES.has(d.status)) continue;
+      const cid   = d.courtId;
+      const start = d.startHour  || 0;
+      const dur   = d.totalHours || 1;
+      if (!booked[cid]) booked[cid] = new Set();
+      for (let h = start; h < start + dur; h++) booked[cid].add(h);
+    }
+
+    for (const doc of blockedSnap.docs) {
+      const d   = doc.data();
+      const cid = d.courtId;
+      if (!blocked[cid]) blocked[cid] = new Set();
+      blocked[cid].add(d.hour);
+    }
+
+    // Find earliest free hour across courts
+    for (const court of courts) {
+      const startH = Math.max(court.startHour, minHour);
+      for (let h = startH; h < court.endHour; h++) {
+        if (!(booked[court.id]?.has(h)) && !(blocked[court.id]?.has(h))) {
+          const slotTime = new Date(date);
+          slotTime.setHours(h, 0, 0, 0);
+          return admin.firestore.Timestamp.fromDate(slotTime);
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+async function refreshNextAvailable(db, arenaId) {
+  if (!arenaId) return;
+  const slot = await computeNextAvailableSlot(db, arenaId);
+  await db.collection("arenas").doc(arenaId).update({
+    nextAvailableSlot: slot,
+  });
+}
+
+exports.onBlockedSlotCreated = onDocumentCreated("blockedSlots/{slotId}", async (event) => {
+  const db      = admin.firestore();
+  const arenaId = event.data.data().arenaId;
+  await refreshNextAvailable(db, arenaId);
+});
+
+exports.onBlockedSlotDeleted = onDocumentDeleted("blockedSlots/{slotId}", async (event) => {
+  const db      = admin.firestore();
+  const arenaId = event.data.data().arenaId;
+  await refreshNextAvailable(db, arenaId);
+});
+
+// ── Booking reminders: T-24h and T-1h push to customer ───────────────
+//
+// Runs every 30 minutes. For each reminder window we use a ±35-minute
+// band around the target lead time so no booking falls between two runs.
+// Idempotency flags (remindedAt24h / remindedAt1h) prevent double-sends
+// if the same booking is caught in overlapping windows.
+
+exports.sendBookingReminders = onSchedule("every 30 minutes", async () => {
+  const db  = admin.firestore();
+  const now = Date.now(); // ms
+
+  // Helper: booking start time in ms.
+  // Bookings store `date` as local-midnight Timestamp; startHour is added on top.
+  const startMs = (data) =>
+    data.date.toDate().getTime() + (data.startHour || 0) * 3_600_000;
+
+  // Helper: human-readable time string, e.g. "14:00".
+  const fmtHour = (h) => `${String(h).padStart(2, "0")}:00`;
+
+  const WINDOW_MS = 35 * 60 * 1000; // 35 minutes either side
+
+  const targets = [
+    { leadMs: 24 * 3_600_000, flag: "remindedAt24h", label: "24 hours" },
+    { leadMs:  1 * 3_600_000, flag: "remindedAt1h",  label: "1 hour"   },
+  ];
+
+  // Broad date window: query confirmed bookings whose `date` falls within
+  // the next 25 hours (covers both reminder windows with headroom).
+  const windowStart = admin.firestore.Timestamp.fromDate(new Date(now));
+  const windowEnd   = admin.firestore.Timestamp.fromDate(new Date(now + 25 * 3_600_000));
+
+  const snap = await db.collection("bookings")
+    .where("status", "==", "confirmed")
+    .where("date", ">=", windowStart)
+    .where("date", "<=", windowEnd)
+    .get();
+
+  let sent = 0;
+  const batch = db.batch();
+
+  for (const doc of snap.docs) {
+    const data   = doc.data();
+    const uid    = data.customerId;
+    if (!uid) continue;
+
+    const bookingStart = startMs(data);
+    const lead         = bookingStart - now; // ms until the booking starts
+
+    for (const { leadMs, flag, label } of targets) {
+      if (data[flag]) continue; // already sent
+
+      const diff = lead - leadMs; // ms away from this reminder's ideal send time
+      if (Math.abs(diff) > WINDOW_MS) continue; // outside this run's window
+
+      const timeStr  = fmtHour(data.startHour || 0);
+      const arena    = data.arenaName || "your arena";
+      const court    = data.courtName || "";
+      const courtStr = court ? ` (${court})` : "";
+
+      await sendPush(
+        uid,
+        `Booking in ${label}`,
+        `Your booking at ${arena}${courtStr} starts at ${timeStr}. See you there!`,
+        "booking_reminder",
+        doc.id,
+      );
+
+      batch.update(doc.ref, {
+        [flag]: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      sent++;
+    }
+  }
+
+  if (sent > 0) await batch.commit();
+  console.log(`sendBookingReminders: ${sent} reminders sent.`);
+});
+
 // ── Tournament registration payment verified → notify customer ────────
 exports.onRegistrationUpdated = onDocumentUpdated("registrations/{regId}", async (event) => {
   const before = event.data.before.data();
@@ -367,4 +700,160 @@ exports.onRegistrationUpdated = onDocumentUpdated("registrations/{regId}", async
   } else if (after.paymentStatus === "rejected") {
     await sendPush(uid, "Registration Rejected", "Your tournament registration payment was rejected. Please resubmit.");
   }
+});
+
+// ── Expire stale invitations + archive orphaned arenas ────────────────────
+// Runs daily. Finds `pending` owner invitations whose `expiresAt` is in the
+// past, marks them expired, disables the Auth user, and archives any arena
+// that was admin-created for that invitation but was never approved.
+exports.expireInvitations = onSchedule("every 24 hours", async () => {
+  const db = admin.firestore();
+  const now = admin.firestore.Timestamp.now();
+
+  const snap = await db.collection("ownerInvitations")
+    .where("status", "==", "pending")
+    .where("expiresAt", "<", now)
+    .get();
+
+  if (snap.empty) {
+    console.log("expireInvitations: nothing to expire.");
+    return;
+  }
+
+  let expired = 0;
+  let arenasArchived = 0;
+
+  for (const doc of snap.docs) {
+    const invitationId = doc.id;
+    const data = doc.data();
+    const batch = db.batch();
+
+    // Mark invitation expired.
+    batch.update(doc.ref, {
+      status: "expired",
+      expiredAt: now,
+    });
+
+    // Disable the Auth user so they can't activate later with the stale code.
+    if (data.targetUid) {
+      try {
+        await admin.auth().updateUser(data.targetUid, { disabled: true });
+      } catch (e) {
+        console.warn(`expireInvitations: could not disable user ${data.targetUid}:`, e.message);
+      }
+    }
+
+    // Archive any arena created for this invitation that was never approved.
+    const arenaSnap = await db.collection("arenas")
+      .where("adminCreatedFor", "==", invitationId)
+      .where("status", "!=", "approved")
+      .get();
+
+    for (const arenaDoc of arenaSnap.docs) {
+      batch.update(arenaDoc.ref, {
+        status: "archived",
+        archivedReason: "invitation_expired",
+        archivedAt: now,
+      });
+      arenasArchived++;
+    }
+
+    await batch.commit();
+    expired++;
+
+    // Audit log.
+    await db.collection("audit_logs").add({
+      action: "invitation_expired",
+      actorUid: "system",
+      actorRole: "system",
+      entityType: "ownerInvitation",
+      entityId: invitationId,
+      targetUid: data.targetUid ?? null,
+      metadata: { email: data.email, arenasArchived },
+      success: true,
+      timestamp: now,
+    }).catch((e) => console.error("audit log write failed:", e));
+  }
+
+  console.log(`expireInvitations: ${expired} invitations expired, ${arenasArchived} arenas archived.`);
+});
+
+// ── Admin: Export audit logs as CSV ──────────────────────────────────────
+exports.exportAuditLogs = onRequest({ cors: true }, async (req, res) => {
+  if (req.method !== "POST") {
+    res.status(405).send("Method not allowed");
+    return;
+  }
+
+  // Verify caller is admin-tier
+  const authHeader = req.headers.authorization || "";
+  if (!authHeader.startsWith("Bearer ")) {
+    res.status(401).send("Unauthorized");
+    return;
+  }
+  const idToken = authHeader.split("Bearer ")[1];
+  let uid;
+  try {
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    uid = decoded.uid;
+  } catch (e) {
+    res.status(401).send("Invalid token");
+    return;
+  }
+
+  const userDoc = await admin.firestore().collection("users").doc(uid).get();
+  const role = userDoc.data()?.role ?? "customer";
+  const adminTierRoles = [
+    "admin", "superAdmin", "operationsManager",
+    "supportAgent", "finance", "contentManager", "moderator", "staff"
+  ];
+  if (!adminTierRoles.includes(role)) {
+    res.status(403).send("Forbidden");
+    return;
+  }
+
+  const { action, actorRole, dateFrom, dateTo, limit = 500 } = req.body;
+
+  let query = admin.firestore()
+    .collection("audit_logs")
+    .orderBy("timestamp", "desc")
+    .limit(Math.min(limit, 5000));
+
+  if (action) query = query.where("action", "==", action);
+  if (actorRole) query = query.where("actorRole", "==", actorRole);
+  if (dateFrom) {
+    query = query.where("timestamp", ">=", new Date(dateFrom));
+  }
+  if (dateTo) {
+    query = query.where("timestamp", "<=", new Date(dateTo));
+  }
+
+  const snap = await query.get();
+
+  const headers = [
+    "ID", "Timestamp", "Actor Name", "Actor Role", "Action",
+    "Entity Type", "Entity ID", "Success", "Reason", "Error"
+  ];
+
+  const rows = snap.docs.map((doc) => {
+    const d = doc.data();
+    const ts = d.timestamp?.toDate?.()?.toISOString() ?? "";
+    return [
+      doc.id,
+      ts,
+      `"${(d.actorName ?? "").replace(/"/g, '""')}"`,
+      d.actorRole ?? "",
+      d.action ?? "",
+      d.entityType ?? "",
+      d.entityId ?? "",
+      d.success ? "true" : "false",
+      `"${(d.reason ?? "").replace(/"/g, '""')}"`,
+      `"${(d.errorMessage ?? "").replace(/"/g, '""')}"`,
+    ].join(",");
+  });
+
+  const csv = [headers.join(","), ...rows].join("\n");
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", `attachment; filename="audit_logs_${Date.now()}.csv"`);
+  res.status(200).send(csv);
 });

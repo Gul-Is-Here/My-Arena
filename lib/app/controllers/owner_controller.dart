@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 
 import '../controllers/auth_controller.dart';
@@ -42,23 +43,16 @@ class OwnerController extends GetxController {
     _arenaSub?.cancel();
     if (_uid.isEmpty) return;
     isLoading.value = true;
-    _arenaSub = _arenaService.ownerArenas(_uid).listen((arenas) async {
-      // Fetch courts for each arena
-      final enriched = <ArenaModel>[];
-      for (final arena in arenas) {
-        final courtsSnap = await FirebaseFirestore.instance
-            .collection('arenas')
-            .doc(arena.id)
-            .collection('courts')
-            .get();
-        final courts = courtsSnap.docs
-            .map((d) => CourtModel.fromMap({...d.data(), 'id': d.id}))
-            .toList();
-        enriched.add(arena.copyWith(courts: courts));
-      }
-      myArenas.assignAll(enriched);
-      isLoading.value = false;
-    }, onError: (_) => isLoading.value = false);
+    // Courts are NOT fetched here — the arena document carries a courtSummary
+    // (written by ArenaService.syncCourtSummary after every court write) so
+    // owner list and dashboard cards work without N+1 subcollection reads.
+    _arenaSub = _arenaService.ownerArenas(_uid).listen(
+      (arenas) {
+        myArenas.assignAll(arenas);
+        isLoading.value = false;
+      },
+      onError: (_) => isLoading.value = false,
+    );
   }
 
   void _listenBookingStats() {
@@ -185,17 +179,56 @@ class OwnerController extends GetxController {
     myArenas.refresh();
     try {
       await _arenaService.updateCourt(arenaId, courtId, {'isActive': !current});
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Toggle court active failed: $e');
       final reverted = [...arena.courts];
       reverted[courtIndex] = reverted[courtIndex].copyWith(isActive: current);
       myArenas[arenaIndex] = arena.copyWith(courts: reverted);
       myArenas.refresh();
+      Get.snackbar('Failed', e.toString().contains('permission-denied')
+          ? 'You don\'t have permission to update this court.'
+          : 'Could not toggle court. Please try again.',
+          snackPosition: SnackPosition.BOTTOM,
+          margin: const EdgeInsets.all(16));
     }
   }
 
+  Future<void> refreshCourts(String arenaId) async {
+    final index = myArenas.indexWhere((a) => a.id == arenaId);
+    if (index == -1) return;
+    try {
+      final courtsSnap = await FirebaseFirestore.instance
+          .collection('arenas')
+          .doc(arenaId)
+          .collection('courts')
+          .get();
+      final courts = courtsSnap.docs
+          .map((d) => CourtModel.fromMap({...d.data(), 'id': d.id}))
+          .toList();
+      myArenas[index] = myArenas[index].copyWith(courts: courts);
+      myArenas.refresh();
+    } catch (_) {}
+  }
+
   Future<void> deleteArena(String arenaId) async {
-    await _arenaService.deleteArena(arenaId);
-    myArenas.removeWhere((a) => a.id == arenaId);
+    try {
+      await _arenaService.deleteArena(arenaId);
+    } catch (e) {
+      debugPrint('Delete arena failed: $e');
+      final msg = e.toString();
+      if (msg.contains('permission-denied')) {
+        Get.snackbar('Permission Denied',
+            'You don\'t have permission to delete this arena.',
+            snackPosition: SnackPosition.BOTTOM,
+            margin: const EdgeInsets.all(16));
+      } else {
+        Get.snackbar('Delete Failed',
+            'Could not delete the arena. Please try again.',
+            snackPosition: SnackPosition.BOTTOM,
+            margin: const EdgeInsets.all(16));
+      }
+      rethrow;
+    }
   }
 
   @override

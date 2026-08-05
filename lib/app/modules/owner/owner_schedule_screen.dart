@@ -10,6 +10,7 @@ import '../../data/models/court_model.dart';
 import '../../routes/app_routes.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text_styles.dart';
+import '../../widgets/app_confirm_dialog.dart';
 
 const _bg = AppColors.background;
 const _surface = AppColors.surface;
@@ -21,7 +22,6 @@ const _amber = AppColors.warning;
 const _red = AppColors.error;
 const _onSurface = AppColors.textPrimary;
 const _onSurfaceVar = AppColors.textSecondary;
-const _onFixed = AppColors.onPrimary;
 
 /// Day schedule grid — rows are the selected arena's courts, columns are
 /// hours. Tap a booked cell for details, an empty cell to block it, a
@@ -487,53 +487,45 @@ class _Cell extends StatelessWidget {
     return '${h.toString().padLeft(2, '0')}:00 – ${((h + 1) % 24).toString().padLeft(2, '0')}:00';
   }
 
-  void _confirmBlock(BuildContext context) {
-    Get.defaultDialog(
-      backgroundColor: _surfaceLow,
-      titleStyle:
-          AppTextStyles.titleMedium.copyWith(color: _onSurface, fontWeight: FontWeight.w800),
-      middleTextStyle: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar),
+  Future<void> _confirmBlock(BuildContext context) async {
+    final ok = await AppConfirmDialog.show(
+      context,
+      icon: Icons.block,
+      iconColor: AppColors.error,
       title: 'Block this slot?',
-      middleText:
-          '${court.name}\n$_hourLabel\n\nCustomers won\'t be able to book it.',
-      textCancel: 'Cancel',
-      textConfirm: 'Block',
-      confirmTextColor: _onFixed,
-      buttonColor: _amber,
-      cancelTextColor: _onSurfaceVar,
-      onConfirm: () {
-        Get.back();
-        controller.block(court, hour).catchError((e) {
-          Get.snackbar('Could not block slot', '$e',
-              snackPosition: SnackPosition.BOTTOM,
-              margin: const EdgeInsets.all(16));
-        });
-      },
+      subtitle: '${court.name} · $_hourLabel',
+      message:
+          'Blocking this slot will prevent any new bookings from being made '
+          'during this time period. You can unblock it again at any time '
+          'from this schedule.',
+      confirmLabel: 'Confirm Block',
     );
+    if (ok != true) return;
+    controller.block(court, hour).catchError((e) {
+      Get.snackbar('Could not block slot', '$e',
+          snackPosition: SnackPosition.BOTTOM,
+          margin: const EdgeInsets.all(16));
+    });
   }
 
-  void _confirmUnblock(BuildContext context) {
-    Get.defaultDialog(
-      backgroundColor: _surfaceLow,
-      titleStyle:
-          AppTextStyles.titleMedium.copyWith(color: _onSurface, fontWeight: FontWeight.w800),
-      middleTextStyle: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar),
+  Future<void> _confirmUnblock(BuildContext context) async {
+    final ok = await AppConfirmDialog.show(
+      context,
+      icon: Icons.lock_open_rounded,
+      iconColor: AppColors.success,
       title: 'Unblock this slot?',
-      middleText: '${court.name}\n$_hourLabel',
-      textCancel: 'Cancel',
-      textConfirm: 'Unblock',
-      confirmTextColor: _onFixed,
-      buttonColor: _green,
-      cancelTextColor: _onSurfaceVar,
-      onConfirm: () {
-        Get.back();
-        controller.unblock(court, hour).catchError((e) {
-          Get.snackbar('Could not unblock slot', '$e',
-              snackPosition: SnackPosition.BOTTOM,
-              margin: const EdgeInsets.all(16));
-        });
-      },
+      subtitle: '${court.name} · $_hourLabel',
+      message:
+          'This slot will become available again and customers will be able '
+          'to book it right away.',
+      confirmLabel: 'Confirm Unblock',
     );
+    if (ok != true) return;
+    controller.unblock(court, hour).catchError((e) {
+      Get.snackbar('Could not unblock slot', '$e',
+          snackPosition: SnackPosition.BOTTOM,
+          margin: const EdgeInsets.all(16));
+    });
   }
 
   void _showBookingSheet(BuildContext context, BookingModel b) {

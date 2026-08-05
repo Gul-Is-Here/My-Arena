@@ -298,18 +298,113 @@ class BookingSummaryScreen extends StatelessWidget {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  // ── Recurring toggle ─────────────────────────────────
+                  Obx(() => _OptionCard(
+                    icon: Icons.repeat_rounded,
+                    title: 'Recurring weekly',
+                    subtitle: c.isRecurring.value
+                        ? '${c.recurringWeeks.value} weeks — every ${_weekdayOf(b.date)}'
+                        : 'Book the same slot every week',
+                    enabled: c.isRecurring.value,
+                    onToggle: (v) => c.isRecurring.value = v,
+                    child: c.isRecurring.value
+                        ? Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [4, 8, 12].map((w) {
+                                final sel = c.recurringWeeks.value == w;
+                                return GestureDetector(
+                                  onTap: () => c.recurringWeeks.value = w,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: sel
+                                          ? SlotPickerColors.greenCta.withValues(alpha: 0.18)
+                                          : SlotPickerColors.surface,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: sel
+                                            ? SlotPickerColors.greenCta
+                                            : Colors.white.withValues(alpha: 0.1),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '$w wks',
+                                      style: TextStyle(
+                                        color: sel
+                                            ? SlotPickerColors.greenCta
+                                            : SlotPickerColors.muted,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          )
+                        : null,
+                  )),
+                  const SizedBox(height: 12),
+                  // ── Group booking toggle ──────────────────────────────
+                  Obx(() => _OptionCard(
+                    icon: Icons.group_rounded,
+                    title: 'Group / team booking',
+                    subtitle: c.isGroupBooking.value
+                        ? 'Split: PKR ${(b.totalAmount / c.groupSize.value).toStringAsFixed(0)} per player'
+                        : 'Share the slot and split the bill',
+                    enabled: c.isGroupBooking.value,
+                    onToggle: (v) => c.isGroupBooking.value = v,
+                    child: c.isGroupBooking.value
+                        ? Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Row(
+                              children: [
+                                const Text('Players:',
+                                    style: TextStyle(
+                                        color: SlotPickerColors.muted,
+                                        fontSize: 13)),
+                                const Spacer(),
+                                _Stepper(
+                                  value: c.groupSize.value,
+                                  min: 2,
+                                  max: 20,
+                                  onChanged: (v) => c.groupSize.value = v,
+                                ),
+                              ],
+                            ),
+                          )
+                        : null,
+                  )),
                 ],
               ),
             ),
-            _BottomBar(
-              label:
-                  'Pay Deposit — PKR ${b.depositAmount.toStringAsFixed(0)}',
-              onPressed: () => Get.toNamed(AppRoutes.depositPayment),
-            ),
+            Obx(() {
+              final perPerson = c.isGroupBooking.value
+                  ? b.depositAmount / c.groupSize.value
+                  : b.depositAmount;
+              final weeks = c.isRecurring.value ? c.recurringWeeks.value : 1;
+              final label = c.isRecurring.value
+                  ? 'Pay Week 1 of $weeks Deposit — PKR ${b.depositAmount.toStringAsFixed(0)}'
+                  : c.isGroupBooking.value
+                      ? 'Pay Deposit — PKR ${perPerson.toStringAsFixed(0)}/person'
+                      : 'Pay Deposit — PKR ${b.depositAmount.toStringAsFixed(0)}';
+              return _BottomBar(
+                label: label,
+                onPressed: () => Get.toNamed(AppRoutes.depositPayment),
+              );
+            }),
           ],
         ),
       ),
     );
+  }
+
+  static String _weekdayOf(DateTime d) {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return days[d.weekday - 1];
   }
 
   Widget _iconLine(IconData icon, String text) {
@@ -490,6 +585,151 @@ class _BottomBar extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Reusable toggle option card ────────────────────────────────────────────────
+
+class _OptionCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool enabled;
+  final ValueChanged<bool> onToggle;
+  final Widget? child;
+
+  const _OptionCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.enabled,
+    required this.onToggle,
+    this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: enabled
+            ? SlotPickerColors.greenCta.withValues(alpha: 0.07)
+            : SlotPickerColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: enabled
+              ? SlotPickerColors.greenCta.withValues(alpha: 0.4)
+              : Colors.white.withValues(alpha: 0.06),
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(icon,
+                  size: 20,
+                  color: enabled
+                      ? SlotPickerColors.greenCta
+                      : SlotPickerColors.muted),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: enabled
+                            ? SlotPickerColors.greenCta
+                            : SlotPickerColors.onBg,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: SlotPickerColors.muted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: enabled,
+                onChanged: onToggle,
+                activeColor: SlotPickerColors.greenCta,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ],
+          ),
+          if (child != null) child!,
+        ],
+      ),
+    );
+  }
+}
+
+// ── Numeric stepper ────────────────────────────────────────────────────────────
+
+class _Stepper extends StatelessWidget {
+  final int value;
+  final int min;
+  final int max;
+  final ValueChanged<int> onChanged;
+
+  const _Stepper({
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _btn(Icons.remove, value > min ? () => onChanged(value - 1) : null),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            '$value',
+            style: const TextStyle(
+              color: SlotPickerColors.onBg,
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+            ),
+          ),
+        ),
+        _btn(Icons.add, value < max ? () => onChanged(value + 1) : null),
+      ],
+    );
+  }
+
+  Widget _btn(IconData icon, VoidCallback? onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(
+          color: onTap != null
+              ? SlotPickerColors.greenCta.withValues(alpha: 0.15)
+              : SlotPickerColors.surface,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          icon,
+          size: 16,
+          color: onTap != null
+              ? SlotPickerColors.greenCta
+              : SlotPickerColors.muted,
         ),
       ),
     );

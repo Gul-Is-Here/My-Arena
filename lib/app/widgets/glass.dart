@@ -14,6 +14,10 @@ class GlassCard extends StatelessWidget {
   final double radius;
   final double blur;
   final Color? tint;
+  /// Set to false for cards rendered inside scrollable lists.
+  /// BackdropFilter triggers a full subtree repaint on every scroll frame;
+  /// disabling it replaces the blur with a semi-transparent fill at zero cost.
+  final bool enableBlur;
 
   const GlassCard({
     super.key,
@@ -23,6 +27,7 @@ class GlassCard extends StatelessWidget {
     this.radius = 20,
     this.blur = 16,
     this.tint,
+    this.enableBlur = true,
   });
 
   @override
@@ -44,8 +49,9 @@ class GlassCard extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: borderRadius,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        child: _MaybeBlur(
+          enabled: enableBlur,
+          blur: blur,
           child: Material(
             color: Colors.transparent,
             child: InkWell(
@@ -201,6 +207,30 @@ class GlassNavBar extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Wraps [child] in a BackdropFilter only when [enabled] is true.
+/// When disabled the child is rendered directly; callers that set a
+/// semi-transparent fill on the child get the glass look without the GPU cost.
+class _MaybeBlur extends StatelessWidget {
+  final bool enabled;
+  final double blur;
+  final Widget child;
+
+  const _MaybeBlur({
+    required this.enabled,
+    required this.blur,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) return child;
+    return BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+      child: child,
     );
   }
 }

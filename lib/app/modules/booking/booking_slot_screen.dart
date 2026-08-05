@@ -350,7 +350,7 @@ Future<void> _onBookedSlotTap(
     ),
   );
   if (confirmed != true) return;
-  await c.joinWaitlist(
+  final error = await c.joinWaitlist(
     arenaId: arena.id,
     arenaName: arena.name,
     courtId: court.id,
@@ -358,13 +358,23 @@ Future<void> _onBookedSlotTap(
     hour: hour,
   );
   if (context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("You're on the waitlist! We'll notify you if the slot opens."),
-        backgroundColor: AppColors.elevated,
-        duration: Duration(seconds: 3),
-      ),
-    );
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error),
+          backgroundColor: AppColors.error,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("You're on the waitlist! We'll notify you if the slot opens."),
+          backgroundColor: AppColors.elevated,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
   }
 }
 

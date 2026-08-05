@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:maps_launcher/maps_launcher.dart';
@@ -34,20 +35,26 @@ class DiscoveryController extends GetxController {
   final RxBool isMapView = false.obs;
   final Rxn<CourtType> typeFilter = Rxn<CourtType>();
   final RxDouble maxPrice = 5000.0.obs;
-  final RxDouble searchRadius = 30.0.obs; // km — 30 default, expandable to 50
+  final RxDouble searchRadius = 30.0.obs;
   final RxString searchQuery = ''.obs;
   final Rxn<CourtSurface> surfaceFilter = Rxn<CourtSurface>();
   final Rxn<CourtAmenity> amenityFilter = Rxn<CourtAmenity>();
   final RxDouble minRating = 0.0.obs;
   final Rx<SortBy> sortBy = SortBy.distance.obs;
   final RxBool isLoading = true.obs;
+  final RxBool isLoadingMore = false.obs;
+  final RxBool hasMore = true.obs;
   final RxBool noArenasFound = false.obs;
   final RxString cityName = 'Detecting location…'.obs;
 
   final RxList<ArenaModel> _allArenas = <ArenaModel>[].obs;
+  final RxList<ArenaModel> _carouselArenas = <ArenaModel>[].obs;
   final Rxn<Position> userPosition = Rxn<Position>();
 
   StreamSubscription? _arenaSub;
+  StreamSubscription? _carouselSub;
+  DocumentSnapshot? _cursor;
+  bool _usingGeoStream = false;
 
   @override
   void onInit() {
@@ -58,8 +65,10 @@ class DiscoveryController extends GetxController {
     ever(maxPrice, (_) => _refreshFiltered());
     ever(minRating, (_) => _refreshFiltered());
     ever(sortBy, (_) => _refreshFiltered());
+    ever(searchRadius, (_) => _onRadiusChanged());
     _fetchLocation();
     _listenArenas();
+    _listenCarousel();
   }
 
   Future<void> _fetchLocation() async {
@@ -78,18 +87,92 @@ class DiscoveryController extends GetxController {
       );
       userPosition.value = pos;
       cityName.value = 'Near you';
-      _refreshFiltered();
+      // Switch from paged fallback to geo stream now that we have location.
+      _listenArenas();
     } catch (_) {
       cityName.value = 'Location unavailable';
     }
   }
 
+  void _listenCarousel() {
+    _carouselSub?.cancel();
+    _carouselSub = _arenaService.carouselArenas().listen(
+      (arenas) => _carouselArenas.assignAll(arenas),
+      onError: (_) {},
+    );
+  }
+
   void _listenArenas() {
-    _arenaSub = _arenaService.approvedArenas().listen((arenas) {
-      _allArenas.assignAll(arenas);
+    _arenaSub?.cancel();
+    _arenaSub = null;
+    final pos = userPosition.value;
+
+    if (pos != null) {
+      _usingGeoStream = true;
+      isLoading.value = true;
+      _arenaSub = _arenaService
+          .nearbyArenas(pos.latitude, pos.longitude, searchRadius.value)
+          .listen(
+        (arenas) {
+          _allArenas.assignAll(arenas);
+          _refreshFiltered();
+          isLoading.value = false;
+        },
+        onError: (_) {
+          isLoading.value = false;
+          // Geo stream failed (e.g. no position index yet) — fall back to paged.
+          _usingGeoStream = false;
+          _fetchPagedFallback();
+        },
+      );
+    } else {
+      _usingGeoStream = false;
+      _fetchPagedFallback();
+    }
+  }
+
+  void _onRadiusChanged() {
+    if (_usingGeoStream) {
+      // Re-subscribe with updated radius.
+      _listenArenas();
+    } else {
       _refreshFiltered();
+    }
+  }
+
+  Future<void> _fetchPagedFallback({bool reset = true}) async {
+    if (reset) {
+      _cursor = null;
+      hasMore.value = true;
+      _allArenas.clear();
+      isLoading.value = true;
+    }
+    try {
+      final result =
+          await _arenaService.fetchArenaPage(after: _cursor, limit: 20);
+      _cursor = result.cursor;
+      hasMore.value = result.arenas.length == 20;
+      if (reset) {
+        _allArenas.assignAll(result.arenas);
+      } else {
+        _allArenas.addAll(result.arenas);
+      }
+      _refreshFiltered();
+    } catch (_) {
+      // silent
+    } finally {
       isLoading.value = false;
-    }, onError: (_) => isLoading.value = false);
+      isLoadingMore.value = false;
+    }
+  }
+
+  /// Call from scroll listener to load the next page.
+  /// No-op in geo-stream mode (the stream manages its own updates).
+  Future<void> loadMore() async {
+    if (_usingGeoStream) return;
+    if (!hasMore.value || isLoadingMore.value || isLoading.value) return;
+    isLoadingMore.value = true;
+    await _fetchPagedFallback(reset: false);
   }
 
   void _refreshFiltered() {
@@ -111,16 +194,8 @@ class DiscoveryController extends GetxController {
     return n;
   }
 
-  void expandTo50km() {
-    searchRadius.value = 50.0;
-    _refreshFiltered();
-  }
-
-  void resetRadius() {
-    searchRadius.value = 30.0;
-    _refreshFiltered();
-  }
-
+  void expandTo50km() => searchRadius.value = 50.0;
+  void resetRadius() => searchRadius.value = 30.0;
   void toggleMapView() => isMapView.toggle();
 
   void openInGoogleMaps(ArenaModel arena) {
@@ -148,17 +223,32 @@ class DiscoveryController extends GetxController {
   List<ArenaModel> savedArenas(Set<String> ids) =>
       _allArenas.where((a) => ids.contains(a.id)).toList();
 
-  List<ArenaModel> get featured =>
-      _allArenas.where((a) => a.isFeatured).toList();
+  /// Admin-curated arenas for the home carousel (global, not radius-limited).
+  List<ArenaModel> get carousel => _carouselArenas.toList();
+
+  /// Featured arenas sorted by distance from the user (nearest first).
+  List<ArenaModel> get featured {
+    final list = _allArenas.where((a) => a.isFeatured).toList();
+    list.sort((a, b) => _distanceTo(a).compareTo(_distanceTo(b)));
+    return list;
+  }
 
   List<ArenaModel> get nearby {
+    final tf = typeFilter.value;
+    final sf = surfaceFilter.value;
+    final af = amenityFilter.value;
+
     final filtered = _allArenas.where((a) {
-      if (userPosition.value != null && _distanceTo(a) > searchRadius.value) { return false; }
-      if (typeFilter.value != null && !a.courts.any((c) => c.type == typeFilter.value)) { return false; }
-      if (surfaceFilter.value != null && !a.courts.any((c) => c.surface == surfaceFilter.value)) { return false; }
-      if (amenityFilter.value != null && !a.courts.any((c) => c.amenities.contains(amenityFilter.value))) { return false; }
-      if (a.minPrice > maxPrice.value) { return false; }
-      if (minRating.value > 0 && a.rating < minRating.value) { return false; }
+      if (userPosition.value != null &&
+          _distanceTo(a) > searchRadius.value) {
+        return false;
+      }
+      // Use denormalized courtSummary — no courts subcollection fetch needed.
+      if (tf != null && !a.summaryTypes.contains(tf.name)) return false;
+      if (sf != null && !a.summarySurfaces.contains(sf.name)) return false;
+      if (af != null && !a.summaryAmenities.contains(af.name)) return false;
+      if (a.minPrice > maxPrice.value) return false;
+      if (minRating.value > 0 && a.rating < minRating.value) return false;
       if (searchQuery.value.isNotEmpty) {
         final q = searchQuery.value.toLowerCase();
         if (!a.name.toLowerCase().contains(q) &&
@@ -218,6 +308,7 @@ class DiscoveryController extends GetxController {
   @override
   void onClose() {
     _arenaSub?.cancel();
+    _carouselSub?.cancel();
     super.onClose();
   }
 }

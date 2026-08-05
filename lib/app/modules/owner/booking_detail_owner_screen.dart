@@ -50,6 +50,8 @@ String _statusLabel(BookingStatus s) {
       return 'Refund Sent';
     case BookingStatus.refundConfirmed:
       return 'Refund Confirmed';
+    case BookingStatus.rescheduleRequested:
+      return 'Reschedule Requested';
   }
 }
 
@@ -66,6 +68,7 @@ Color _statusColor(BookingStatus s) {
     case BookingStatus.depositSubmitted:
     case BookingStatus.refundPending:
     case BookingStatus.refundSent:
+    case BookingStatus.rescheduleRequested:
       return _amber;
   }
 }
@@ -90,7 +93,10 @@ class BookingDetailOwnerScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = OwnerBookingController.to;
-    final String id = Get.arguments as String;
+    final String? id = Get.arguments as String?;
+    if (id == null) {
+      return const Scaffold(body: Center(child: Text('No booking selected')));
+    }
 
     return Scaffold(
       backgroundColor: _bg,
@@ -131,6 +137,9 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                 _actionBar(context, c, b),
               if (b.status == BookingStatus.refundPending)
                 _refundSentBar(context, b),
+              if (b.status == BookingStatus.rescheduleRequested &&
+                  b.rescheduleRequest != null)
+                _rescheduleBar(context, c, b),
               if (b.status == BookingStatus.confirmed &&
                   DateTime.now().isAfter(b.endDateTime) &&
                   !b.noShow &&
@@ -663,6 +672,83 @@ class BookingDetailOwnerScreen extends StatelessWidget {
           ),
           icon: const Icon(Icons.currency_exchange, size: 18),
           label: Text('Mark Refund Sent', style: AppTextStyles.button.copyWith(fontWeight: FontWeight.w700)),
+        ),
+      ),
+    );
+  }
+
+  Widget _rescheduleBar(BuildContext context, OwnerBookingController c, BookingModel b) {
+    final req = b.rescheduleRequest!;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: _amber.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _amber.withValues(alpha: 0.4)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.edit_calendar_outlined, color: _amber, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  'Customer Requested Reschedule',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: _amber, fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${_fmtDate(req.proposedDate)} · ${req.timeRange}',
+              style: AppTextStyles.bodyMedium.copyWith(color: _onSurface),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      await c.rejectReschedule(b.id);
+                      Get.back();
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _red,
+                      side: BorderSide(color: _red.withValues(alpha: 0.6)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Decline'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () async {
+                      await c.approveReschedule(b.id);
+                      Get.back();
+                      Get.snackbar('Reschedule Approved',
+                          'Booking moved to the new slot.',
+                          snackPosition: SnackPosition.BOTTOM,
+                          margin: const EdgeInsets.all(16));
+                    },
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _greenFixed,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Approve'),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

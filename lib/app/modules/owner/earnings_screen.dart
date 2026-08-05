@@ -20,9 +20,14 @@ const _onSurfaceVar = AppColors.textSecondary;
 
 final _pkr = NumberFormat('#,##0');
 
-class EarningsScreen extends StatelessWidget {
+class EarningsScreen extends StatefulWidget {
   const EarningsScreen({super.key});
 
+  @override
+  State<EarningsScreen> createState() => _EarningsScreenState();
+}
+
+class _EarningsScreenState extends State<EarningsScreen> {
   static const _rangeLabels = ['Day', 'Week', 'Month', 'All'];
   static const _ranges = [
     RevenueRange.daily,
@@ -31,50 +36,55 @@ class EarningsScreen extends StatelessWidget {
     null, // null = all time
   ];
 
+  // Stable reactive state — not recreated on every build.
+  final _selectedRange = Rx<RevenueRange?>(RevenueRange.monthly);
+
+  List<BookingModel> _paid(List<BookingModel> all) => all
+      .where((b) =>
+          b.status == BookingStatus.confirmed ||
+          b.status == BookingStatus.completed)
+      .toList();
+
+  Map<String, double> _byArena(List<BookingModel> p) {
+    final map = <String, double>{};
+    for (final b in p) {
+      map[b.arenaName] = (map[b.arenaName] ?? 0) + b.totalAmount;
+    }
+    return map;
+  }
+
+  Map<String, double> _byCourt(List<BookingModel> p) {
+    final map = <String, double>{};
+    for (final b in p) {
+      final key = '${b.courtName} (${b.arenaName})';
+      map[key] = (map[key] ?? 0) + b.totalAmount;
+    }
+    return map;
+  }
+
+  List<BookingModel> _filtered(List<BookingModel> p, RevenueRange? range) {
+    if (range == null) return p;
+    final now = DateTime.now();
+    return p.where((b) {
+      switch (range) {
+        case RevenueRange.daily:
+          return b.date.year == now.year &&
+              b.date.month == now.month &&
+              b.date.day == now.day;
+        case RevenueRange.weekly:
+          return now.difference(b.date).inDays < 7;
+        case RevenueRange.monthly:
+          return b.date.year == now.year && b.date.month == now.month;
+        default:
+          return true;
+      }
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final bookings = OwnerBookingController.to;
-    final selectedRange = Rx<RevenueRange?>(RevenueRange.monthly);
-
-    List<BookingModel> paid(List<BookingModel> all) => all.where((b) =>
-        b.status == BookingStatus.confirmed ||
-        b.status == BookingStatus.completed).toList();
-
-    Map<String, double> byArena(List<BookingModel> p) {
-      final map = <String, double>{};
-      for (final b in p) {
-        map[b.arenaName] = (map[b.arenaName] ?? 0) + b.totalAmount;
-      }
-      return map;
-    }
-
-    Map<String, double> byCourt(List<BookingModel> p) {
-      final map = <String, double>{};
-      for (final b in p) {
-        final key = '${b.courtName} (${b.arenaName})';
-        map[key] = (map[key] ?? 0) + b.totalAmount;
-      }
-      return map;
-    }
-
-    List<BookingModel> filtered(List<BookingModel> p, RevenueRange? range) {
-      if (range == null) return p;
-      final now = DateTime.now();
-      return p.where((b) {
-        switch (range) {
-          case RevenueRange.daily:
-            return b.date.year == now.year &&
-                b.date.month == now.month &&
-                b.date.day == now.day;
-          case RevenueRange.weekly:
-            return now.difference(b.date).inDays < 7;
-          case RevenueRange.monthly:
-            return b.date.year == now.year && b.date.month == now.month;
-          default:
-            return true;
-        }
-      }).toList();
-    }
+    final selectedRange = _selectedRange;
 
     return Scaffold(
       backgroundColor: _bg,
@@ -115,11 +125,11 @@ class EarningsScreen extends StatelessWidget {
             Expanded(
               child: Obx(() {
                 final all = bookings.all;
-                final paidList = paid(all);
-                final filteredList = filtered(paidList, selectedRange.value);
+                final paidList = _paid(all);
+                final filteredList = _filtered(paidList, selectedRange.value);
                 final total = filteredList.fold(0.0, (a, b) => a + b.totalAmount);
-                final arenaMap = byArena(filteredList);
-                final courtMap = byCourt(filteredList);
+                final arenaMap = _byArena(filteredList);
+                final courtMap = _byCourt(filteredList);
 
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),

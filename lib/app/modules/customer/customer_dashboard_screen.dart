@@ -42,6 +42,8 @@ class CustomerDashboardScreen extends StatelessWidget {
       ProfileTab(),
     ];
 
+    final chat = ChatController.to;
+
     const navItems = [
       _NavItem(icon: Icons.home_outlined, activeIcon: Icons.home, label: 'Home'),
       _NavItem(icon: Icons.calendar_today_outlined, activeIcon: Icons.calendar_today, label: 'Bookings'),
@@ -90,13 +92,7 @@ class CustomerDashboardScreen extends StatelessWidget {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            active ? item.activeIcon : item.icon,
-                            color: active
-                                ? AppColors.primary
-                                : AppColors.textSecondary,
-                            size: 22,
-                          ),
+                          _buildNavIcon(i, active, item, chat),
                           const SizedBox(height: 2),
                           Text(
                             item.label,
@@ -122,6 +118,25 @@ class CustomerDashboardScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _buildNavIcon(int i, bool active, _NavItem item, ChatController chat) {
+    final icon = Icon(
+      active ? item.activeIcon : item.icon,
+      color: active ? AppColors.primary : AppColors.textSecondary,
+      size: 22,
+    );
+    if (i == 3) {
+      final unread = chat.totalUnread;
+      return Badge(
+        isLabelVisible: unread > 0,
+        label: Text('$unread',
+            style: const TextStyle(fontSize: 10, color: Colors.white)),
+        backgroundColor: AppColors.error,
+        child: icon,
+      );
+    }
+    return icon;
   }
 }
 

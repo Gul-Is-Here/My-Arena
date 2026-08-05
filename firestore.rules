@@ -11,12 +11,29 @@ service cloud.firestore {
       return request.auth.uid;
     }
 
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(uid())).data;
+    }
+
     function role() {
-      return get(/databases/$(database)/documents/users/$(uid())).data.role;
+      return userDoc().role;
+    }
+
+    function isSuperAdmin() {
+      return isAuth() && role() == 'superAdmin';
     }
 
     function isAdmin() {
-      return isAuth() && role() == 'admin';
+      return isAuth() && (role() == 'admin' || role() == 'superAdmin');
+    }
+
+    // Any admin-tier role that can access the admin panel
+    function isAdminTier() {
+      return isAuth() && role() in [
+        'admin', 'superAdmin', 'operationsManager',
+        'supportAgent', 'finance', 'contentManager',
+        'moderator', 'staff'
+      ];
     }
 
     function isOwner() {
@@ -24,17 +41,34 @@ service cloud.firestore {
     }
 
     function isStaff() {
-      return isAuth() && (role() == 'staff' || role() == 'admin');
+      return isAuth() && role() in ['staff', 'supportAgent', 'admin', 'superAdmin', 'operationsManager', 'moderator'];
+    }
+
+    function isActive() {
+      return userDoc().isActive == true;
+    }
+
+    // Check that the user's account is active before allowing any write
+    function isActiveAuth() {
+      return isAuth() && isActive();
     }
 
     // ── Users ─────────────────────────────────────────────────────────
     match /users/{userId} {
-      // Owners need to resolve their customers' name/phone/avatar for
-      // booking cards and details — they already have open read access to
-      // all bookings, so this doesn't widen the existing trust boundary.
-      allow read: if isAuth() && (uid() == userId || isAdmin() || isStaff() || isOwner());
+      allow read: if isAuth() && (
+        uid() == userId ||
+        isAdminTier() ||
+        isOwner()
+      );
       allow create: if isAuth() && uid() == userId;
-      allow update: if isAuth() && (uid() == userId || isAdmin());
+      // Users may update their own profile but NEVER elevate their role
+      // or toggle isActive — those fields are admin-only.
+      allow update: if isAuth() && (
+        (uid() == userId &&
+          !request.resource.data.diff(resource.data)
+            .affectedKeys().hasAny(['role', 'isActive']))
+        || isAdmin()
+      );
       allow delete: if isAdmin();
 
       match /favorites/{arenaId} {
@@ -42,41 +76,54 @@ service cloud.firestore {
       }
     }
 
+    // ── Helpers: arena staff permission checks ────────────────────────
+    function staffCanEditArena(arenaId) {
+      return isAuth() &&
+        userDoc().role == 'staff' &&
+        userDoc().get('assignedArenas', []).hasAny([arenaId]) &&
+        userDoc().get('arenaPermissions', {}).get(arenaId, []).hasAny(['edit_arena']);
+    }
+
+    function staffCanEditCourts(arenaId) {
+      return isAuth() &&
+        userDoc().role == 'staff' &&
+        userDoc().get('assignedArenas', []).hasAny([arenaId]) &&
+        userDoc().get('arenaPermissions', {}).get(arenaId, []).hasAny(['edit_courts']);
+    }
+
     // ── Arenas ────────────────────────────────────────────────────────
     match /arenas/{arenaId} {
       allow read: if isAuth();
-      allow create: if isOwner();
-      allow update: if isAuth() && (
-        // owner updates their own arena
+      // Owners create their own arenas; admin-tier can create on behalf of an owner.
+      allow create: if isActiveAuth() && (isOwner() || isAdminTier());
+      allow update: if isActiveAuth() && (
         resource.data.ownerId == uid() ||
-        isAdmin()
+        isAdminTier() ||
+        staffCanEditArena(arenaId)
       );
       allow delete: if isAdmin();
 
       match /courts/{courtId} {
         allow read: if isAuth();
-        allow write: if isAuth() && (
+        allow write: if isActiveAuth() && (
           get(/databases/$(database)/documents/arenas/$(arenaId)).data.ownerId == uid() ||
-          isAdmin()
+          isAdminTier() ||
+          staffCanEditCourts(arenaId)
         );
       }
 
       match /reviews/{reviewId} {
         allow read: if isAuth();
-        // Only the reviewer can create; reviews are immutable once written
-        allow create: if isAuth() && request.resource.data.customerId == uid();
+        allow create: if isActiveAuth() && request.resource.data.customerId == uid();
         allow update, delete: if false;
       }
     }
 
     // ── Bookings ──────────────────────────────────────────────────────
     match /bookings/{bookingId} {
-      // Read is open to any signed-in user because slot-availability checks
-      // query bookings across all customers for a given court/date — a
-      // per-owner restriction here would make Firestore deny the whole
-      // query as soon as it matched another customer's booking.
       allow read: if isAuth();
-      allow create: if isAuth();
+      // Suspended users (isActive=false) cannot create bookings
+      allow create: if isActiveAuth() && isActive();
       allow update: if isAuth() && (
         resource.data.customerId == uid() ||
         resource.data.ownerId == uid() ||
@@ -87,18 +134,10 @@ service cloud.firestore {
 
     // ── Chats ─────────────────────────────────────────────────────────
     match /chats/{chatId} {
-      // Admin/staff can monitor and join any conversation.
       allow read: if isAuth() && (
         uid() in resource.data.participants || isStaff()
       );
-
       allow create: if isAuth();
-
-      // Participants may only touch conversation-state fields; structural
-      // fields (participants, type, title, bookingId) stay fixed once set.
-      // pairKey/arenaId/customerId are writable for the one-time
-      // legacy→pair-chat upgrade. Staff keep broader access to join and
-      // manage conversations.
       allow update: if isAuth() && (
         isStaff() ||
         (uid() in resource.data.participants &&
@@ -107,7 +146,6 @@ service cloud.firestore {
             'lastMessageAt', 'pairKey', 'arenaId', 'customerId'
           ]))
       );
-
       allow delete: if isAdmin();
 
       match /messages/{msgId} {
@@ -115,9 +153,6 @@ service cloud.firestore {
           uid() in get(/databases/$(database)/documents/chats/$(chatId)).data.participants ||
           isStaff()
         );
-        // Clients must send as themselves and can never write 'system'
-        // messages — status events come from Cloud Functions (Admin SDK)
-        // only, so "Booking approved" can't be forged.
         allow create: if isAuth() &&
           request.resource.data.senderId == uid() &&
           request.resource.data.type != 'system' &&
@@ -134,17 +169,31 @@ service cloud.firestore {
       allow read: if isAuth() && (
         resource.data.raisedByUid == uid() || isStaff()
       );
-      allow create: if isAuth();
-      allow update: if isStaff();
+      allow create: if isActiveAuth() && isActive();
+      allow update: if isAuth() && (
+        isStaff() || resource.data.raisedByUid == uid()
+      );
       allow delete: if isAdmin();
+
+      match /messages/{msgId} {
+        allow read: if isAuth() && (
+          get(/databases/$(database)/documents/tickets/$(ticketId)).data.raisedByUid == uid()
+          || isStaff()
+        );
+        allow create: if isAuth() && (
+          get(/databases/$(database)/documents/tickets/$(ticketId)).data.raisedByUid == uid()
+          || isStaff()
+        );
+        allow update, delete: if isAdmin();
+      }
     }
 
     // ── Tournaments ───────────────────────────────────────────────────
     match /tournaments/{tId} {
       allow read: if isAuth();
-      allow create: if isOwner() || isAdmin();
+      allow create: if isActiveAuth() && (isOwner() || isAdminTier());
       allow update: if isAuth() && (
-        resource.data.createdBy == uid() || isAdmin()
+        resource.data.createdBy == uid() || isAdminTier()
       );
       allow delete: if isAdmin();
     }
@@ -152,27 +201,26 @@ service cloud.firestore {
     match /registrations/{regId} {
       allow read: if isAuth() && (
         resource.data.userId == uid() ||
-        // owner of the tournament's arena
         isOwner() ||
-        isAdmin()
+        isAdminTier()
       );
-      allow create: if isAuth();
-      allow update: if isAuth() && (isOwner() || isAdmin());
+      allow create: if isActiveAuth();
+      allow update: if isAuth() && (isOwner() || isAdminTier());
       allow delete: if isAdmin();
     }
 
     match /brackets/{tId} {
       allow read: if isAuth();
-      allow write: if isAuth() && (isOwner() || isAdmin());
+      allow write: if isAuth() && (isOwner() || isAdminTier());
     }
 
     // ── Boost requests ────────────────────────────────────────────────
     match /boostRequests/{reqId} {
       allow read: if isAuth() && (
-        resource.data.ownerId == uid() || isAdmin()
+        resource.data.ownerId == uid() || isAdminTier()
       );
-      allow create: if isOwner();
-      allow update: if isAdmin();
+      allow create: if isActiveAuth() && isOwner();
+      allow update: if isAdminTier();
       allow delete: if isAdmin();
     }
 
@@ -182,38 +230,111 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // ── Waitlist ──────────────────────────────────────────────────────────
+    // ── Waitlist ──────────────────────────────────────────────────────
     match /waitlist/{entryId} {
       allow read: if isAuth() && (resource.data.customerId == uid() || isStaff());
-      allow create: if isAuth() && request.resource.data.customerId == uid();
+      allow create: if isActiveAuth() && request.resource.data.customerId == uid();
       allow delete: if isAuth() && resource.data.customerId == uid();
       allow update: if false;
     }
 
-    // ── Notifications (in-app inbox; docs created by Cloud Functions) ─────
+    // ── Notifications ─────────────────────────────────────────────────
     match /notifications/{notifId} {
       allow read: if isAuth() && resource.data.uid == uid();
-      // Only the `read` flag may change, and only by the owner.
       allow update: if isAuth() && resource.data.uid == uid() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
       allow delete: if isAuth() && resource.data.uid == uid();
-      allow create: if false; // server-side only
+      allow create: if false; // server-side only (Cloud Functions Admin SDK)
     }
 
-    // ── Blocked slots (owner marks court hours unavailable) ──────────────
+    // ── Blocked slots ─────────────────────────────────────────────────
     match /blockedSlots/{slotId} {
-      // Customers need to read these to grey out slots.
       allow read: if isAuth();
-      allow create: if isAuth() && request.resource.data.ownerId == uid();
+      allow create: if isActiveAuth() && request.resource.data.ownerId == uid();
       allow delete: if isAuth() && resource.data.ownerId == uid();
       allow update: if false;
     }
 
-    // ── Audit logs ────────────────────────────────────────────────────
+    // ── OTP rate-limit counters ───────────────────────────────────────
+    match /_otpRateLimits/{email} {
+      allow read, write: if false; // Cloud Functions only
+    }
+
+    // ── Audit logs — immutable, admin-tier read, admin-tier write ─────
+    // Clients write logs (the audit service runs as the signed-in user).
+    // Logs can never be updated or deleted — append-only by design.
+    match /audit_logs/{logId} {
+      allow read: if isAdminTier();
+      allow create: if isAdminTier();
+      allow update, delete: if false; // immutable
+    }
+
+    // ── Staff invitations ─────────────────────────────────────────────
+    // Owners manage invitations for their own staff.
+    // The invited staff can read their own invitation.
+    // All writes go through the staffManagement Cloud Function (Admin SDK).
+    match /staffInvitations/{invId} {
+      allow read: if isAuth() && (
+        resource.data.ownerId == uid() ||
+        resource.data.targetUid == uid() ||
+        isAdmin()
+      );
+      allow create, update, delete: if false; // CF only
+    }
+
+    // ── Staff permission requests ─────────────────────────────────────
+    // Staff create; owner reads + Cloud Function resolves.
+    match /staffPermissionRequests/{reqId} {
+      allow read: if isAuth() && (
+        resource.data.ownerId == uid() ||
+        resource.data.staffUid == uid() ||
+        isAdmin()
+      );
+      allow create: if isAuth() && request.resource.data.staffUid == uid();
+      allow update, delete: if false; // CF only
+    }
+
+    // ── Owner invitations ─────────────────────────────────────────────
+    // Admins manage all invitations.
+    // The invited owner can read their own invitation (to check status in-app).
+    // No client writes — all mutations go through the inviteOwner Cloud Function
+    // (Admin SDK bypasses these rules, so CF writes always succeed).
+    match /ownerInvitations/{invitationId} {
+      allow read: if isAdmin() ||
+        (isAuth() && resource.data.targetUid == uid());
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── Legacy auditLogs collection (kept for backward compat) ────────
     match /auditLogs/{logId} {
-      allow read: if isAdmin();
-      allow create: if isAdmin();
+      allow read: if isAdminTier();
+      allow create: if isAdminTier();
       allow update, delete: if false;
+    }
+
+    // ── Payouts — admin writes, admin reads, never customer/owner ────────
+    match /payouts/{payoutId} {
+      allow read: if isAdminTier() || (isOwner() && resource.data.ownerId == uid());
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if false; // immutable history
+    }
+
+    // ── Finance stats (aggregated) ────────────────────────────────────────
+    match /finance/{docId} {
+      allow read: if isAdminTier();
+      allow write: if isAdmin();
+    }
+
+    // ── Slot locks ────────────────────────────────────────────────────
+    match /slotLocks/{lockId} {
+      allow read: if isAuth();
+      allow create: if isActiveAuth()
+        && request.resource.data.keys().hasAll(['bookingId', 'courtId', 'arenaId', 'date'])
+        && request.resource.data.bookingId is string
+        && request.resource.data.bookingId.size() > 0;
+      allow delete: if isAuth();
+      allow update: if false;
     }
   }
 }

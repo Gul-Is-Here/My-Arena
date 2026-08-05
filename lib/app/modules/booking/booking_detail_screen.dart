@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../data/models/arena_model.dart';
 import '../../data/models/booking_model.dart';
 import '../../services/arena_service.dart';
+import '../../services/booking_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/slot_picker_widgets.dart';
 import 'my_bookings_tab.dart' show openBookingChatAndGo;
@@ -164,6 +165,10 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                   ),
                   const SizedBox(height: 12),
                   _TotalPaidTile(booking: b),
+                  if (b.isRecurring || b.isGroupBooking) ...[
+                    const SizedBox(height: 12),
+                    _GroupRecurringTile(booking: b),
+                  ],
                   if (b.checkedIn && b.checkedInAt != null) ...[
                     const SizedBox(height: 12),
                     _InfoChipTile(
@@ -214,6 +219,25 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                         ],
                       ),
                     ),
+                  if (b.status == BookingStatus.rescheduleRequested) ...[
+                    const SizedBox(height: 10),
+                    _ReschedulePendingBanner(booking: b),
+                  ],
+                  if (b.canReschedule) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _ActionButton(
+                            icon: Icons.edit_calendar_outlined,
+                            label: 'Request Reschedule',
+                            filled: false,
+                            onTap: () => _showRescheduleSheet(context, b),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   Row(
                     children: [
                       Expanded(
@@ -251,6 +275,15 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  void _showRescheduleSheet(BuildContext context, BookingModel b) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _RescheduleSheet(booking: b),
     );
   }
 }
@@ -852,6 +885,112 @@ class _InfoChipTile extends StatelessWidget {
   }
 }
 
+class _GroupRecurringTile extends StatelessWidget {
+  final BookingModel booking;
+  const _GroupRecurringTile({required this.booking});
+
+  static const _recurringColor = Color(0xFF7C83FD);
+  static const _groupColor = Color(0xFF43C59E);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: SlotPickerColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (booking.isRecurring) ...[
+            Row(
+              children: [
+                const Icon(Icons.repeat, size: 15, color: _recurringColor),
+                const SizedBox(width: 6),
+                const Text('Recurring Series',
+                    style: TextStyle(
+                        color: _recurringColor,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                        letterSpacing: 0.5)),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              booking.recurringWeek != null && booking.recurringTotal != null
+                  ? 'Week ${booking.recurringWeek} of ${booking.recurringTotal}'
+                  : 'Recurring booking',
+              style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14),
+            ),
+            if (booking.isGroupBooking) const SizedBox(height: 12),
+          ],
+          if (booking.isGroupBooking) ...[
+            Row(
+              children: [
+                const Icon(Icons.group, size: 15, color: _groupColor),
+                const SizedBox(width: 6),
+                const Text('Group Booking',
+                    style: TextStyle(
+                        color: _groupColor,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11,
+                        letterSpacing: 0.5)),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('${booking.groupSize} players',
+                          style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14)),
+                      const SizedBox(height: 2),
+                      Text(
+                        'PKR ${booking.splitAmount.toStringAsFixed(0)} / person',
+                        style: const TextStyle(
+                            color: AppColors.textSecondary, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                if (booking.joinCode != null) ...[
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      const Text('Join Code',
+                          style: TextStyle(
+                              fontSize: 10,
+                              letterSpacing: 0.6,
+                              color: AppColors.textSecondary)),
+                      const SizedBox(height: 2),
+                      Text(booking.joinCode!,
+                          style: const TextStyle(
+                              fontSize: 20,
+                              letterSpacing: 4,
+                              fontWeight: FontWeight.w700,
+                              color: _groupColor)),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _TotalPaidTile extends StatelessWidget {
   final BookingModel booking;
   const _TotalPaidTile({required this.booking});
@@ -1001,6 +1140,295 @@ class _ActionButton extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ── Reschedule pending banner (customer side) ────────────────────────────
+class _ReschedulePendingBanner extends StatelessWidget {
+  final BookingModel booking;
+  const _ReschedulePendingBanner({required this.booking});
+
+  @override
+  Widget build(BuildContext context) {
+    final req = booking.rescheduleRequest;
+    if (req == null) return const SizedBox.shrink();
+    final d = req.proposedDate;
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: SlotPickerColors.pending.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: SlotPickerColors.pending.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.schedule, color: SlotPickerColors.pending, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Reschedule Requested',
+                  style: TextStyle(
+                    color: SlotPickerColors.pending,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+                Text(
+                  '${d.day} ${months[d.month - 1]} ${d.year} · ${req.timeRange}',
+                  style: const TextStyle(color: SlotPickerColors.muted, fontSize: 12),
+                ),
+                const Text(
+                  'Awaiting owner approval',
+                  style: TextStyle(color: SlotPickerColors.muted, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Reschedule bottom sheet ──────────────────────────────────────────────
+class _RescheduleSheet extends StatefulWidget {
+  final BookingModel booking;
+  const _RescheduleSheet({required this.booking});
+
+  @override
+  State<_RescheduleSheet> createState() => _RescheduleSheetState();
+}
+
+class _RescheduleSheetState extends State<_RescheduleSheet> {
+  late DateTime _date;
+  late int _startHour;
+  late int _totalHours;
+  bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _date = widget.booking.date;
+    _startHour = widget.booking.startHour;
+    _totalHours = widget.booking.totalHours;
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date.isAfter(DateTime.now())
+          ? _date
+          : DateTime.now().add(const Duration(days: 1)),
+      firstDate: DateTime.now().add(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 90)),
+    );
+    if (picked != null) setState(() => _date = picked);
+  }
+
+  Future<void> _submit() async {
+    final svc = BookingService();
+    setState(() => _submitting = true);
+    try {
+      await svc.requestReschedule(
+        widget.booking.id,
+        proposedDate: _date,
+        proposedStartHour: _startHour,
+        proposedTotalHours: _totalHours,
+      );
+      Get.back();
+      Get.snackbar(
+        'Reschedule Requested',
+        'The owner will review your request.',
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+      );
+    } catch (e) {
+      setState(() => _submitting = false);
+      Get.snackbar('Error', e.toString(),
+          snackPosition: SnackPosition.BOTTOM,
+          margin: const EdgeInsets.all(16));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return Container(
+      decoration: const BoxDecoration(
+        color: SlotPickerColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: SlotPickerColors.muted,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Request Reschedule',
+            style: TextStyle(
+              color: SlotPickerColors.onBg,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'The owner must approve the new time before it is confirmed.',
+            style: TextStyle(color: SlotPickerColors.muted, fontSize: 13),
+          ),
+          const SizedBox(height: 20),
+          GestureDetector(
+            onTap: _pickDate,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              decoration: BoxDecoration(
+                color: SlotPickerColors.bg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.calendar_month_outlined,
+                      color: SlotPickerColors.green, size: 20),
+                  const SizedBox(width: 12),
+                  Text(
+                    '${_date.day} ${months[_date.month - 1]} ${_date.year}',
+                    style: const TextStyle(
+                        color: SlotPickerColors.onBg, fontSize: 15),
+                  ),
+                  const Spacer(),
+                  const Icon(Icons.chevron_right,
+                      color: SlotPickerColors.muted, size: 18),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Start Hour',
+                        style: TextStyle(
+                            color: SlotPickerColors.muted, fontSize: 12)),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: SlotPickerColors.bg,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<int>(
+                          value: _startHour,
+                          dropdownColor: SlotPickerColors.surface,
+                          style: const TextStyle(
+                              color: SlotPickerColors.onBg),
+                          items: List.generate(
+                            24,
+                            (i) => DropdownMenuItem(
+                              value: i,
+                              child: Text(
+                                  '${i.toString().padLeft(2, '0')}:00'),
+                            ),
+                          ),
+                          onChanged: (v) {
+                            if (v != null) setState(() => _startHour = v);
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Duration (hrs)',
+                        style: TextStyle(
+                            color: SlotPickerColors.muted, fontSize: 12)),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: SlotPickerColors.bg,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<int>(
+                          value: _totalHours,
+                          dropdownColor: SlotPickerColors.surface,
+                          style: const TextStyle(
+                              color: SlotPickerColors.onBg),
+                          items: List.generate(
+                            8,
+                            (i) => DropdownMenuItem(
+                              value: i + 1,
+                              child: Text('${i + 1}h'),
+                            ),
+                          ),
+                          onChanged: (v) {
+                            if (v != null) setState(() => _totalHours = v);
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _submitting ? null : _submit,
+              style: FilledButton.styleFrom(
+                backgroundColor: SlotPickerColors.green,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+              child: _submitting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Text('Send Request',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 15)),
+            ),
+          ),
+        ],
       ),
     );
   }

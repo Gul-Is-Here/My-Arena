@@ -29,7 +29,7 @@ class _ManualBookingScreenState extends State<ManualBookingScreen> {
   final _bookingService = BookingService();
 
   late final List<ArenaModel> arenas = OwnerController.to.myArenas;
-  late ArenaModel _arena = arenas.first;
+  late ArenaModel _arena = arenas.isNotEmpty ? arenas.first : ArenaModel.empty();
   CourtModel? _court;
   DateTime _date = DateTime.now();
   int _duration = 1;
@@ -179,6 +179,15 @@ class _ManualBookingScreenState extends State<ManualBookingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (arenas.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Walk-in Booking')),
+        body: const Center(
+          child: Text('No arenas found. Please add an arena first.'),
+        ),
+      );
+    }
+
     final court = _court;
 
     return Scaffold(

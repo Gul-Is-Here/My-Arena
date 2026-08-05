@@ -520,6 +520,9 @@ class DashboardTab extends StatelessWidget {
           const SizedBox(width: 10),
           _quickAction(Icons.rocket_launch_outlined, 'Boost', _amber,
               () => Get.toNamed(AppRoutes.boostRequest)),
+          const SizedBox(width: 10),
+          _quickAction(Icons.group_outlined, 'My Team', AppColors.secondary,
+              () => OwnerController.to.shellTab.value = 3),
         ],
       ),
     );
@@ -588,6 +591,7 @@ class DashboardTab extends StatelessWidget {
         return _red;
       case BookingStatus.pendingDeposit:
       case BookingStatus.depositSubmitted:
+      case BookingStatus.rescheduleRequested:
         return _amber;
     }
   }
@@ -607,6 +611,8 @@ class DashboardTab extends StatelessWidget {
       case BookingStatus.pendingDeposit:
       case BookingStatus.depositSubmitted:
         return Icons.hourglass_top;
+      case BookingStatus.rescheduleRequested:
+        return Icons.edit_calendar_outlined;
     }
   }
 
