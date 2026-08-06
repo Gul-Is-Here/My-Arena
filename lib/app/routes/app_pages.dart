@@ -1,6 +1,9 @@
 import 'package:get/get.dart';
 
+import '../data/models/user_model.dart';
 import '../modules/admin/admin_arena_detail_screen.dart';
+import '../modules/admin/admin_permissions_screen.dart';
+import '../modules/admin/admin_scope_screen.dart';
 import '../modules/admin/admin_arenas_screen.dart';
 import '../modules/admin/admin_booking_analytics_screen.dart';
 import '../modules/admin/admin_chat_view_screen.dart';
@@ -26,6 +29,7 @@ import '../modules/booking/cancellation_screen.dart';
 import '../modules/booking/deposit_payment_screen.dart';
 import '../modules/chat/chat_room_screen.dart';
 import '../modules/chat/my_chats_screen.dart';
+import '../modules/auth/activate_admin_screen.dart';
 import '../modules/auth/activate_owner_screen.dart';
 import '../modules/auth/login_screen.dart';
 import '../modules/auth/onboarding_screen.dart';
@@ -70,6 +74,8 @@ import '../modules/tournaments/tournament_registration_screen.dart';
 import '../modules/tournaments/tournaments_home_screen.dart';
 import '../modules/shared/notifications_screen.dart';
 import '../modules/shared/unauthorized_screen.dart';
+import '../modules/shared/account_suspended_screen.dart';
+import '../modules/owner/owner_pending_approval_screen.dart';
 import '../modules/admin/admin_bookings_screen.dart';
 import '../modules/admin/admin_booking_detail_screen.dart';
 import '../modules/admin/admin_customers_screen.dart';
@@ -94,6 +100,15 @@ class AppPages {
       name: AppRoutes.unauthorized,
       page: () => const UnauthorizedScreen(),
     ),
+    GetPage(
+      name: AppRoutes.accountSuspended,
+      page: () => const AccountSuspendedScreen(),
+    ),
+    GetPage(
+      name: AppRoutes.ownerPendingApproval,
+      page: () => const OwnerPendingApprovalScreen(),
+      middlewares: [AuthMiddleware()],
+    ),
 
     // Auth
     GetPage(name: AppRoutes.splash, page: () => const SplashScreen()),
@@ -108,6 +123,10 @@ class AppPages {
     GetPage(
       name: AppRoutes.activateOwner,
       page: () => const ActivateOwnerScreen(),
+    ),
+    GetPage(
+      name: AppRoutes.activateAdmin,
+      page: () => const ActivateAdminScreen(),
     ),
     GetPage(
       name: AppRoutes.activateStaff,
@@ -272,7 +291,7 @@ class AppPages {
     GetPage(
       name: AppRoutes.ownerTickets,
       page: () => const OwnerTicketsScreen(),
-      middlewares: [OwnerMiddleware()],
+      middlewares: [OwnerOrArenaStaffMiddleware()],
     ),
     GetPage(
       name: AppRoutes.ownerBookings,
@@ -282,7 +301,7 @@ class AppPages {
     GetPage(
       name: AppRoutes.manualBooking,
       page: () => const ManualBookingScreen(),
-      middlewares: [OwnerMiddleware()],
+      middlewares: [OwnerOrArenaStaffMiddleware()],
     ),
     GetPage(
       name: AppRoutes.bookingDetailOwner,
@@ -326,6 +345,16 @@ class AppPages {
     GetPage(
       name: AppRoutes.adminUsers,
       page: () => const AdminUsersScreen(),
+      middlewares: [AdminMiddleware()],
+    ),
+    GetPage(
+      name: AppRoutes.adminPermissions,
+      page: () => AdminPermissionsScreen(user: Get.arguments as UserModel),
+      middlewares: [AdminMiddleware()],
+    ),
+    GetPage(
+      name: AppRoutes.adminScope,
+      page: () => AdminScopeScreen(user: Get.arguments as UserModel),
       middlewares: [AdminMiddleware()],
     ),
     GetPage(

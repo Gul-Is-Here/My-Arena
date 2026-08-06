@@ -58,7 +58,10 @@ class _AdminCustomerDetailScreenState
 
   Future<void> _toggleBan() async {
     _isActing.value = true;
-    await _repo.toggleBan(_user);
+    final next = _user.accountStatus == AccountStatus.suspended
+        ? AccountStatus.active
+        : AccountStatus.suspended;
+    await _repo.changeAccountStatus(_user, next);
     // Refresh from Firestore
     final doc = await _db.collection('users').doc(_user.uid).get();
     if (doc.exists) {

@@ -1,3 +1,36 @@
+/// Account lifecycle state. Stored as string in Firestore `accountStatus` field.
+/// Replaces the old boolean `isActive` field.
+enum AccountStatus {
+  /// Self-registered owner awaiting admin approval, or invited user not yet accepted.
+  pending,
+
+  /// Fully active — can sign in and use the app.
+  active,
+
+  /// Temporarily blocked by admin. Real-time stream forces sign-out mid-session.
+  suspended,
+
+  /// Admin-soft-deleted. Not visible in normal lists but data is retained.
+  inactive,
+
+  /// Permanently archived. Never re-activatable via UI — requires manual DB edit.
+  archived;
+
+  static AccountStatus fromString(String? s) =>
+      AccountStatus.values.firstWhere(
+        (v) => v.name == s,
+        orElse: () => AccountStatus.active,
+      );
+
+  String get label => switch (this) {
+        AccountStatus.pending => 'Pending',
+        AccountStatus.active => 'Active',
+        AccountStatus.suspended => 'Suspended',
+        AccountStatus.inactive => 'Inactive',
+        AccountStatus.archived => 'Archived',
+      };
+}
+
 /// Mirrors Firestore users/{uid}.role field.
 /// Keep snake_case values that match Firestore — use [UserRoleX.fromString].
 enum UserRole {
@@ -54,7 +87,7 @@ class UserModel {
   final UserRole role;
   final List<UserRole> roles;
   final String avatar;
-  final bool isActive;
+  final AccountStatus accountStatus;
   final DateTime? createdAt;
   final DateTime? lastLogin;
 
@@ -62,6 +95,14 @@ class UserModel {
   final String? ownerId;
   final List<String> assignedArenas;
   final Map<String, List<String>> arenaPermissions;
+
+  // Admin management fields
+  final String? invitedBy;
+  final String? inviterRole;
+  final int? ownerInviteLimit;
+  final List<String> managedOwnerIds;
+  final List<String> managedArenaIds;
+  final Map<String, bool> customPermissions;
 
   const UserModel({
     required this.uid,
@@ -71,15 +112,34 @@ class UserModel {
     this.role = UserRole.customer,
     this.roles = const [],
     this.avatar = '',
-    this.isActive = true,
+    this.accountStatus = AccountStatus.active,
     this.createdAt,
     this.lastLogin,
     this.ownerId,
     this.assignedArenas = const [],
     this.arenaPermissions = const {},
+    this.invitedBy,
+    this.inviterRole,
+    this.ownerInviteLimit,
+    this.managedOwnerIds = const [],
+    this.managedArenaIds = const [],
+    this.customPermissions = const {},
   });
 
+  /// Backward-compatible getter — true only when fully active.
+  bool get isActive => accountStatus == AccountStatus.active;
+
   bool get hasMultipleRoles => roles.length > 1;
+
+  /// True for admin/superAdmin (unrestricted scope).
+  bool get isFullAdmin =>
+      role == UserRole.admin || role == UserRole.superAdmin;
+
+  /// True when this admin-tier user has an explicit scope restriction.
+  bool get isScoped =>
+      role.isAdminTier &&
+      !isFullAdmin &&
+      (managedArenaIds.isNotEmpty || managedOwnerIds.isNotEmpty);
 
   /// True when this staff member is an owner-assigned arena staff (not admin support staff).
   bool get isArenaStaff => role == UserRole.staff && ownerId != null;
@@ -87,8 +147,10 @@ class UserModel {
   /// Returns the permissions this staff member has for the given arena.
   List<String> permissionsFor(String arenaId) => arenaPermissions[arenaId] ?? [];
 
-  bool canEditArena(String arenaId) => permissionsFor(arenaId).contains('edit_arena');
-  bool canEditCourts(String arenaId) => permissionsFor(arenaId).contains('edit_courts');
+  bool canEditArena(String arenaId) => assignedArenas.contains(arenaId);
+  bool canEditCourts(String arenaId) => assignedArenas.contains(arenaId);
+  bool canManageBookings(String arenaId) => assignedArenas.contains(arenaId);
+  bool canAccessChat(String arenaId) => assignedArenas.contains(arenaId);
 
   factory UserModel.fromMap(Map<String, dynamic> map) {
     final primaryRole = UserRoleX.fromString(map['role']);
@@ -97,10 +159,25 @@ class UserModel {
             .toList() ??
         [primaryRole];
 
-    final rawPerms = map['arenaPermissions'] as Map<String, dynamic>?;
-    final arenaPermissions = rawPerms != null
-        ? rawPerms.map((k, v) => MapEntry(k, List<String>.from(v as List? ?? [])))
+    final rawArenaPerms = map['arenaPermissions'] as Map<String, dynamic>?;
+    final arenaPermissions = rawArenaPerms != null
+        ? rawArenaPerms.map((k, v) => MapEntry(k, List<String>.from(v as List? ?? [])))
         : <String, List<String>>{};
+
+    final rawCustomPerms = map['customPermissions'] as Map<String, dynamic>?;
+    final customPermissions = rawCustomPerms != null
+        ? rawCustomPerms.map((k, v) => MapEntry(k, v as bool? ?? false))
+        : <String, bool>{};
+
+    // Migration: if `accountStatus` not yet written, fall back to `isActive` bool.
+    AccountStatus status;
+    if (map['accountStatus'] != null) {
+      status = AccountStatus.fromString(map['accountStatus'] as String?);
+    } else {
+      status = (map['isActive'] as bool? ?? true)
+          ? AccountStatus.active
+          : AccountStatus.suspended;
+    }
 
     return UserModel(
       uid: map['uid'] ?? '',
@@ -110,12 +187,18 @@ class UserModel {
       role: primaryRole,
       roles: rolesList,
       avatar: map['avatar'] ?? '',
-      isActive: map['isActive'] ?? true,
+      accountStatus: status,
       createdAt: (map['createdAt'] as dynamic)?.toDate(),
       lastLogin: (map['lastLogin'] as dynamic)?.toDate(),
       ownerId: map['ownerId'] as String?,
       assignedArenas: List<String>.from(map['assignedArenas'] as List? ?? []),
       arenaPermissions: arenaPermissions,
+      invitedBy: map['invitedBy'] as String?,
+      inviterRole: map['inviterRole'] as String?,
+      ownerInviteLimit: map['ownerInviteLimit'] as int?,
+      managedOwnerIds: List<String>.from(map['managedOwnerIds'] as List? ?? []),
+      managedArenaIds: List<String>.from(map['managedArenaIds'] as List? ?? []),
+      customPermissions: customPermissions,
     );
   }
 
@@ -127,7 +210,7 @@ class UserModel {
         'role': role.value,
         'roles': roles.map((r) => r.value).toList(),
         'avatar': avatar,
-        'isActive': isActive,
+        'accountStatus': accountStatus.name,
       };
 
   UserModel copyWith({
@@ -137,10 +220,16 @@ class UserModel {
     UserRole? role,
     List<UserRole>? roles,
     String? avatar,
-    bool? isActive,
+    AccountStatus? accountStatus,
     String? ownerId,
     List<String>? assignedArenas,
     Map<String, List<String>>? arenaPermissions,
+    String? invitedBy,
+    String? inviterRole,
+    int? ownerInviteLimit,
+    List<String>? managedOwnerIds,
+    List<String>? managedArenaIds,
+    Map<String, bool>? customPermissions,
   }) =>
       UserModel(
         uid: uid,
@@ -150,11 +239,17 @@ class UserModel {
         role: role ?? this.role,
         roles: roles ?? this.roles,
         avatar: avatar ?? this.avatar,
-        isActive: isActive ?? this.isActive,
+        accountStatus: accountStatus ?? this.accountStatus,
         createdAt: createdAt,
         lastLogin: lastLogin,
         ownerId: ownerId ?? this.ownerId,
         assignedArenas: assignedArenas ?? this.assignedArenas,
         arenaPermissions: arenaPermissions ?? this.arenaPermissions,
+        invitedBy: invitedBy ?? this.invitedBy,
+        inviterRole: inviterRole ?? this.inviterRole,
+        ownerInviteLimit: ownerInviteLimit ?? this.ownerInviteLimit,
+        managedOwnerIds: managedOwnerIds ?? this.managedOwnerIds,
+        managedArenaIds: managedArenaIds ?? this.managedArenaIds,
+        customPermissions: customPermissions ?? this.customPermissions,
       );
 }

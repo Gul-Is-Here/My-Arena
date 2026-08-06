@@ -103,6 +103,9 @@ abstract class AppRoutes {
 
   // Owner account activation (admin-invited owners)
   static const String activateOwner = '/activate-owner';
+  static const String activateAdmin = '/activate-admin';
+  static const String adminPermissions = '/admin/permissions';
+  static const String adminScope = '/admin/scope';
 
   // Staff account activation (owner-invited staff)
   static const String activateStaff = '/activate-staff';
@@ -116,6 +119,8 @@ abstract class AppRoutes {
 
   // Access control
   static const String unauthorized = '/unauthorized';
+  static const String accountSuspended = '/account-suspended';
+  static const String ownerPendingApproval = '/owner/pending-approval';
 
   // Customer support tickets
   static const String customerTickets = '/customer/tickets';

@@ -3,7 +3,6 @@ import 'package:get/get.dart';
 
 import '../../controllers/auth_controller.dart';
 import '../../controllers/owner_booking_controller.dart';
-import '../../controllers/owner_controller.dart';
 import '../../controllers/owner_schedule_controller.dart';
 import '../../data/models/booking_model.dart';
 import '../../data/models/court_model.dart';
@@ -56,7 +55,7 @@ class OwnerScheduleScreen extends StatelessWidget {
         ],
       ),
       body: Obx(() {
-        final arenas = OwnerController.to.myArenas;
+        final arenas = c.arenas;
         if (arenas.isEmpty) {
           return Center(
             child: Text('No arenas yet',
@@ -120,7 +119,7 @@ class _ArenaSelector extends StatelessWidget {
       height: 44,
       child: Obx(() => ListView(
             scrollDirection: Axis.horizontal,
-            children: OwnerController.to.myArenas.map((a) {
+            children: controller.arenas.map((a) {
               final selected = controller.arena.value?.id == a.id;
               return Padding(
                 padding: const EdgeInsets.only(right: 8),

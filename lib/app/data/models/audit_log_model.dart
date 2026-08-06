@@ -116,6 +116,21 @@ abstract class AuditAction {
   static const String userUnbanned = 'user.unbanned';
   static const String userRoleChanged = 'user.role_changed';
   static const String userDeleted = 'user.deleted';
+  static const String userSuspended = 'user.suspended';
+  static const String userRestored = 'user.restored';
+  static const String userDeactivated = 'user.deactivated';
+  static const String userArchived = 'user.archived';
+  static const String accountStatusChanged = 'account_status.changed';
+
+  // Admin management
+  static const String adminInvited = 'admin.invited';
+  static const String adminActivated = 'admin.activated';
+  static const String adminPermissionsChanged = 'admin.permissions_changed';
+
+  // Owner self-registration
+  static const String ownerSelfRegistered = 'owner.self_registered';
+  static const String ownerApproved = 'owner.approved';
+  static const String ownerRejected = 'owner.rejected';
 
   // Boost
   static const String boostApproved = 'boost.approved';

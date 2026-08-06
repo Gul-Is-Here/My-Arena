@@ -31,6 +31,11 @@ class NotificationService {
   // auth flow routes the user to their dashboard.
   static Map<String, String?>? _pendingDeepLink;
 
+  // Guard so _fcm.onTokenRefresh is subscribed only once per app lifetime,
+  // regardless of how many times _saveToken is called (init + authStateChanges
+  // both fire immediately for an already-signed-in user).
+  static bool _tokenRefreshSubscribed = false;
+
   static Future<void> init() async {
     await AwesomeNotifications().initialize(
       null, // default app icon
@@ -128,10 +133,10 @@ class NotificationService {
     switch (type) {
       case 'booking':
       case 'booking_reminder':
-        final role = Get.isRegistered<AuthController>()
-            ? AuthController.to.currentUser.value?.role
+        final user = Get.isRegistered<AuthController>()
+            ? AuthController.to.currentUser.value
             : null;
-        if (role == UserRole.owner || role == UserRole.staff) {
+        if (user?.role == UserRole.owner || user?.isArenaStaff == true) {
           Get.toNamed(AppRoutes.bookingDetailOwner, arguments: relatedId);
         } else {
           // Try in-memory cache first; fall back to a Firestore fetch so
@@ -157,6 +162,21 @@ class NotificationService {
           }
         }
         break;
+      case 'chat':
+        // relatedId is the chatId
+        Get.toNamed(AppRoutes.chatRoom, arguments: relatedId);
+        break;
+      case 'support':
+        // relatedId is the ticketId; open the ticket detail
+        final user = Get.isRegistered<AuthController>()
+            ? AuthController.to.currentUser.value
+            : null;
+        if (user?.role == UserRole.owner || user?.isArenaStaff == true) {
+          Get.toNamed(AppRoutes.ownerTickets);
+        } else {
+          Get.toNamed(AppRoutes.customerTicketDetail, arguments: relatedId);
+        }
+        break;
       case 'tournament':
         Get.toNamed(AppRoutes.tournamentDetail, arguments: relatedId);
         break;
@@ -169,28 +189,39 @@ class NotificationService {
 
   static Future<void> _saveToken(String uid) async {
     // On iOS, the APNS token may not be ready at app start.
-    // Attempt to get the FCM token; if APNS isn't set yet, skip silently —
-    // onTokenRefresh will fire once the device registers.
+    // If it isn't, skip getting the FCM token now — onTokenRefresh fires
+    // once the device finishes APNS registration.
     if (Platform.isIOS) {
       try {
         final apns = await _fcm.getAPNSToken();
         if (apns == null) {
-          _fcm.onTokenRefresh.listen((t) => _persistToken(uid, t));
+          _subscribeToTokenRefresh();
           return;
         }
       } catch (_) {
-        _fcm.onTokenRefresh.listen((t) => _persistToken(uid, t));
+        _subscribeToTokenRefresh();
         return;
       }
     }
 
     try {
       final token = await _fcm.getToken();
-      if (token == null) return;
-      await _persistToken(uid, token);
+      if (token != null) await _persistToken(uid, token);
     } catch (_) {}
 
-    _fcm.onTokenRefresh.listen((t) => _persistToken(uid, t));
+    _subscribeToTokenRefresh();
+  }
+
+  // Subscribe to FCM token rotations exactly once per app lifetime.
+  // Always reads the live UID from FirebaseAuth so the correct user's
+  // document is updated even after a logout/login cycle.
+  static void _subscribeToTokenRefresh() {
+    if (_tokenRefreshSubscribed) return;
+    _tokenRefreshSubscribed = true;
+    _fcm.onTokenRefresh.listen((token) {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) _persistToken(uid, token);
+    });
   }
 
   static Future<void> _persistToken(String uid, String token) async {

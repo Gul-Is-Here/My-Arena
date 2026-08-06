@@ -152,6 +152,7 @@ class MessageModel {
   final String id;
   final String senderId;
   final String senderRole;
+  final String? senderName;
   final MessageType type;
   final String content;
   final String? fileName;
@@ -164,6 +165,7 @@ class MessageModel {
     required this.id,
     required this.senderId,
     required this.senderRole,
+    this.senderName,
     this.type = MessageType.text,
     required this.content,
     this.fileName,
@@ -177,6 +179,7 @@ class MessageModel {
         id: m['id'] ?? '',
         senderId: m['senderId'] ?? '',
         senderRole: m['senderRole'] ?? '',
+        senderName: m['senderName'] as String?,
         type: MessageTypeX.fromString(m['type']),
         content: m['content'] ?? '',
         fileName: m['fileName'],

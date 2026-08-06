@@ -98,7 +98,8 @@ class ArenaFormController extends GetxController {
     if (!validateStep()) return;
     isSubmitting.value = true;
     try {
-      final uid = ownerIdOverride ?? FirebaseAuth.instance.currentUser?.uid ?? '';
+      final uid = ownerIdOverride ??
+          FirebaseAuth.instance.currentUser?.uid ?? '';
       if (uid.isEmpty) {
         _warn('You must be signed in to create an arena.');
         isSubmitting.value = false;

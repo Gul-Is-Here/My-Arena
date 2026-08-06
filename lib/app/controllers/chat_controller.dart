@@ -33,6 +33,7 @@ class ChatController extends GetxController {
   final RxList<ChatModel> chats = <ChatModel>[].obs;
 
   StreamSubscription? _chatsSub;
+  StreamSubscription? _staffChatsSub; // secondary stream for arena booking chats
   final Map<String, StreamSubscription> _msgSubs = {};
   final Map<String, RxList<MessageModel>> _msgRx = {};
 
@@ -72,6 +73,7 @@ class ChatController extends GetxController {
   void onClose() {
     _authSub?.cancel();
     _chatsSub?.cancel();
+    _staffChatsSub?.cancel();
     _ticketSub?.cancel();
     _bookingSub?.cancel();
     for (final sub in _msgSubs.values) {
@@ -85,19 +87,66 @@ class ChatController extends GetxController {
 
   void _listenChats() {
     _chatsSub?.cancel();
+    _staffChatsSub?.cancel();
     if (myUid.isEmpty) {
       chats.clear();
       return;
     }
-    _chatsSub = _service.userChats(myUid).listen((maps) {
-      chats.assignAll(maps.map((m) {
-        final count = (m['unreadCounts'] is Map)
-            ? ((m['unreadCounts'] as Map)[myUid] ?? 0) as int
-            : 0;
-        return ChatModel.fromMap({...m, '_myUid': myUid})
-            .copyWith(unreadCount: count);
-      }).toList());
-    }, onError: (e) => debugPrint('userChats stream error: $e'));
+
+    final user = Get.isRegistered<AuthController>()
+        ? AuthController.to.currentUser.value
+        : null;
+
+    if (user?.isArenaStaff == true && user!.assignedArenas.isNotEmpty) {
+      // Arena staff: booking chats come from arenaId query; support chat
+      // comes from the standard participants query (staff uid is in participants
+      // of their own support chat).
+      final Map<String, Map<String, dynamic>> merged = {};
+
+      void rebuild() {
+        final sorted = merged.values.toList()
+          ..sort((a, b) {
+            final aT = (a['lastMessageAt'] as dynamic)?.toDate() ?? DateTime(2000);
+            final bT = (b['lastMessageAt'] as dynamic)?.toDate() ?? DateTime(2000);
+            return bT.compareTo(aT);
+          });
+        chats.assignAll(sorted.map((m) {
+          final count = (m['unreadCounts'] is Map)
+              ? ((m['unreadCounts'] as Map)[myUid] ?? 0) as int
+              : 0;
+          return ChatModel.fromMap({...m, '_myUid': myUid})
+              .copyWith(unreadCount: count);
+        }).toList());
+      }
+
+      // Arena booking chats
+      _staffChatsSub = _service
+          .staffArenaChats(user.assignedArenas)
+          .listen((maps) {
+        for (final m in maps) {
+          merged[m['id'] as String] = m;
+        }
+        rebuild();
+      }, onError: (e) => debugPrint('staffArenaChats stream error: $e'));
+
+      // Support chat (staff's own)
+      _chatsSub = _service.userChats(myUid).listen((maps) {
+        for (final m in maps) {
+          merged[m['id'] as String] = m;
+        }
+        rebuild();
+      }, onError: (e) => debugPrint('userChats stream error: $e'));
+    } else {
+      _chatsSub = _service.userChats(myUid).listen((maps) {
+        chats.assignAll(maps.map((m) {
+          final count = (m['unreadCounts'] is Map)
+              ? ((m['unreadCounts'] as Map)[myUid] ?? 0) as int
+              : 0;
+          return ChatModel.fromMap({...m, '_myUid': myUid})
+              .copyWith(unreadCount: count);
+        }).toList());
+      }, onError: (e) => debugPrint('userChats stream error: $e'));
+    }
   }
 
   // ── Messages stream per chat ─────────────────────────────────────────
@@ -262,12 +311,18 @@ class ChatController extends GetxController {
     final bookingRef = isSupport ? _bookingRefForSupport() : _bookingRefFor(chat);
     final ticketRef = isSupport ? _ticketRefForSupport() : null;
 
+    final user = Get.isRegistered<AuthController>()
+        ? AuthController.to.currentUser.value
+        : null;
+    final senderName = user?.isArenaStaff == true ? user?.name : null;
+
     if (type == MessageType.text) {
       if (text.trim().isEmpty) return;
       await _service.sendText(
         chatId: chatId,
         senderId: myUid,
         senderRole: myRole,
+        senderName: senderName,
         text: text.trim(),
         participants: chat.participants,
         bookingRef: bookingRef,
@@ -283,6 +338,7 @@ class ChatController extends GetxController {
         chatId: chatId,
         senderId: myUid,
         senderRole: myRole,
+        senderName: senderName,
         file: File(picked.path),
         participants: chat.participants,
         bookingRef: bookingRef,
@@ -296,9 +352,13 @@ class ChatController extends GetxController {
     final user = Get.isRegistered<AuthController>()
         ? AuthController.to.currentUser.value
         : null;
+    // Arena staff use the owner_support chat type so Super Admin can handle
+    // their requests in the same channel as owner support.
+    final effectiveRole =
+        user?.isArenaStaff == true ? 'owner' : myRole;
     return _service.getOrCreateSupportChat(
       uid: myUid,
-      role: myRole,
+      role: effectiveRole,
       displayName: user?.name ?? 'User',
     );
   }

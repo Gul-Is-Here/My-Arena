@@ -51,13 +51,22 @@ class _OwnerQrScannerScreenState extends State<OwnerQrScannerScreen> {
         _scannedBooking = booking;
       });
     } else {
-      final updatedBooking =
-          controller.bookings.firstWhereOrNull((b) => b.id == code) ?? booking;
-      setState(() {
-        _success = true;
-        _resultMessage = null;
-        _scannedBooking = updatedBooking;
-      });
+      // Auto-close and surface success feedback on the previous screen.
+      if (mounted) {
+        Get.back();
+        Get.snackbar(
+          'Check-In Successful!',
+          booking != null
+              ? '${booking.customerName} — ${booking.courtName} is now in progress.'
+              : 'Booking is now in progress.',
+          backgroundColor: AppColors.success,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.TOP,
+          duration: const Duration(seconds: 3),
+          margin: const EdgeInsets.all(16),
+          borderRadius: 14,
+        );
+      }
     }
   }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../controllers/auth_controller.dart';
+import '../controllers/owner_controller.dart';
 import '../data/models/user_model.dart';
 import '../routes/app_routes.dart';
 
@@ -33,6 +34,9 @@ class OwnerMiddleware extends GetMiddleware {
     final role = auth.currentUser.value?.role;
     if (role != UserRole.owner && !(role?.isAdminTier ?? false)) {
       return const RouteSettings(name: AppRoutes.unauthorized);
+    }
+    if (!Get.isRegistered<OwnerController>()) {
+      Get.put(OwnerController());
     }
     return null;
   }
@@ -78,6 +82,9 @@ class OwnerOrArenaStaffMiddleware extends GetMiddleware {
     if (role == UserRole.owner ||
         (role?.isAdminTier ?? false) ||
         user?.isArenaStaff == true) {
+      if (!Get.isRegistered<OwnerController>()) {
+        Get.put(OwnerController());
+      }
       return null;
     }
     return const RouteSettings(name: AppRoutes.unauthorized);

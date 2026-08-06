@@ -80,6 +80,31 @@ class ArenaService {
           ? ArenaModel.fromMap({...doc.data()!, 'id': doc.id})
           : null);
 
+  /// Fetch a set of arenas by their IDs — used by arena staff who don't own them.
+  Future<List<ArenaModel>> arenasByIds(List<String> ids) async {
+    if (ids.isEmpty) return [];
+    final docs =
+        await Future.wait(ids.map((id) => _arenas.doc(id).get()));
+    return docs
+        .where((d) => d.exists)
+        .map((d) => ArenaModel.fromMap({...d.data()!, 'id': d.id}))
+        .toList();
+  }
+
+  /// Arena staff: live stream of arenas whose IDs are in [ids].
+  /// Uses FieldPath.documentId whereIn so only the assigned arena docs are sent.
+  Stream<List<ArenaModel>> staffArenas(List<String> ids) {
+    if (ids.isEmpty) return Stream.value([]);
+    // Firestore whereIn cap is 30; take first 30 assigned arenas.
+    final capped = ids.take(30).toList();
+    return _arenas
+        .where(FieldPath.documentId, whereIn: capped)
+        .snapshots()
+        .map((s) => s.docs
+            .map((d) => ArenaModel.fromMap({...d.data(), 'id': d.id}))
+            .toList());
+  }
+
   /// Owner's own arenas. Courts are NOT pre-loaded — UI reads from courtSummary.
   Stream<List<ArenaModel>> ownerArenas(String ownerId) => _arenas
       .where('ownerId', isEqualTo: ownerId)

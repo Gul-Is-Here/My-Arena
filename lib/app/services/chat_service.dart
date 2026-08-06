@@ -213,6 +213,22 @@ class ChatService {
       .map((s) =>
           s.docs.map((d) => {...d.data(), 'id': d.id}).toList());
 
+  /// Returns booking chats for arenas assigned to a staff member. Used instead
+  /// of [userChats] for arena staff because they are not in the participants
+  /// list of customer-owner chats.
+  Stream<List<Map<String, dynamic>>> staffArenaChats(List<String> arenaIds) {
+    if (arenaIds.isEmpty) {
+      return Stream.value([]);
+    }
+    final ids = arenaIds.take(10).toList(); // Firestore whereIn cap
+    return _chats
+        .where('arenaId', whereIn: ids)
+        .where('type', isEqualTo: 'booking')
+        .orderBy('lastMessageAt', descending: true)
+        .snapshots()
+        .map((s) => s.docs.map((d) => {...d.data(), 'id': d.id}).toList());
+  }
+
   Stream<List<Map<String, dynamic>>> allChats() => _chats
       .orderBy('lastMessageAt', descending: true)
       .snapshots()
@@ -234,6 +250,7 @@ class ChatService {
     required String chatId,
     required String senderId,
     required String senderRole,
+    String? senderName,
     required String text,
     required List<String> participants,
     Map<String, dynamic>? bookingRef,
@@ -245,6 +262,7 @@ class ChatService {
     batch.set(msgRef, {
       'senderId': senderId,
       'senderRole': senderRole,
+      if (senderName != null) 'senderName': senderName,
       'type': 'text',
       'content': text,
       'isRead': false,
@@ -270,6 +288,7 @@ class ChatService {
     required String chatId,
     required String senderId,
     required String senderRole,
+    String? senderName,
     required File file,
     required List<String> participants,
     Map<String, dynamic>? bookingRef,
@@ -285,6 +304,7 @@ class ChatService {
     batch.set(msgRef, {
       'senderId': senderId,
       'senderRole': senderRole,
+      if (senderName != null) 'senderName': senderName,
       'type': 'image',
       'content': url,
       'isRead': false,

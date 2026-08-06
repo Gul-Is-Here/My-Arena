@@ -77,24 +77,38 @@ service cloud.firestore {
     }
 
     // ── Helpers: arena staff permission checks ────────────────────────
-    function staffCanEditArena(arenaId) {
+    // Any staff member assigned to the arena has full management access.
+    // Granular per-arena permissions (arenaPermissions map) are no longer
+    // required — assignment implies full access for that arena.
+    function isArenaStaff(arenaId) {
       return isAuth() &&
         userDoc().role == 'staff' &&
-        userDoc().get('assignedArenas', []).hasAny([arenaId]) &&
-        userDoc().get('arenaPermissions', {}).get(arenaId, []).hasAny(['edit_arena']);
+        userDoc().get('ownerId', null) != null &&
+        userDoc().get('assignedArenas', []).hasAny([arenaId]);
+    }
+
+    function staffCanEditArena(arenaId) {
+      return isArenaStaff(arenaId);
     }
 
     function staffCanEditCourts(arenaId) {
+      return isArenaStaff(arenaId);
+    }
+
+    // For chats: staff can access a chat if their assigned arenas include the
+    // chat's arenaId.  Used in chat read/write rules.
+    function staffCanAccessChat(chatData) {
       return isAuth() &&
         userDoc().role == 'staff' &&
-        userDoc().get('assignedArenas', []).hasAny([arenaId]) &&
-        userDoc().get('arenaPermissions', {}).get(arenaId, []).hasAny(['edit_courts']);
+        userDoc().get('ownerId', null) != null &&
+        chatData.get('arenaId', null) != null &&
+        userDoc().get('assignedArenas', []).hasAny([chatData.arenaId]);
     }
 
     // ── Arenas ────────────────────────────────────────────────────────
     match /arenas/{arenaId} {
       allow read: if isAuth();
-      // Owners create their own arenas; admin-tier can create on behalf of an owner.
+      // Only owners and admin-tier can create arenas.
       allow create: if isActiveAuth() && (isOwner() || isAdminTier());
       allow update: if isActiveAuth() && (
         resource.data.ownerId == uid() ||
@@ -135,11 +149,14 @@ service cloud.firestore {
     // ── Chats ─────────────────────────────────────────────────────────
     match /chats/{chatId} {
       allow read: if isAuth() && (
-        uid() in resource.data.participants || isStaff()
+        uid() in resource.data.participants ||
+        isAdmin() ||
+        staffCanAccessChat(resource.data)
       );
       allow create: if isAuth();
       allow update: if isAuth() && (
-        isStaff() ||
+        isAdmin() ||
+        staffCanAccessChat(resource.data) ||
         (uid() in resource.data.participants &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'activeBookingId', 'unreadCounts', 'lastMessage',
@@ -151,14 +168,16 @@ service cloud.firestore {
       match /messages/{msgId} {
         allow read: if isAuth() && (
           uid() in get(/databases/$(database)/documents/chats/$(chatId)).data.participants ||
-          isStaff()
+          isAdmin() ||
+          staffCanAccessChat(get(/databases/$(database)/documents/chats/$(chatId)).data)
         );
         allow create: if isAuth() &&
           request.resource.data.senderId == uid() &&
           request.resource.data.type != 'system' &&
           (
             uid() in get(/databases/$(database)/documents/chats/$(chatId)).data.participants ||
-            isStaff()
+            isAdmin() ||
+            staffCanAccessChat(get(/databases/$(database)/documents/chats/$(chatId)).data)
           );
         allow update, delete: if false;
       }
@@ -167,22 +186,22 @@ service cloud.firestore {
     // ── Tickets ───────────────────────────────────────────────────────
     match /tickets/{ticketId} {
       allow read: if isAuth() && (
-        resource.data.raisedByUid == uid() || isStaff()
+        resource.data.raisedByUid == uid() || isAdminTier()
       );
-      allow create: if isActiveAuth() && isActive();
+      allow create: if isActiveAuth();
       allow update: if isAuth() && (
-        isStaff() || resource.data.raisedByUid == uid()
+        isAdminTier() || resource.data.raisedByUid == uid()
       );
       allow delete: if isAdmin();
 
       match /messages/{msgId} {
         allow read: if isAuth() && (
           get(/databases/$(database)/documents/tickets/$(ticketId)).data.raisedByUid == uid()
-          || isStaff()
+          || isAdminTier()
         );
         allow create: if isAuth() && (
           get(/databases/$(database)/documents/tickets/$(ticketId)).data.raisedByUid == uid()
-          || isStaff()
+          || isAdminTier()
         );
         allow update, delete: if isAdmin();
       }
@@ -250,8 +269,14 @@ service cloud.firestore {
     // ── Blocked slots ─────────────────────────────────────────────────
     match /blockedSlots/{slotId} {
       allow read: if isAuth();
-      allow create: if isActiveAuth() && request.resource.data.ownerId == uid();
-      allow delete: if isAuth() && resource.data.ownerId == uid();
+      allow create: if isActiveAuth() && (
+        request.resource.data.ownerId == uid() ||
+        isArenaStaff(request.resource.data.arenaId)
+      );
+      allow delete: if isAuth() && (
+        resource.data.ownerId == uid() ||
+        isArenaStaff(resource.data.arenaId)
+      );
       allow update: if false;
     }
 
@@ -302,6 +327,14 @@ service cloud.firestore {
     match /ownerInvitations/{invitationId} {
       allow read: if isAdmin() ||
         (isAuth() && resource.data.targetUid == uid());
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /adminInvitations/{invitationId} {
+      // Only admin-tier users can see admin invitations; invitee can read their own.
+      allow read: if isAdminTier() ||
+        (isAuth() && resource.data.targetUid == uid());
+      // Only admins (and Cloud Functions acting as admin) can write.
       allow create, update, delete: if isAdmin();
     }
 

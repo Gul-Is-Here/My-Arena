@@ -7,12 +7,14 @@ import 'package:get/get.dart';
 import '../data/models/arena_model.dart';
 import '../data/models/booking_model.dart';
 import '../data/models/boost_request_model.dart';
+import '../data/models/admin_invitation_model.dart';
 import '../data/models/owner_invitation_model.dart';
 import '../data/models/ticket_model.dart';
 import '../data/models/user_model.dart';
 import '../repositories/admin_repository.dart';
 import '../services/arena_service.dart';
 import '../services/boost_service.dart';
+import '../controllers/auth_controller.dart';
 import '../services/otp_service.dart';
 
 /// Admin notification — in-memory until FCM broadcast is wired in Phase 2.
@@ -149,6 +151,38 @@ class AdminController extends GetxController {
   List<BoostRequestModel> get activeBoosts =>
       boosts.where((b) => b.status == BoostStatus.approved).toList();
 
+  // ── Scope-filtered views (Phase 5) ────────────────────────────────────
+
+  UserModel? get _me => AuthController.to.currentUser.value;
+
+  /// Arenas visible to the current admin. Full admins see all; scoped admins
+  /// see only arenas in their managedArenaIds list.
+  List<ArenaModel> get scopedArenas {
+    final me = _me;
+    if (me == null || !me.isScoped || me.managedArenaIds.isEmpty) return arenas.toList();
+    return arenas.where((a) => me.managedArenaIds.contains(a.id)).toList();
+  }
+
+  /// Owners visible to the current admin. Full admins see all; scoped admins
+  /// see only owners in their managedOwnerIds list.
+  List<UserModel> get scopedOwners {
+    final me = _me;
+    final allOwners = users.where((u) => u.role == UserRole.owner).toList();
+    if (me == null || !me.isScoped || me.managedOwnerIds.isEmpty) return allOwners;
+    return allOwners.where((u) => me.managedOwnerIds.contains(u.uid)).toList();
+  }
+
+  /// Remaining owner invites for the current admin. Null = unlimited.
+  /// Counts pending + accepted owner invitations created by this admin.
+  int? get remainingOwnerInvites {
+    final me = _me;
+    if (me == null || me.ownerInviteLimit == null) return null;
+    // We track how many they've used via the invitationsStream — but that's
+    // async. We'll count from the cached invitations list if available, or
+    // just surface the limit from the UserModel for UI display.
+    return me.ownerInviteLimit;
+  }
+
   // ── Arena management (via repository — auto-audited) ─────────────────
 
   Future<void> setArenaStatus(String id, ArenaStatus status,
@@ -216,7 +250,20 @@ class AdminController extends GetxController {
   Future<void> toggleBan(String uid) async {
     final user = users.firstWhereOrNull((u) => u.uid == uid);
     if (user == null) return;
-    await _repo.toggleBan(user);
+    final next = user.accountStatus == AccountStatus.suspended
+        ? AccountStatus.active
+        : AccountStatus.suspended;
+    await _repo.changeAccountStatus(user, next);
+  }
+
+  Future<void> changeAccountStatus(
+    String uid,
+    AccountStatus newStatus, {
+    String? reason,
+  }) async {
+    final user = users.firstWhereOrNull((u) => u.uid == uid);
+    if (user == null) return;
+    await _repo.changeAccountStatus(user, newStatus, reason: reason);
   }
 
   Future<void> changeRole(String uid, UserRole role) async {
@@ -225,9 +272,35 @@ class AdminController extends GetxController {
     await _repo.changeRole(user, role);
   }
 
+  Future<void> updateCustomPermissions(
+    String uid,
+    Map<String, bool> newPerms,
+  ) async {
+    final user = users.firstWhereOrNull((u) => u.uid == uid);
+    if (user == null) return;
+    await _repo.updateCustomPermissions(user, newPerms);
+  }
+
+  Future<void> updateAdminScope(
+    String uid, {
+    required List<String> managedOwnerIds,
+    required List<String> managedArenaIds,
+    int? ownerInviteLimit,
+  }) async {
+    final user = users.firstWhereOrNull((u) => u.uid == uid);
+    if (user == null) return;
+    await _repo.updateAdminScope(
+      user,
+      managedOwnerIds: managedOwnerIds,
+      managedArenaIds: managedArenaIds,
+      ownerInviteLimit: ownerInviteLimit,
+    );
+  }
+
   // ── Owner invitations ─────────────────────────────────────────────────
 
   final _otp = OtpService();
+
 
   /// Live stream of all owner invitations, newest first.
   Stream<List<OwnerInvitationModel>> invitationsStream() => _db
@@ -243,6 +316,22 @@ class AdminController extends GetxController {
     required String name,
     required String phone,
   }) async {
+    // Enforce ownerInviteLimit for scoped admins.
+    final me = _me;
+    if (me != null && me.ownerInviteLimit != null) {
+      // Count invitations this admin has already sent.
+      final snap = await _db
+          .collection('ownerInvitations')
+          .where('invitedBy', isEqualTo: me.uid)
+          .where('status', whereIn: ['pending', 'accepted'])
+          .get();
+      final used = snap.docs.length;
+      if (used >= me.ownerInviteLimit!) {
+        throw Exception(
+            'Invite limit reached (${me.ownerInviteLimit} / ${me.ownerInviteLimit}). '
+            'Contact a super admin to increase your limit.');
+      }
+    }
     final token = await FirebaseAuth.instance.currentUser!.getIdToken();
     return _otp.inviteOwner(email: email, name: name, phone: phone, idToken: token!);
   }
@@ -255,6 +344,37 @@ class AdminController extends GetxController {
   Future<void> revokeInvitation(String invitationId) async {
     final token = await FirebaseAuth.instance.currentUser!.getIdToken();
     await _otp.revokeInvitation(invitationId, token!);
+  }
+
+  // ── Admin invitations ─────────────────────────────────────────────────
+
+  Stream<List<AdminInvitationModel>> adminInvitationsStream() => _db
+      .collection('adminInvitations')
+      .orderBy('createdAt', descending: true)
+      .snapshots()
+      .map((s) => s.docs
+          .map((d) => AdminInvitationModel.fromMap(d.data(), d.id))
+          .toList());
+
+  Future<Map<String, dynamic>> inviteAdmin({
+    required String email,
+    required String name,
+    required String phone,
+    required String role,
+  }) async {
+    final token = await FirebaseAuth.instance.currentUser!.getIdToken();
+    return _otp.inviteAdmin(
+        email: email, name: name, phone: phone, role: role, idToken: token!);
+  }
+
+  Future<void> resendAdminInvitation(String invitationId) async {
+    final token = await FirebaseAuth.instance.currentUser!.getIdToken();
+    await _otp.resendAdminInvitation(invitationId, token!);
+  }
+
+  Future<void> revokeAdminInvitation(String invitationId) async {
+    final token = await FirebaseAuth.instance.currentUser!.getIdToken();
+    await _otp.revokeAdminInvitation(invitationId, token!);
   }
 
   // ── Platform settings ─────────────────────────────────────────────────

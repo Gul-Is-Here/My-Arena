@@ -162,22 +162,54 @@ class PermissionService extends GetxService {
   };
 
   /// Returns true if the currently signed-in user has [permission].
+  ///
+  /// Layer 1: role matrix default.
+  /// Layer 2: customPermissions override (true = grant, false = deny).
   bool can(Permission permission) {
-    final role = _currentRole;
-    return _matrix[role]?.contains(permission) ?? false;
+    final user = Get.find<AuthController>().currentUser.value;
+    if (user == null) return false;
+
+    // Layer 2 — dynamic override wins if key present.
+    final key = permission.name;
+    if (user.customPermissions.containsKey(key)) {
+      return user.customPermissions[key] == true;
+    }
+
+    // Layer 1 — role matrix default.
+    return _matrix[user.role]?.contains(permission) ?? false;
   }
 
   /// Returns true if the user has ALL of the given permissions.
-  bool canAll(List<Permission> permissions) =>
-      permissions.every(can);
+  bool canAll(List<Permission> permissions) => permissions.every(can);
 
   /// Returns true if the user has ANY of the given permissions.
-  bool canAny(List<Permission> permissions) =>
-      permissions.any(can);
+  bool canAny(List<Permission> permissions) => permissions.any(can);
 
-  /// Returns the full set of permissions for the current user.
-  Set<Permission> get myPermissions =>
-      _matrix[_currentRole] ?? const {};
+  /// Effective permission set after applying dynamic overrides.
+  Set<Permission> get myPermissions {
+    final user = Get.find<AuthController>().currentUser.value;
+    if (user == null) return const {};
+    return effectivePermissionsFor(user);
+  }
+
+  /// Computes effective permissions for any UserModel (used in the editor UI).
+  static Set<Permission> effectivePermissionsFor(UserModel user) {
+    final result = Set<Permission>.from(_matrix[user.role] ?? const <Permission>{});
+    for (final entry in user.customPermissions.entries) {
+      final p = _fromName(entry.key);
+      if (p == null) continue;
+      if (entry.value) {
+        result.add(p);
+      } else {
+        result.remove(p);
+      }
+    }
+    return result;
+  }
+
+  /// Default grants for a role, ignoring customPermissions.
+  static Set<Permission> defaultsFor(UserRole role) =>
+      Set<Permission>.from(_matrix[role] ?? const <Permission>{});
 
   /// Returns true if the current user is an admin-tier role.
   bool get isAdminTier {
@@ -190,6 +222,14 @@ class PermissionService extends GetxService {
         r == UserRole.contentManager ||
         r == UserRole.moderator ||
         r == UserRole.staff;
+  }
+
+  static Permission? _fromName(String name) {
+    try {
+      return Permission.values.firstWhere((p) => p.name == name);
+    } catch (_) {
+      return null;
+    }
   }
 
   UserRole get _currentRole =>

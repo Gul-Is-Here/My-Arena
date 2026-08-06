@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../data/models/booking_model.dart';
 import '../services/booking_service.dart';
+import 'auth_controller.dart';
 import 'chat_controller.dart';
 
 class OwnerBookingController extends GetxController {
@@ -64,7 +65,16 @@ class OwnerBookingController extends GetxController {
     }
     isLoading.value = true;
     hasError.value = false;
-    _sub = _service.ownerBookings(uid, limit: _pageLimit).listen((list) {
+    final currentUser = AuthController.to.currentUser.value;
+    final Stream<List<BookingModel>> stream;
+    if (currentUser?.isArenaStaff == true &&
+        currentUser!.assignedArenas.isNotEmpty) {
+      stream = _service.staffBookings(currentUser.assignedArenas,
+          limit: _pageLimit);
+    } else {
+      stream = _service.ownerBookings(uid, limit: _pageLimit);
+    }
+    _sub = stream.listen((list) {
       bookings.assignAll(list);
       canLoadMore.value = list.length >= _pageLimit;
       isLoading.value = false;

@@ -50,6 +50,8 @@ String _statusLabel(BookingStatus s) {
       return 'Refund Sent';
     case BookingStatus.refundConfirmed:
       return 'Refund Confirmed';
+    case BookingStatus.ongoing:
+      return 'Ongoing';
     case BookingStatus.rescheduleRequested:
       return 'Reschedule Requested';
   }
@@ -57,6 +59,7 @@ String _statusLabel(BookingStatus s) {
 
 Color _statusColor(BookingStatus s) {
   switch (s) {
+    case BookingStatus.ongoing:
     case BookingStatus.confirmed:
     case BookingStatus.completed:
     case BookingStatus.refundConfirmed:

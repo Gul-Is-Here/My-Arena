@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide User;
 import 'package:firebase_auth/firebase_auth.dart' as fb show User;
 import 'package:flutter/material.dart';
@@ -29,6 +32,8 @@ class AuthController extends GetxController {
   final RxBool isLoading = false.obs;
   final RxString error = ''.obs;
   final Rx<UserModel?> currentUser = Rxn<UserModel>();
+
+  StreamSubscription? _profileSub;
 
   /// Role picked during signup ("Customer hun ya Owner?")
   final Rx<UserRole> selectedRole = UserRole.customer.obs;
@@ -93,12 +98,20 @@ class AuthController extends GetxController {
       Get.offAllNamed(AppRoutes.workspaceSelector);
       return;
     }
+    // Start real-time watch for already-signed-in users.
+    _watchProfile(fbUser.uid);
     goToRoleDashboard();
   }
 
   void goToRoleDashboard() {
     final user = currentUser.value;
     final role = user?.role;
+    // Pending owners get a holding screen until admin approves.
+    if (role == UserRole.owner &&
+        user?.accountStatus == AccountStatus.pending) {
+      Get.offAllNamed(AppRoutes.ownerPendingApproval);
+      return;
+    }
     String route;
     if (role == UserRole.owner) {
       route = AppRoutes.ownerDashboard;
@@ -305,12 +318,19 @@ class AuthController extends GetxController {
       }
     }
 
-    if (!profile.isActive) {
+    final blockedStatuses = {
+      AccountStatus.suspended,
+      AccountStatus.inactive,
+      AccountStatus.archived,
+    };
+    if (blockedStatuses.contains(profile.accountStatus)) {
       await _service.signOut();
-      throw Exception('This account has been deactivated. Contact support.');
+      throw Exception(
+          'This account has been ${profile.accountStatus.name}. Contact support.');
     }
     await _service.touchLastLogin(fbUser.uid);
     _saveSession(profile);
+    _watchProfile(fbUser.uid);
 
     if (firstTime) {
       if (profile.role == UserRole.customer) {
@@ -443,11 +463,57 @@ class AuthController extends GetxController {
     });
   }
 
+  /// Subscribes to the user's Firestore doc for real-time status changes.
+  /// If the admin suspends/deactivates the account, the stream fires and the
+  /// user is force-signed-out immediately — no restart required.
+  void _watchProfile(String uid) {
+    _profileSub?.cancel();
+    _profileSub = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .snapshots()
+        .listen((snap) {
+      if (!snap.exists) return;
+      final updated = UserModel.fromMap({...snap.data()!, 'uid': snap.id});
+      // Keep local session in sync with Firestore.
+      _saveSession(updated);
+      // If admin toggled the account to a blocked state, force sign-out.
+      const blocked = {
+        AccountStatus.suspended,
+        AccountStatus.inactive,
+        AccountStatus.archived,
+      };
+      if (blocked.contains(updated.accountStatus)) {
+        _profileSub?.cancel();
+        _service.signOut();
+        _box.remove(_sessionKey);
+        currentUser.value = null;
+        Get.offAllNamed(
+          AppRoutes.accountSuspended,
+          arguments: updated.accountStatus,
+        );
+      }
+      // Pending owner whose admin approved — auto-route to dashboard.
+      if (updated.role == UserRole.owner &&
+          updated.accountStatus == AccountStatus.active &&
+          Get.currentRoute == AppRoutes.ownerPendingApproval) {
+        goToRoleDashboard();
+      }
+    });
+  }
+
   Future<void> signOut() async {
+    _profileSub?.cancel();
     await _service.signOut();
     _box.remove(_sessionKey);
     currentUser.value = null;
     Get.offAllNamed(AppRoutes.roleSelect);
+  }
+
+  @override
+  void onClose() {
+    _profileSub?.cancel();
+    super.onClose();
   }
 
   // ---------------------------------------------------------------------

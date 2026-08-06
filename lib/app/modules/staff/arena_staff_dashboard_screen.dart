@@ -3,15 +3,21 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../controllers/auth_controller.dart';
+import '../../controllers/chat_controller.dart';
+import '../../controllers/notification_controller.dart';
+import '../../controllers/owner_booking_controller.dart';
+import '../../controllers/owner_schedule_controller.dart';
 import '../../controllers/staff_management_controller.dart';
 import '../../data/models/user_model.dart';
 import '../../routes/app_routes.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text_styles.dart';
-import '../../widgets/app_card.dart';
+import '../../widgets/glass.dart';
 import '../../widgets/profile_tab.dart';
+import '../chat/my_chats_screen.dart';
+import '../owner/owner_bookings_screen.dart';
 
-/// Dashboard for arena-assigned staff (role=staff with ownerId set).
+/// Full-featured dashboard for arena-assigned staff.
 class ArenaStaffDashboardScreen extends StatefulWidget {
   const ArenaStaffDashboardScreen({super.key});
 
@@ -20,40 +26,83 @@ class ArenaStaffDashboardScreen extends StatefulWidget {
       _ArenaStaffDashboardScreenState();
 }
 
-class _ArenaStaffDashboardScreenState extends State<ArenaStaffDashboardScreen> {
+class _ArenaStaffDashboardScreenState
+    extends State<ArenaStaffDashboardScreen> {
   int _tab = 0;
 
   @override
-  Widget build(BuildContext context) {
+  void initState() {
+    super.initState();
+    // Register controllers once at mount time, not on every build().
     if (!Get.isRegistered<StaffManagementController>()) {
       Get.put(StaffManagementController(), permanent: true);
     }
+    if (!Get.isRegistered<OwnerBookingController>()) {
+      Get.put(OwnerBookingController(), permanent: true);
+    }
+    if (!Get.isRegistered<ChatController>()) {
+      Get.put(ChatController(), permanent: true);
+    }
+    if (!Get.isRegistered<OwnerScheduleController>()) {
+      Get.put(OwnerScheduleController(), permanent: true);
+    }
+  }
 
-    final tabs = [
-      const _ArenasTab(),
-      const ProfileTab(),
-    ];
-
-    return Scaffold(
-      extendBody: true,
-      body: tabs[_tab],
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (i) => setState(() => _tab = i),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.stadium_outlined),
-            selectedIcon: Icon(Icons.stadium),
-            label: 'My Arenas',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'Profile',
-          ),
-        ],
-      ),
-    );
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final unread = ChatController.to.totalUnread;
+      return Scaffold(
+        extendBody: true,
+        body: IndexedStack(
+          index: _tab,
+          children: const [
+            _ArenasTab(),
+            OwnerBookingsScreen(),
+            MyChatsScreen(),
+            ProfileTab(),
+          ],
+        ),
+        bottomNavigationBar: GlassNavBar(
+          selectedIndex: _tab,
+          onDestinationSelected: (i) => setState(() => _tab = i),
+          destinations: [
+            const NavigationDestination(
+              icon: Icon(Icons.stadium_outlined),
+              selectedIcon: Icon(Icons.stadium),
+              label: 'My Arenas',
+            ),
+            const NavigationDestination(
+              icon: Icon(Icons.calendar_month_outlined),
+              selectedIcon: Icon(Icons.calendar_month),
+              label: 'Bookings',
+            ),
+            NavigationDestination(
+              icon: Badge(
+                isLabelVisible: unread > 0,
+                label: Text('$unread',
+                    style: const TextStyle(fontSize: 10, color: Colors.white)),
+                backgroundColor: AppColors.error,
+                child: const Icon(Icons.chat_bubble_outline),
+              ),
+              selectedIcon: Badge(
+                isLabelVisible: unread > 0,
+                label: Text('$unread',
+                    style: const TextStyle(fontSize: 10, color: Colors.white)),
+                backgroundColor: AppColors.error,
+                child: const Icon(Icons.chat_bubble),
+              ),
+              label: 'Chats',
+            ),
+            const NavigationDestination(
+              icon: Icon(Icons.person_outline),
+              selectedIcon: Icon(Icons.person),
+              label: 'Profile',
+            ),
+          ],
+        ),
+      );
+    });
   }
 }
 
@@ -64,51 +113,81 @@ class _ArenasTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Obx(() {
-      final user = AuthController.to.currentUser.value;
-      if (user == null) return const SizedBox.shrink();
-
-      return Scaffold(
-        backgroundColor: AppColors.background,
-        appBar: AppBar(
-          title: const Text('My Arenas'),
-          automaticallyImplyLeading: false,
-          backgroundColor: AppColors.surface,
-          foregroundColor: AppColors.textPrimary,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.logout_outlined),
-              onPressed: () => AuthController.to.signOut(),
-              tooltip: 'Sign out',
-            ),
-          ],
-        ),
-        body: user.assignedArenas.isEmpty
-            ? _empty()
-            : ListView.separated(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-                itemCount: user.assignedArenas.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
-                itemBuilder: (_, i) =>
-                    _ArenaCard(arenaId: user.assignedArenas[i], user: user),
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: const Text('My Arenas'),
+        automaticallyImplyLeading: false,
+        backgroundColor: AppColors.surface,
+        foregroundColor: AppColors.textPrimary,
+        elevation: 0,
+        actions: [
+          Obx(() {
+            final unread = NotificationController.to.unreadCount;
+            return IconButton(
+              icon: Badge(
+                isLabelVisible: unread > 0,
+                label: Text(
+                  unread > 9 ? '9+' : '$unread',
+                  style: const TextStyle(fontSize: 10, color: Colors.white),
+                ),
+                backgroundColor: AppColors.error,
+                child: const Icon(Icons.notifications_outlined),
               ),
-      );
-    });
-  }
+              onPressed: () => Get.toNamed(AppRoutes.notifications),
+              tooltip: 'Notifications',
+            );
+          }),
+        ],
+      ),
+      // Observe only the reactive field we care about — assignedArenas.
+      // AuthController.to.currentUser is already an Rx value; Obx here
+      // rebuilds only when the user object itself changes (login/logout/update).
+      body: Obx(() {
+        final user = AuthController.to.currentUser.value;
+        if (user == null) return const SizedBox.shrink();
+        if (user.assignedArenas.isEmpty) return const _EmptyState();
 
-  Widget _empty() {
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          itemCount: user.assignedArenas.length,
+          itemBuilder: (_, i) =>
+              _ArenaCard(arenaId: user.assignedArenas[i], user: user),
+        );
+      }),
+    );
+  }
+}
+
+// ── Empty state ───────────────────────────────────────────────────────────────
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState();
+
+  @override
+  Widget build(BuildContext context) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.stadium_outlined,
-              size: 56, color: AppColors.textSecondary),
-          const SizedBox(height: 12),
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.stadium_outlined,
+                size: 40, color: AppColors.primary),
+          ),
+          const SizedBox(height: 20),
           Text('No arenas assigned', style: AppTextStyles.titleMedium),
           const SizedBox(height: 6),
-          Text('Contact your owner to assign arenas.',
-              style: AppTextStyles.bodySmall
-                  .copyWith(color: AppColors.textSecondary)),
+          Text(
+            'Contact your owner to get access.',
+            style: AppTextStyles.bodySmall
+                .copyWith(color: AppColors.textSecondary),
+          ),
         ],
       ),
     );
@@ -116,6 +195,10 @@ class _ArenasTab extends StatelessWidget {
 }
 
 // ── Arena Card ────────────────────────────────────────────────────────────────
+
+// Session-level cache: avoids re-fetching the same arena doc every time the
+// list rebuilds (e.g. after a notification arrives and currentUser emits).
+final Map<String, ({String name, String location})> _arenaCache = {};
 
 class _ArenaCard extends StatefulWidget {
   final String arenaId;
@@ -128,330 +211,431 @@ class _ArenaCard extends StatefulWidget {
 }
 
 class _ArenaCardState extends State<_ArenaCard> {
-  String _arenaName = '';
-  String _arenaLocation = '';
+  String _name = '';
+  String _location = '';
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadArena();
+    final cached = _arenaCache[widget.arenaId];
+    if (cached != null) {
+      _name = cached.name;
+      _location = cached.location;
+      _loading = false;
+    } else {
+      _fetchArena();
+    }
   }
 
-  Future<void> _loadArena() async {
+  Future<void> _fetchArena() async {
     try {
       final doc = await FirebaseFirestore.instance
           .collection('arenas')
           .doc(widget.arenaId)
           .get();
-      if (doc.exists && mounted) {
+      if (!mounted) return;
+      if (doc.exists) {
         final data = doc.data()!;
+        final name = (data['name'] as String?) ?? widget.arenaId;
+        final loc = data['location'];
+        final location = (loc is Map) ? ((loc['address'] as String?) ?? '') : '';
+        _arenaCache[widget.arenaId] = (name: name, location: location);
         setState(() {
-          _arenaName = data['name'] ?? widget.arenaId;
-          _arenaLocation = data['location'] ?? '';
+          _name = name;
+          _location = location;
+          _loading = false;
         });
+      } else {
+        setState(() => _loading = false);
       }
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final canEditArena = widget.user.canEditArena(widget.arenaId);
-    final canEditCourts = widget.user.canEditCourts(widget.arenaId);
-    final hasAnyEditPerm = canEditArena || canEditCourts;
+    if (_loading) return const _CardSkeleton();
 
-    return AppCard(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.stadium,
-                    color: AppColors.primary, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _arenaName.isNotEmpty ? _arenaName : widget.arenaId,
-                      style: AppTextStyles.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (_arenaLocation.isNotEmpty)
-                      Text(_arenaLocation,
-                          style: AppTextStyles.bodySmall
-                              .copyWith(color: AppColors.textSecondary)),
-                    if (hasAnyEditPerm) ...[
-                      const SizedBox(height: 4),
-                      Wrap(
-                        spacing: 4,
-                        children: [
-                          if (canEditArena)
-                            _permChip('Edit Arena', AppColors.primary),
-                          if (canEditCourts)
-                            _permChip('Edit Courts', AppColors.secondary),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _actionBtn(
-                icon: Icons.calendar_month_outlined,
-                label: 'Bookings',
-                onTap: () => Get.toNamed(AppRoutes.ownerBookings),
-              ),
-              _actionBtn(
-                icon: Icons.calendar_view_week_outlined,
-                label: 'Schedule',
-                onTap: () => Get.toNamed(AppRoutes.ownerSchedule),
-              ),
-              _actionBtn(
-                icon: Icons.qr_code_scanner,
-                label: 'Scan QR',
-                onTap: () => Get.toNamed(AppRoutes.ownerQrScanner),
-              ),
-              if (canEditArena)
-                _actionBtn(
-                  icon: Icons.edit_outlined,
-                  label: 'Edit Arena',
-                  color: AppColors.primary,
-                  onTap: () => Get.toNamed(AppRoutes.editArena,
-                      arguments: widget.arenaId),
-                ),
-              if (canEditCourts)
-                _actionBtn(
-                  icon: Icons.sports_tennis_outlined,
-                  label: 'Edit Courts',
-                  color: AppColors.secondary,
-                  onTap: () => Get.toNamed(AppRoutes.arenaDetailOwner,
-                      arguments: widget.arenaId),
-                ),
-            ],
-          ),
-          if (!hasAnyEditPerm) ...[
-            const SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: () => _showRequestPermSheet(context),
-              icon: const Icon(Icons.shield_outlined, size: 16),
-              label: const Text('Request Edit Access'),
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.textSecondary,
-                padding: EdgeInsets.zero,
-              ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.border, width: 1),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Header ──────────────────────────────────────────────────
+            _CardHeader(
+              arenaId: widget.arenaId,
+              name: _name,
+              location: _location,
+            ),
+            // ── Divider ─────────────────────────────────────────────────
+            const Divider(
+              height: 1,
+              thickness: 1,
+              color: AppColors.border,
+            ),
+            // ── Action grid ─────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: _ActionGrid(arenaId: widget.arenaId),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Card Header ───────────────────────────────────────────────────────────────
+
+class _CardHeader extends StatelessWidget {
+  final String arenaId;
+  final String name;
+  final String location;
+
+  const _CardHeader({
+    required this.arenaId,
+    required this.name,
+    required this.location,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      child: Row(
+        children: [
+          // Arena icon badge
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.primary.withValues(alpha: 0.2),
+                  AppColors.secondary.withValues(alpha: 0.1),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.3),
+                width: 1,
+              ),
+            ),
+            child: const Icon(Icons.stadium_rounded,
+                color: AppColors.primary, size: 26),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name.isNotEmpty ? name : arenaId,
+                  style: AppTextStyles.titleMedium
+                      .copyWith(color: AppColors.textPrimary),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (location.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on_outlined,
+                          size: 12, color: AppColors.textSecondary),
+                      const SizedBox(width: 3),
+                      Expanded(
+                        child: Text(
+                          location,
+                          style: AppTextStyles.bodySmall
+                              .copyWith(color: AppColors.textSecondary),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
+}
 
-  Widget _permChip(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(label,
-          style: AppTextStyles.bodySmall
-              .copyWith(color: color, fontWeight: FontWeight.w600)),
+// ── Action Grid ───────────────────────────────────────────────────────────────
+
+class _ActionGrid extends StatelessWidget {
+  final String arenaId;
+
+  const _ActionGrid({required this.arenaId});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // Primary row — core daily actions
+        Row(
+          children: [
+            _ActionTile(
+              icon: Icons.calendar_month_outlined,
+              label: 'Bookings',
+              onTap: () => Get.toNamed(AppRoutes.ownerBookings),
+              isPrimary: true,
+            ),
+            const SizedBox(width: 8),
+            _ActionTile(
+              icon: Icons.calendar_view_week_outlined,
+              label: 'Schedule',
+              onTap: () => Get.toNamed(AppRoutes.ownerSchedule),
+              isPrimary: true,
+            ),
+            const SizedBox(width: 8),
+            _ActionTile(
+              icon: Icons.qr_code_scanner_rounded,
+              label: 'Scan QR',
+              onTap: () => Get.toNamed(AppRoutes.ownerQrScanner),
+              isPrimary: true,
+              highlight: true,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // Secondary row — management actions
+        Row(
+          children: [
+            _ActionTile(
+              icon: Icons.book_online_outlined,
+              label: 'Manual Book',
+              onTap: () => Get.toNamed(AppRoutes.manualBooking),
+              isPrimary: false,
+            ),
+            const SizedBox(width: 8),
+            _ActionTile(
+              icon: Icons.edit_outlined,
+              label: 'Edit Arena',
+              onTap: () =>
+                  Get.toNamed(AppRoutes.editArena, arguments: arenaId),
+              isPrimary: false,
+            ),
+            const SizedBox(width: 8),
+            _ActionTile(
+              icon: Icons.sports_tennis_outlined,
+              label: 'Courts',
+              onTap: () => Get.toNamed(AppRoutes.arenaDetailOwner,
+                  arguments: arenaId),
+              isPrimary: false,
+            ),
+          ],
+        ),
+      ],
     );
   }
+}
 
-  Widget _actionBtn({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    Color color = AppColors.textSecondary,
-  }) {
-    return Material(
-      color: AppColors.elevated,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 16, color: color),
-              const SizedBox(width: 6),
-              Text(label,
-                  style: AppTextStyles.bodySmall
-                      .copyWith(color: color, fontWeight: FontWeight.w600)),
-            ],
+// ── Action Tile ───────────────────────────────────────────────────────────────
+
+class _ActionTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool isPrimary;
+  final bool highlight;
+
+  const _ActionTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    required this.isPrimary,
+    this.highlight = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final iconColor = highlight
+        ? AppColors.primary
+        : isPrimary
+            ? AppColors.textPrimary
+            : AppColors.textSecondary;
+    final bgColor = highlight
+        ? AppColors.primary.withValues(alpha: 0.12)
+        : AppColors.elevated;
+    final borderColor = highlight
+        ? AppColors.primary.withValues(alpha: 0.35)
+        : AppColors.border;
+
+    return Expanded(
+      child: Material(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: borderColor, width: 1),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 11),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: isPrimary ? 20 : 18, color: iconColor),
+                const SizedBox(height: 5),
+                Text(
+                  label,
+                  style: AppTextStyles.caption.copyWith(
+                    color: isPrimary
+                        ? AppColors.textPrimary
+                        : AppColors.textSecondary,
+                    fontWeight: isPrimary ? FontWeight.w600 : FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
-
-  void _showRequestPermSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _RequestPermSheet(
-        arenaId: widget.arenaId,
-        arenaName: _arenaName.isNotEmpty ? _arenaName : widget.arenaId,
-      ),
-    );
-  }
 }
 
-// ── Permission request sheet ──────────────────────────────────────────────────
+// ── Loading skeleton ──────────────────────────────────────────────────────────
 
-class _RequestPermSheet extends StatefulWidget {
-  final String arenaId;
-  final String arenaName;
-  const _RequestPermSheet({required this.arenaId, required this.arenaName});
+class _CardSkeleton extends StatefulWidget {
+  const _CardSkeleton();
 
   @override
-  State<_RequestPermSheet> createState() => _RequestPermSheetState();
+  State<_CardSkeleton> createState() => _CardSkeletonState();
 }
 
-class _RequestPermSheetState extends State<_RequestPermSheet> {
-  bool _editArena = false;
-  bool _editCourts = false;
-  final _reasonCtrl = TextEditingController();
+class _CardSkeletonState extends State<_CardSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+    _anim = Tween<double>(begin: 0.3, end: 0.7).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+    );
+  }
 
   @override
   void dispose() {
-    _reasonCtrl.dispose();
+    _ctrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _send() async {
-    final perms = [
-      if (_editArena) 'edit_arena',
-      if (_editCourts) 'edit_courts',
-    ];
-    if (perms.isEmpty) {
-      Get.snackbar('Select Permission',
-          'Choose at least one permission to request.',
-          snackPosition: SnackPosition.BOTTOM);
-      return;
-    }
-
-    if (!Get.isRegistered<StaffManagementController>()) {
-      Get.put(StaffManagementController());
-    }
-    await Get.find<StaffManagementController>().requestPermission(
-      arenaId: widget.arenaId,
-      arenaName: widget.arenaName,
-      permissions: perms,
-      reason: _reasonCtrl.text.trim(),
-    );
-    if (mounted) Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).viewInsets.bottom;
     return Padding(
-      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + bottom),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.border,
-                borderRadius: BorderRadius.circular(2),
-              ),
+      padding: const EdgeInsets.only(bottom: 14),
+      child: AnimatedBuilder(
+        animation: _anim,
+        builder: (context, _) {
+          final shimmer =
+              AppColors.elevated.withValues(alpha: _anim.value + 0.3);
+          return Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.border, width: 1),
             ),
-          ),
-          const SizedBox(height: 16),
-          Text('Request Edit Access', style: AppTextStyles.titleLarge),
-          Text(
-            'For: ${widget.arenaName}',
-            style: AppTextStyles.bodySmall
-                .copyWith(color: AppColors.primary),
-          ),
-          const SizedBox(height: 4),
-          Text('Your owner will review and approve this request.',
-              style: AppTextStyles.bodySmall
-                  .copyWith(color: AppColors.textSecondary)),
-          const SizedBox(height: 20),
-          CheckboxListTile(
-            value: _editArena,
-            onChanged: (v) => setState(() => _editArena = v ?? false),
-            title: const Text('Edit Arena Info',
-                style: TextStyle(color: AppColors.textPrimary)),
-            subtitle: Text('Name, address, description, hours',
-                style: AppTextStyles.bodySmall
-                    .copyWith(color: AppColors.textSecondary)),
-            activeColor: AppColors.primary,
-            checkColor: AppColors.onPrimary,
-            contentPadding: EdgeInsets.zero,
-          ),
-          CheckboxListTile(
-            value: _editCourts,
-            onChanged: (v) => setState(() => _editCourts = v ?? false),
-            title: const Text('Edit Courts',
-                style: TextStyle(color: AppColors.textPrimary)),
-            subtitle: Text('Add / edit / deactivate courts',
-                style: AppTextStyles.bodySmall
-                    .copyWith(color: AppColors.textSecondary)),
-            activeColor: AppColors.primary,
-            checkColor: AppColors.onPrimary,
-            contentPadding: EdgeInsets.zero,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _reasonCtrl,
-            style: const TextStyle(color: AppColors.textPrimary),
-            decoration: InputDecoration(
-              hintText: 'Reason (optional)',
-              hintStyle: const TextStyle(color: AppColors.textSecondary),
-              filled: true,
-              fillColor: AppColors.elevated,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: shimmer,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 140,
+                          height: 14,
+                          decoration: BoxDecoration(
+                            color: shimmer,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          width: 90,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: shimmer,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: List.generate(
+                    3,
+                    (i) => Expanded(
+                      child: Container(
+                        height: 56,
+                        margin: EdgeInsets.only(left: i == 0 ? 0 : 8),
+                        decoration: BoxDecoration(
+                          color: shimmer,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: List.generate(
+                    3,
+                    (i) => Expanded(
+                      child: Container(
+                        height: 56,
+                        margin: EdgeInsets.only(left: i == 0 ? 0 : 8),
+                        decoration: BoxDecoration(
+                          color: shimmer,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _send,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.onPrimary,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-              child: const Text('Send Request',
-                  style: TextStyle(fontWeight: FontWeight.w700)),
-            ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }

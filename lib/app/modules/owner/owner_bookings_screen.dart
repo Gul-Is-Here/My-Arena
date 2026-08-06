@@ -40,6 +40,8 @@ Color _statusColor(BookingModel b) {
     case BookingStatus.refundPending:
     case BookingStatus.refundSent:
       return _grey;
+    case BookingStatus.ongoing:
+      return AppColors.primary;
     case BookingStatus.rescheduleRequested:
       return AppColors.warning;
   }

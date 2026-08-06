@@ -7,7 +7,9 @@ import 'package:get/get.dart';
 import '../data/models/arena_model.dart';
 import '../data/models/booking_model.dart';
 import '../data/models/court_model.dart';
+import '../services/arena_service.dart';
 import '../services/blocked_slot_service.dart';
+import 'auth_controller.dart';
 import 'owner_booking_controller.dart';
 import 'owner_controller.dart';
 
@@ -20,37 +22,74 @@ class OwnerScheduleController extends GetxController {
   static OwnerScheduleController get to => Get.find();
 
   final BlockedSlotService _blockedService = BlockedSlotService();
+  final ArenaService _arenaService = ArenaService();
 
   final Rxn<ArenaModel> arena = Rxn<ArenaModel>();
   final Rx<DateTime> date = DateTime.now().obs;
+
+  /// Arenas available in the selector. For owners this mirrors
+  /// OwnerController.myArenas; for arena staff it's loaded from their
+  /// assignedArenas list.
+  final RxList<ArenaModel> arenas = <ArenaModel>[].obs;
 
   /// courtId → blocked hours for the selected arena + day.
   final RxMap<String, Set<int>> blocked = <String, Set<int>>{}.obs;
 
   StreamSubscription? _blockedSub;
   Worker? _arenasWorker;
+  final Map<String, StreamSubscription> _courtSubs = {};
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   @override
   void onInit() {
     super.onInit();
-    _pickInitialArena();
-    // Arena list may still be loading when the screen opens.
-    _arenasWorker = ever(OwnerController.to.myArenas, (_) {
-      if (arena.value == null) {
-        _pickInitialArena();
-      } else {
-        // Keep the selected arena's courts fresh after edits.
-        final updated = OwnerController.to.myArenas
-            .firstWhereOrNull((a) => a.id == arena.value!.id);
-        if (updated != null) arena.value = updated;
+    final user = AuthController.to.currentUser.value;
+    if (user?.isArenaStaff == true) {
+      _loadStaffArenas(user!.assignedArenas);
+    } else {
+      // Owner path: mirror OwnerController.myArenas reactively.
+      arenas.assignAll(OwnerController.to.myArenas);
+      _pickInitialArena();
+      _arenasWorker = ever(OwnerController.to.myArenas, (list) {
+        arenas.assignAll(list);
+        if (arena.value == null) {
+          _pickInitialArena();
+        } else {
+          final updated =
+              arenas.firstWhereOrNull((a) => a.id == arena.value!.id);
+          if (updated != null) arena.value = updated;
+        }
+      });
+    }
+  }
+
+  Future<void> _loadStaffArenas(List<String> ids) async {
+    try {
+      final loaded = await _arenaService.arenasByIds(ids);
+      arenas.assignAll(loaded);
+      if (loaded.isNotEmpty) selectArena(loaded.first);
+
+      // Open a live courts-subcollection stream for each arena, matching the
+      // pattern used by OwnerController. Without this, arena.courts is always
+      // empty because ArenaModel.fromMap only reads the arena document — courts
+      // live in a subcollection and are never embedded in the doc.
+      for (final a in loaded) {
+        _courtSubs[a.id]?.cancel();
+        _courtSubs[a.id] = _arenaService.courts(a.id).listen((courts) {
+          final idx = arenas.indexWhere((x) => x.id == a.id);
+          if (idx == -1) return;
+          final updated = arenas[idx].copyWith(courts: courts);
+          arenas[idx] = updated;
+          if (arena.value?.id == a.id) arena.value = updated;
+        });
       }
-    });
+    } catch (e) {
+      debugPrint('OwnerScheduleController: failed to load staff arenas: $e');
+    }
   }
 
   void _pickInitialArena() {
-    final arenas = OwnerController.to.myArenas;
     if (arenas.isNotEmpty) selectArena(arenas.first);
   }
 
@@ -211,6 +250,9 @@ class OwnerScheduleController extends GetxController {
   void onClose() {
     _blockedSub?.cancel();
     _arenasWorker?.dispose();
+    for (final sub in _courtSubs.values) {
+      sub.cancel();
+    }
     super.onClose();
   }
 }

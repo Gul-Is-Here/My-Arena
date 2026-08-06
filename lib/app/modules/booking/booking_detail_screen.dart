@@ -6,6 +6,7 @@ import 'package:maps_launcher/maps_launcher.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../controllers/booking_controller.dart';
 import '../../data/models/arena_model.dart';
 import '../../data/models/booking_model.dart';
 import '../../services/arena_service.dart';
@@ -32,20 +33,33 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
   ];
 
+  late final BookingModel _initialBooking;
   ArenaModel? _arena;
   bool _loadingArena = true;
 
   @override
   void initState() {
     super.initState();
-    final b = Get.arguments as BookingModel;
-    ArenaService().fetchArena(b.arenaId).then((a) {
+    _initialBooking = Get.arguments as BookingModel;
+    ArenaService().fetchArena(_initialBooking.arenaId).then((a) {
       if (!mounted) return;
       setState(() {
         _arena = a;
         _loadingArena = false;
       });
     });
+  }
+
+  // Returns the live booking from the controller if available, falling back to
+  // the argument snapshot so the UI always has data even before the stream fires.
+  BookingModel _liveBooking() {
+    if (Get.isRegistered<BookingController>()) {
+      final live = Get.find<BookingController>()
+          .bookings
+          .firstWhereOrNull((b) => b.id == _initialBooking.id);
+      if (live != null) return live;
+    }
+    return _initialBooking;
   }
 
   Color _statusColor(BookingStatus s) {
@@ -101,7 +115,13 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final b = Get.arguments as BookingModel;
+    return Obx(() {
+      final b = _liveBooking();
+      return _buildContent(context, b);
+    });
+  }
+
+  Widget _buildContent(BuildContext context, BookingModel b) {
     final sColor = _activeStatusColor(b);
     final hasLocation =
         _arena != null && (_arena!.location.lat != 0 || _arena!.location.lng != 0);
@@ -109,7 +129,7 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
 
     // Show directions for confirmed+ (not just pending/rejected)
     final showDirections = b.status == BookingStatus.confirmed ||
-        b.isActive ||
+        b.status == BookingStatus.ongoing ||
         b.status == BookingStatus.completed;
 
     return Scaffold(

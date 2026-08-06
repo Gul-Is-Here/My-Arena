@@ -5,6 +5,7 @@ enum BookingStatus {
   pendingDeposit,
   depositSubmitted,
   confirmed,
+  ongoing,
   rejected,
   completed,
   cancelled,
@@ -23,6 +24,8 @@ extension BookingStatusX on BookingStatus {
         return 'deposit_submitted';
       case BookingStatus.confirmed:
         return 'confirmed';
+      case BookingStatus.ongoing:
+        return 'ongoing';
       case BookingStatus.rejected:
         return 'rejected';
       case BookingStatus.completed:
@@ -48,6 +51,8 @@ extension BookingStatusX on BookingStatus {
         return 'Deposit Submitted';
       case BookingStatus.confirmed:
         return 'Confirmed';
+      case BookingStatus.ongoing:
+        return 'Ongoing';
       case BookingStatus.rejected:
         return 'Rejected';
       case BookingStatus.completed:
@@ -225,9 +230,9 @@ class BookingModel {
   static String _fmtHour(int h) =>
       '${(h % 24).toString().padLeft(2, '0')}:00';
 
-  bool get isActive => status == BookingStatus.confirmed && checkedIn;
+  bool get isActive => status == BookingStatus.ongoing;
 
-  String get displayLabel => isActive ? 'Active' : status.label;
+  String get displayLabel => isActive ? 'Ongoing' : status.label;
 
   bool get isUpcoming =>
       endDateTime.isAfter(DateTime.now()) &&

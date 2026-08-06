@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:maps_launcher/maps_launcher.dart';
@@ -53,6 +54,7 @@ class DiscoveryController extends GetxController {
 
   StreamSubscription? _arenaSub;
   StreamSubscription? _carouselSub;
+  StreamSubscription? _authSub;
   DocumentSnapshot? _cursor;
   bool _usingGeoStream = false;
 
@@ -66,9 +68,29 @@ class DiscoveryController extends GetxController {
     ever(minRating, (_) => _refreshFiltered());
     ever(sortBy, (_) => _refreshFiltered());
     ever(searchRadius, (_) => _onRadiusChanged());
-    _fetchLocation();
-    _listenArenas();
-    _listenCarousel();
+
+    // Drive data loading from the auth state stream so that Firestore reads
+    // only start once the SDK has received a valid auth token.  On the very
+    // first login the token may not have propagated yet when this controller
+    // is initialised, causing silent PERMISSION_DENIED errors.  Reacting to
+    // authStateChanges() guarantees the token is ready before the first read.
+    _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user != null) {
+        _fetchLocation();
+        _listenArenas();
+        _listenCarousel();
+      } else {
+        _arenaSub?.cancel();
+        _carouselSub?.cancel();
+        _arenaSub = null;
+        _carouselSub = null;
+        _allArenas.clear();
+        _carouselArenas.clear();
+        userPosition.value = null;
+        cityName.value = 'Detecting location…';
+        isLoading.value = false;
+      }
+    });
   }
 
   Future<void> _fetchLocation() async {
@@ -309,6 +331,7 @@ class DiscoveryController extends GetxController {
   void onClose() {
     _arenaSub?.cancel();
     _carouselSub?.cancel();
+    _authSub?.cancel();
     super.onClose();
   }
 }

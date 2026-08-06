@@ -185,15 +185,28 @@ class AdminRepository {
 
   // ── User management ───────────────────────────────────────────────────
 
-  Future<void> toggleBan(UserModel user) async {
-    final next = !user.isActive;
-    await _db.collection('users').doc(user.uid).update({'isActive': next});
+  Future<void> changeAccountStatus(
+    UserModel user,
+    AccountStatus newStatus, {
+    String? reason,
+  }) async {
+    await _db
+        .collection('users')
+        .doc(user.uid)
+        .update({'accountStatus': newStatus.name});
     await _audit.log(
-      action: next ? AuditAction.userUnbanned : AuditAction.userBanned,
+      action: switch (newStatus) {
+        AccountStatus.suspended => AuditAction.userSuspended,
+        AccountStatus.active => AuditAction.userRestored,
+        AccountStatus.inactive => AuditAction.userDeactivated,
+        AccountStatus.archived => AuditAction.userArchived,
+        AccountStatus.pending => AuditAction.accountStatusChanged,
+      },
       entityType: 'user',
       entityId: user.uid,
-      oldData: {'isActive': user.isActive, 'name': user.name},
-      newData: {'isActive': next, 'name': user.name},
+      oldData: {'accountStatus': user.accountStatus.name, 'name': user.name},
+      newData: {'accountStatus': newStatus.name, 'name': user.name},
+      reason: reason,
     );
   }
 
@@ -208,6 +221,58 @@ class AdminRepository {
       entityId: user.uid,
       oldData: {'role': user.role.value, 'name': user.name},
       newData: {'role': newRole.value, 'name': user.name},
+    );
+  }
+
+  Future<void> updateAdminScope(
+    UserModel user, {
+    required List<String> managedOwnerIds,
+    required List<String> managedArenaIds,
+    int? ownerInviteLimit,
+  }) async {
+    final data = <String, dynamic>{
+      'managedOwnerIds': managedOwnerIds,
+      'managedArenaIds': managedArenaIds,
+    };
+    if (ownerInviteLimit != null) {
+      data['ownerInviteLimit'] = ownerInviteLimit;
+    } else {
+      data['ownerInviteLimit'] = null;
+    }
+    await _db.collection('users').doc(user.uid).update(data);
+    await _audit.log(
+      action: AuditAction.adminPermissionsChanged,
+      entityType: 'user',
+      entityId: user.uid,
+      oldData: {
+        'managedOwnerIds': user.managedOwnerIds,
+        'managedArenaIds': user.managedArenaIds,
+        'ownerInviteLimit': user.ownerInviteLimit,
+        'name': user.name,
+      },
+      newData: {
+        'managedOwnerIds': managedOwnerIds,
+        'managedArenaIds': managedArenaIds,
+        'ownerInviteLimit': ownerInviteLimit,
+        'name': user.name,
+      },
+    );
+  }
+
+  Future<void> updateCustomPermissions(
+    UserModel user,
+    Map<String, bool> newPerms,
+  ) async {
+    await _db
+        .collection('users')
+        .doc(user.uid)
+        .update({'customPermissions': newPerms});
+    await _audit.log(
+      action: AuditAction.adminPermissionsChanged,
+      entityType: 'user',
+      entityId: user.uid,
+      oldData: {'customPermissions': user.customPermissions, 'name': user.name},
+      newData: {'customPermissions': newPerms, 'name': user.name},
     );
   }
 

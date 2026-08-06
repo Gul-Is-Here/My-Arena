@@ -589,6 +589,8 @@ class DashboardTab extends StatelessWidget {
       case BookingStatus.refundPending:
       case BookingStatus.refundSent:
         return _red;
+      case BookingStatus.ongoing:
+        return _greenFixed;
       case BookingStatus.pendingDeposit:
       case BookingStatus.depositSubmitted:
       case BookingStatus.rescheduleRequested:
@@ -598,6 +600,8 @@ class DashboardTab extends StatelessWidget {
 
   IconData _statusIcon(BookingStatus s) {
     switch (s) {
+      case BookingStatus.ongoing:
+        return Icons.sports_outlined;
       case BookingStatus.confirmed:
       case BookingStatus.completed:
       case BookingStatus.refundConfirmed:

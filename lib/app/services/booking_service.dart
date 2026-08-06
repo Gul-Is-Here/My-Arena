@@ -286,6 +286,7 @@ class BookingService {
       _bookings.doc(bookingId).update({
         'checkedIn': true,
         'checkedInAt': FieldValue.serverTimestamp(),
+        'status': 'ongoing',
       });
 
   Future<void> markNoShow(String bookingId) =>
@@ -424,6 +425,24 @@ class BookingService {
       _db.collection('waitlist').doc(docId).delete();
 
   // ── Queries ──────────────────────────────────────────────────────────
+
+  /// Bookings across a list of arena IDs — used by arena staff who are not
+  /// the owner. Firestore `whereIn` supports up to 30 values.
+  Stream<List<BookingModel>> staffBookings(List<String> arenaIds,
+          {int limit = 200}) {
+    final ids = arenaIds.take(30).toList();
+    if (ids.isEmpty) {
+      return Stream.value([]);
+    }
+    return _bookings
+        .where('arenaId', whereIn: ids)
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
+        .snapshots()
+        .map((s) => s.docs
+            .map((d) => BookingModel.fromMap({...d.data(), 'id': d.id}))
+            .toList());
+  }
 
   Stream<List<BookingModel>> ownerBookings(String ownerId,
           {int limit = 200}) =>

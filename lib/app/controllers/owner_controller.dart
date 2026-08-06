@@ -29,6 +29,8 @@ class OwnerController extends GetxController {
 
   StreamSubscription? _arenaSub;
   StreamSubscription? _bookingsSub;
+  // One court-subcollection stream per arena, keyed by arenaId.
+  final Map<String, StreamSubscription> _courtSubs = {};
 
   String get _uid => AuthController.to.currentUser.value?.uid ?? '';
 
@@ -43,16 +45,62 @@ class OwnerController extends GetxController {
     _arenaSub?.cancel();
     if (_uid.isEmpty) return;
     isLoading.value = true;
-    // Courts are NOT fetched here — the arena document carries a courtSummary
-    // (written by ArenaService.syncCourtSummary after every court write) so
-    // owner list and dashboard cards work without N+1 subcollection reads.
-    _arenaSub = _arenaService.ownerArenas(_uid).listen(
-      (arenas) {
-        myArenas.assignAll(arenas);
-        isLoading.value = false;
-      },
-      onError: (_) => isLoading.value = false,
-    );
+
+    void onArenas(List<ArenaModel> arenas) {
+      // Preserve already-loaded courts: merge incoming arena docs with the
+      // courts that court-subcollection streams have already populated.
+      final merged = arenas.map((a) {
+        final existing = myArenas.firstWhereOrNull((e) => e.id == a.id);
+        return existing != null && existing.courts.isNotEmpty
+            ? a.copyWith(courts: existing.courts)
+            : a;
+      }).toList();
+      myArenas.assignAll(merged);
+      isLoading.value = false;
+      _syncCourtStreams(merged);
+    }
+
+    final user = AuthController.to.currentUser.value;
+    if (user?.isArenaStaff == true && user!.assignedArenas.isNotEmpty) {
+      _arenaSub = _arenaService.staffArenas(user.assignedArenas).listen(
+        onArenas,
+        onError: (_) => isLoading.value = false,
+      );
+    } else {
+      _arenaSub = _arenaService.ownerArenas(_uid).listen(
+        onArenas,
+        onError: (_) => isLoading.value = false,
+      );
+    }
+  }
+
+  /// Opens a Firestore courts-subcollection stream for every arena in [arenas]
+  /// that doesn't already have one, and cancels streams for arenas that are
+  /// no longer in the list. Each stream update merges courts directly into
+  /// [myArenas] so the UI rebuilds reactively without any manual refresh.
+  void _syncCourtStreams(List<ArenaModel> arenas) {
+    final liveIds = arenas.map((a) => a.id).toSet();
+
+    // Cancel subs for arenas that have been removed.
+    for (final id in _courtSubs.keys.toList()) {
+      if (!liveIds.contains(id)) {
+        _courtSubs.remove(id)?.cancel();
+      }
+    }
+
+    // Open subs for arenas we haven't subscribed to yet.
+    for (final arena in arenas) {
+      if (_courtSubs.containsKey(arena.id)) continue;
+      _courtSubs[arena.id] = _arenaService.courts(arena.id).listen(
+        (courts) {
+          final idx = myArenas.indexWhere((a) => a.id == arena.id);
+          if (idx == -1) return;
+          myArenas[idx] = myArenas[idx].copyWith(courts: courts);
+          myArenas.refresh();
+        },
+        onError: (_) {},
+      );
+    }
   }
 
   void _listenBookingStats() {
@@ -235,6 +283,10 @@ class OwnerController extends GetxController {
   void onClose() {
     _arenaSub?.cancel();
     _bookingsSub?.cancel();
+    for (final sub in _courtSubs.values) {
+      sub.cancel();
+    }
+    _courtSubs.clear();
     super.onClose();
   }
 }

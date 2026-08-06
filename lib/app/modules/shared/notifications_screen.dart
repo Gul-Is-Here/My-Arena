@@ -73,14 +73,13 @@ class _NotificationTile extends StatelessWidget {
 
   void _navigate() {
     if (n.relatedId == null || n.relatedId!.isEmpty) return;
+    final user = AuthController.to.currentUser.value;
 
     switch (n.type) {
       case 'booking':
-        final role = AuthController.to.currentUser.value?.role;
-        if (role == UserRole.owner || role == UserRole.staff) {
+        if (user?.role == UserRole.owner || user?.isArenaStaff == true) {
           Get.toNamed(AppRoutes.bookingDetailOwner, arguments: n.relatedId);
         } else {
-          // Customer — look up the already-loaded BookingModel by id.
           final bc = Get.find<BookingController>();
           final booking = bc.bookings.firstWhereOrNull(
             (b) => b.id == n.relatedId,
@@ -88,6 +87,17 @@ class _NotificationTile extends StatelessWidget {
           if (booking != null) {
             Get.toNamed(AppRoutes.bookingDetail, arguments: booking);
           }
+        }
+        break;
+      case 'chat':
+        // relatedId is the chatId
+        Get.toNamed(AppRoutes.chatRoom, arguments: n.relatedId);
+        break;
+      case 'support':
+        if (user?.role == UserRole.owner || user?.isArenaStaff == true) {
+          Get.toNamed(AppRoutes.ownerTickets);
+        } else {
+          Get.toNamed(AppRoutes.customerTicketDetail, arguments: n.relatedId);
         }
         break;
       case 'tournament':

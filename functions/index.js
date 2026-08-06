@@ -20,11 +20,13 @@ admin.initializeApp();
 const verifyEmail = require("./verifyEmail");
 const passwordReset = require("./passwordReset");
 const inviteOwner = require("./inviteOwner");
+const inviteAdmin = require("./inviteAdmin");
 const staffManagement = require("./staffManagement");
 
 exports.verifyEmail = onRequest(verifyEmail);
 exports.passwordReset = onRequest(passwordReset);
 exports.inviteOwner = onRequest({ cors: true }, inviteOwner);
+exports.inviteAdmin = onRequest({ cors: true }, inviteAdmin);
 exports.staffManagement = onRequest({ cors: true }, staffManagement);
 
 // ── FCM helpers ──────────────────────────────────────────────────────
@@ -53,6 +55,16 @@ async function sendPush(uid, title, body, type = "general", relatedId = null) {
     token,
     notification: { title, body },
     data: { type, ...(relatedId ? { relatedId } : {}) },
+    // High-priority delivery on both platforms so the OS wakes the app
+    // rather than deferring the push to a low-power batch window.
+    android: {
+      priority: "high",
+      notification: { sound: "default", channelId: "my_arena_channel" },
+    },
+    apns: {
+      headers: { "apns-priority": "10" },
+      payload: { aps: { sound: "default" } },
+    },
   });
 }
 
@@ -61,15 +73,17 @@ exports.onBookingCreated = onDocumentCreated("bookings/{bookingId}", async (even
   const data = event.data.data();
   const db = admin.firestore();
 
+  const title = "New Booking Request";
+  const body = `${data?.customerName ?? "A customer"} submitted a deposit for ${data?.courtName ?? "your court"}.`;
+
   // Notify owner of new booking
   if (data?.ownerId) {
-    await sendPush(
-      data.ownerId,
-      "New Booking Request",
-      `${data.customerName ?? "A customer"} submitted a deposit for ${data.courtName ?? "your court"}.`,
-      "booking",
-      event.params.bookingId
-    );
+    await sendPush(data.ownerId, title, body, "booking", event.params.bookingId);
+  }
+
+  // Notify all staff assigned to this arena
+  if (data?.arenaId) {
+    await notifyArenaStaff(db, data.arenaId, title, body, "booking", event.params.bookingId);
   }
 
   // Refresh next-available slot for the arena
@@ -77,6 +91,26 @@ exports.onBookingCreated = onDocumentCreated("bookings/{bookingId}", async (even
     await refreshNextAvailable(db, data.arenaId);
   }
 });
+
+// ── Notify all arena-assigned staff of an event ───────────────────────
+// Queries users where role=='staff' && assignedArenas arrayContains arenaId
+// and calls sendPush for each one. Runs in parallel and never throws.
+async function notifyArenaStaff(db, arenaId, title, body, type, relatedId) {
+  if (!arenaId) return;
+  try {
+    const snap = await db.collection("users")
+      .where("role", "==", "staff")
+      .where("assignedArenas", "array-contains", arenaId)
+      .get();
+    await Promise.all(snap.docs.map((d) =>
+      sendPush(d.id, title, body, type, relatedId).catch((e) =>
+        console.error(`notifyArenaStaff: failed to push to ${d.id}:`, e)
+      )
+    ));
+  } catch (e) {
+    console.error("notifyArenaStaff query failed:", e);
+  }
+}
 
 // ── Booking: status changed → notify customer + waitlist ──────────────
 exports.onBookingUpdated = onDocumentUpdated("bookings/{bookingId}", async (event) => {
@@ -97,6 +131,34 @@ exports.onBookingUpdated = onDocumentUpdated("bookings/{bookingId}", async (even
     if (msg) {
       const titles = { confirmed: "Booking Confirmed ✅", completed: "Session Complete ⭐" };
       await sendPush(uid, titles[after.status] ?? "Booking Update", msg, "booking", event.params.bookingId);
+    }
+  }
+
+  // Notify arena staff of booking status changes they need to act on or be aware of
+  if (after.arenaId) {
+    const db2 = admin.firestore();
+    const staffTitles = {
+      deposit_submitted: "New Deposit Submitted",
+      confirmed: "Booking Approved",
+      rejected: "Booking Rejected",
+      cancelled: "Booking Cancelled",
+      refund_pending: "Refund Requested",
+      refund_confirmed: "Refund Confirmed by Customer",
+      completed: "Session Completed",
+    };
+    const staffBodies = {
+      deposit_submitted: `${after.customerName ?? "A customer"} submitted a deposit for ${after.courtName ?? "a court"}.`,
+      confirmed: `${after.customerName ?? "A customer"}'s booking for ${after.courtName ?? "a court"} was approved.`,
+      rejected: `${after.customerName ?? "A customer"}'s booking for ${after.courtName ?? "a court"} was rejected.`,
+      cancelled: `${after.customerName ?? "A customer"} cancelled their booking for ${after.courtName ?? "a court"}.`,
+      refund_pending: `${after.customerName ?? "A customer"} requested a refund for ${after.courtName ?? "a court"}.`,
+      refund_confirmed: `${after.customerName ?? "A customer"} confirmed the refund for ${after.courtName ?? "a court"}.`,
+      completed: `Session for ${after.customerName ?? "a customer"} at ${after.courtName ?? "a court"} is complete.`,
+    };
+    const staffTitle = staffTitles[after.status];
+    const staffBody = staffBodies[after.status];
+    if (staffTitle && staffBody) {
+      await notifyArenaStaff(db2, after.arenaId, staffTitle, staffBody, "booking", event.params.bookingId);
     }
   }
 
@@ -259,21 +321,25 @@ exports.autoTransitionBookings = onSchedule("every 30 minutes", async () => {
       (data.startHour + data.totalHours) * 3600000;
   }
 
-  // confirmed → completed
-  const confirmedSnap = await db.collection("bookings")
-    .where("status", "==", "confirmed")
-    .where("date", "<=", todayTs)
-    .get();
+  // confirmed + ongoing → completed
+  // `confirmed` = approved but not yet checked in (may be a no-show)
+  // `ongoing`   = checked in via QR scan; session is now over
+  for (const queryStatus of ["confirmed", "ongoing"]) {
+    const snap = await db.collection("bookings")
+      .where("status", "==", queryStatus)
+      .where("date", "<=", todayTs)
+      .get();
 
-  for (const doc of confirmedSnap.docs) {
-    if (endMs(doc.data()) <= now.getTime()) {
-      batch.update(doc.ref, {
-        status: "completed",
-        completedAt: admin.firestore.FieldValue.serverTimestamp(),
-        // Never checked in → the customer didn't show up.
-        ...(doc.data().checkedIn ? {} : { noShow: true }),
-      });
-      ops++;
+    for (const doc of snap.docs) {
+      if (endMs(doc.data()) <= now.getTime()) {
+        batch.update(doc.ref, {
+          status: "completed",
+          completedAt: admin.firestore.FieldValue.serverTimestamp(),
+          // Only mark no-show when there was never a check-in.
+          ...(doc.data().checkedIn ? {} : { noShow: true }),
+        });
+        ops++;
+      }
     }
   }
 
@@ -297,6 +363,37 @@ exports.autoTransitionBookings = onSchedule("every 30 minutes", async () => {
 
   if (ops > 0) await batch.commit();
   console.log(`autoTransitionBookings: ${ops} bookings updated.`);
+});
+
+// ── Chat: new customer message → notify owner + arena staff ───────────
+exports.onChatMessageCreated = onDocumentCreated("chats/{chatId}/messages/{msgId}", async (event) => {
+  const msg = event.data.data();
+  // Only fan out for customer-sent messages in booking/arena chats.
+  if (!msg || msg.senderRole === "system" || msg.senderRole === "owner" || msg.senderRole === "staff") return;
+  if (msg.type === "system") return;
+
+  const db = admin.firestore();
+  const chatSnap = await db.collection("chats").doc(event.params.chatId).get();
+  if (!chatSnap.exists) return;
+  const chat = chatSnap.data();
+
+  // Only booking-type chats (customer ↔ owner/staff); skip support tickets.
+  if (chat.type !== "booking" && !chat.arenaId) return;
+
+  const arenaId = chat.arenaId;
+  const ownerId = chat.ownerId;
+  const preview = typeof msg.content === "string"
+    ? msg.content.substring(0, 60)
+    : "Sent a message";
+  const senderName = msg.senderName ?? "A customer";
+  const title = `New message from ${senderName}`;
+
+  if (ownerId) {
+    await sendPush(ownerId, title, preview, "chat", event.params.chatId);
+  }
+  if (arenaId) {
+    await notifyArenaStaff(db, arenaId, title, preview, "chat", event.params.chatId);
+  }
 });
 
 // ── Arena: new review → recalculate average rating ────────────────────

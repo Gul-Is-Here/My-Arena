@@ -275,6 +275,8 @@ class _BookingCard extends StatelessWidget {
       case BookingStatus.refundPending:
       case BookingStatus.refundSent:
         return _amber;
+      case BookingStatus.ongoing:
+        return AppColors.primary;
       case BookingStatus.pendingDeposit:
       case BookingStatus.depositSubmitted:
       case BookingStatus.rescheduleRequested:

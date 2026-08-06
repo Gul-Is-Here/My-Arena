@@ -289,7 +289,7 @@ class _LoginScreenState extends State<LoginScreen>
                       ),
                       const SizedBox(height: 12),
 
-                      // Activate owner account — only shown to owner portal
+                      // Activate owner/staff/admin accounts
                       if (_portal == UserRole.owner) ...[
                         Center(
                           child: TextButton(
@@ -297,6 +297,19 @@ class _LoginScreenState extends State<LoginScreen>
                                 Get.toNamed(AppRoutes.activateOwner),
                             child: Text(
                               'Have an owner invitation? Activate Account',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.textDisabled,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                        Center(
+                          child: TextButton(
+                            onPressed: () =>
+                                Get.toNamed(AppRoutes.activateAdmin),
+                            child: Text(
+                              'Have an admin invitation? Activate Admin Account',
                               style: AppTextStyles.bodySmall.copyWith(
                                 color: AppColors.textDisabled,
                               ),

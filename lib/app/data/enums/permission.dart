@@ -54,4 +54,10 @@ enum Permission {
   // ── Notifications ─────────────────────────────────────────────────────
   viewAdminNotifications,
   sendBroadcast,
+
+  // ── Admin management ──────────────────────────────────────────────────
+  inviteAdmins,
+  inviteOwners,
+  manageAdmins,
+  changeAccountStatus,
 }
