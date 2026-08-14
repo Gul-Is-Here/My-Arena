@@ -44,6 +44,7 @@ import '../modules/auth/splash_screen.dart';
 import '../modules/auth/workspace_selector_screen.dart';
 import '../modules/customer/arena_detail_customer_screen.dart';
 import '../modules/customer/arena_list_screen.dart';
+import '../modules/customer/arena_map_view_screen.dart';
 import '../modules/customer/customer_dashboard_screen.dart';
 import '../modules/owner/add_arena_screen.dart';
 import '../modules/owner/edit_arena_screen.dart';
@@ -81,12 +82,22 @@ import '../modules/admin/admin_booking_detail_screen.dart';
 import '../modules/admin/admin_customers_screen.dart';
 import '../modules/admin/admin_customer_detail_screen.dart';
 import '../modules/admin/admin_finance_screen.dart';
+import '../data/enums/permission.dart';
 import '../middleware/auth_middleware.dart';
 import '../modules/shared/edit_profile_screen.dart';
 import '../modules/shared/help_support_screen.dart';
 import '../modules/support/customer_tickets_screen.dart';
 import '../modules/support/customer_ticket_detail_screen.dart';
 import '../modules/support/submit_ticket_screen.dart';
+import '../modules/owner/pos/pos_shell_screen.dart';
+import '../modules/owner/pos/live_court_screen.dart';
+import '../modules/owner/pos/pos_walk_in_screen.dart';
+import '../modules/owner/pos/pos_transactions_screen.dart';
+import '../modules/owner/pos/pos_expenses_screen.dart';
+import '../modules/owner/pos/pos_shift_screen.dart';
+import '../modules/owner/pos/pos_reports_screen.dart';
+import '../modules/owner/pos/pos_products_screen.dart';
+import '../modules/owner/pos_receipt_screen.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -239,6 +250,11 @@ class AppPages {
       page: () => const ArenaDetailCustomerScreen(),
       middlewares: [AuthMiddleware()],
     ),
+    GetPage(
+      name: AppRoutes.arenaMapView,
+      page: () => const ArenaMapViewScreen(),
+      middlewares: [AuthMiddleware()],
+    ),
 
     // Phase 3 — Booking
     GetPage(
@@ -335,107 +351,107 @@ class AppPages {
     GetPage(
       name: AppRoutes.adminArenas,
       page: () => const AdminArenasScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.viewArenas)],
     ),
     GetPage(
       name: AppRoutes.adminBoosts,
       page: () => const AdminBoostsScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.viewBoosts)],
     ),
     GetPage(
       name: AppRoutes.adminUsers,
       page: () => const AdminUsersScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.viewUsers)],
     ),
     GetPage(
       name: AppRoutes.adminPermissions,
       page: () => AdminPermissionsScreen(user: Get.arguments as UserModel),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.manageAdmins)],
     ),
     GetPage(
       name: AppRoutes.adminScope,
       page: () => AdminScopeScreen(user: Get.arguments as UserModel),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.manageAdmins)],
     ),
     GetPage(
       name: AppRoutes.adminSettings,
       page: () => const AdminSettingsScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.manageSettings)],
     ),
     GetPage(
       name: AppRoutes.adminAuditLogs,
       page: () => const AdminAuditLogsScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.viewAuditLogs)],
     ),
     GetPage(
       name: AppRoutes.adminBookings,
       page: () => const AdminBookingsScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.viewAllBookings)],
     ),
     GetPage(
       name: AppRoutes.adminBookingDetail,
       page: () => const AdminBookingDetailScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.viewAllBookings)],
     ),
     GetPage(
       name: AppRoutes.adminCustomers,
       page: () => const AdminCustomersScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.viewUsers)],
     ),
     GetPage(
       name: AppRoutes.adminCustomerDetail,
       page: () => const AdminCustomerDetailScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.viewUsers)],
     ),
     GetPage(
       name: AppRoutes.adminFinance,
       page: () => const AdminFinanceScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.viewFinancials)],
     ),
     GetPage(
       name: AppRoutes.adminArenaDetail,
       page: () => const AdminArenaDetailScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.viewArenas)],
     ),
     GetPage(
       name: AppRoutes.adminChats,
       page: () => const AdminChatsScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.viewAllTickets)],
     ),
     GetPage(
       name: AppRoutes.adminChatView,
       page: () => const AdminChatViewScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.viewAllTickets)],
     ),
     GetPage(
       name: AppRoutes.adminTickets,
       page: () => const AdminTicketsScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.viewAllTickets)],
     ),
     GetPage(
       name: AppRoutes.adminTicketDetail,
       page: () => const AdminTicketDetailScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.viewAllTickets)],
     ),
     GetPage(
       name: AppRoutes.adminBookingAnalytics,
       page: () => const AdminBookingAnalyticsScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.viewAnalytics)],
     ),
     GetPage(
       name: AppRoutes.adminRevenueAnalytics,
       page: () => const AdminRevenueAnalyticsScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.viewFinancials)],
     ),
     GetPage(
       name: AppRoutes.adminStaffAnalytics,
       page: () => const AdminStaffAnalyticsScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.viewAnalytics)],
     ),
     GetPage(
       name: AppRoutes.adminNotifications,
       page: () => const AdminNotificationsScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.viewAdminNotifications)],
     ),
 
     // Phase 5 — Tournaments
@@ -482,7 +498,7 @@ class AppPages {
     GetPage(
       name: AppRoutes.adminTournaments,
       page: () => const AdminTournamentsScreen(),
-      middlewares: [AdminMiddleware()],
+      middlewares: [PermissionMiddleware(Permission.manageTournaments)],
     ),
     GetPage(
       name: AppRoutes.helpSupport,
@@ -505,6 +521,70 @@ class AppPages {
       name: AppRoutes.submitTicket,
       page: () => const SubmitTicketScreen(),
       middlewares: [AuthMiddleware()],
+    ),
+
+    // Phase 6 — POS (Owner)
+    GetPage(
+      name: AppRoutes.posDashboard,
+      page: () => const PosShellScreen(),
+      middlewares: [OwnerMiddleware()],
+    ),
+    GetPage(
+      name: AppRoutes.posLiveCourts,
+      page: () => const LiveCourtScreen(),
+      middlewares: [OwnerMiddleware()],
+    ),
+    GetPage(
+      name: AppRoutes.posWalkIn,
+      page: () => const PosWalkInScreen(),
+      middlewares: [OwnerMiddleware()],
+    ),
+    GetPage(
+      name: AppRoutes.posReceipt,
+      page: () {
+        final args = Get.arguments as Map<String, dynamic>;
+        return PosReceiptScreen(
+          booking: args['booking'],
+          arenaName: args['arenaName'],
+          courtName: args['courtName'],
+          date: args['date'],
+          startHour: args['startHour'],
+          totalHours: args['totalHours'],
+          total: args['total'],
+          paymentMethod: args['paymentMethod'],
+          customerPhone: args['customerPhone'] ?? '',
+          amountPaid: args['amountPaid'] ?? 0.0,
+          remainingAmount: args['remainingAmount'] ?? 0.0,
+          discount: args['discount'] ?? 0.0,
+          addOns: args['addOns'] ?? const {},
+        );
+      },
+      middlewares: [OwnerMiddleware()],
+    ),
+    GetPage(
+      name: AppRoutes.posTransactions,
+      page: () => const PosTransactionsScreen(),
+      middlewares: [OwnerMiddleware()],
+    ),
+    GetPage(
+      name: AppRoutes.posExpenses,
+      page: () => const PosExpensesScreen(),
+      middlewares: [OwnerMiddleware()],
+    ),
+    GetPage(
+      name: AppRoutes.posShift,
+      page: () => const PosShiftScreen(),
+      middlewares: [OwnerMiddleware()],
+    ),
+    GetPage(
+      name: AppRoutes.posReports,
+      page: () => const PosReportsScreen(),
+      middlewares: [OwnerMiddleware()],
+    ),
+    GetPage(
+      name: AppRoutes.posProducts,
+      page: () => const PosProductsScreen(),
+      middlewares: [OwnerMiddleware()],
     ),
   ];
 }

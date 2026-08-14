@@ -14,43 +14,7 @@ class PermissionService extends GetxService {
 
   /// Permission matrix — every role gets an explicit set.
   static final Map<UserRole, Set<Permission>> _matrix = {
-    UserRole.superAdmin: {
-      // Full access — everything
-      Permission.viewArenas,
-      Permission.approveArena,
-      Permission.rejectArena,
-      Permission.suspendArena,
-      Permission.restoreArena,
-      Permission.deleteArena,
-      Permission.featureArena,
-      Permission.manageCarousel,
-      Permission.verifyArenaDocs,
-      Permission.viewAllBookings,
-      Permission.cancelAnyBooking,
-      Permission.refundBooking,
-      Permission.markNoShow,
-      Permission.viewUsers,
-      Permission.suspendUser,
-      Permission.deleteUser,
-      Permission.changeUserRole,
-      Permission.manageStaff,
-      Permission.viewBoosts,
-      Permission.approveBoost,
-      Permission.rejectBoost,
-      Permission.viewAllTickets,
-      Permission.assignTicket,
-      Permission.resolveTicket,
-      Permission.viewAnalytics,
-      Permission.viewFinancials,
-      Permission.exportReports,
-      Permission.manageSettings,
-      Permission.manageCMS,
-      Permission.viewAuditLogs,
-      Permission.exportAuditLogs,
-      Permission.manageTournaments,
-      Permission.viewAdminNotifications,
-      Permission.sendBroadcast,
-    },
+    UserRole.superAdmin: Permission.values.toSet(), // Full access — every permission
 
     UserRole.admin: {
       Permission.viewArenas,
@@ -70,6 +34,7 @@ class PermissionService extends GetxService {
       Permission.suspendUser,
       Permission.deleteUser,
       Permission.changeUserRole,
+      Permission.changeAccountStatus,
       Permission.manageStaff,
       Permission.viewBoosts,
       Permission.approveBoost,
@@ -87,6 +52,9 @@ class PermissionService extends GetxService {
       Permission.manageTournaments,
       Permission.viewAdminNotifications,
       Permission.sendBroadcast,
+      Permission.inviteAdmins,
+      Permission.inviteOwners,
+      Permission.manageAdmins,
     },
 
     UserRole.operationsManager: {
@@ -101,6 +69,8 @@ class PermissionService extends GetxService {
       Permission.refundBooking,
       Permission.markNoShow,
       Permission.viewUsers,
+      Permission.suspendUser,
+      Permission.changeAccountStatus,
       Permission.viewBoosts,
       Permission.approveBoost,
       Permission.rejectBoost,
@@ -111,6 +81,7 @@ class PermissionService extends GetxService {
       Permission.viewFinancials,
       Permission.manageTournaments,
       Permission.viewAdminNotifications,
+      Permission.inviteOwners,
     },
 
     UserRole.supportAgent: {

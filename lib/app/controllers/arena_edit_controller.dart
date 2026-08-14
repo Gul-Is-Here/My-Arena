@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -102,7 +100,7 @@ class ArenaEditController extends GetxController {
     if (isSaving.value || !_validate()) return;
     isSaving.value = true;
     try {
-      final files = newImages.map((x) => File(x.path)).toList();
+      final files = newImages.toList();
       final uploadedUrls = files.isEmpty
           ? <String>[]
           : await _arenaService.uploadArenaImages(arenaId, files);

@@ -38,6 +38,9 @@ class AdminInvitationModel {
   /// True when an existing user was upgraded rather than a new account created.
   final bool isUpgrade;
 
+  /// False until the invitee successfully logs in for the first time.
+  final bool hasLoggedIn;
+
   const AdminInvitationModel({
     required this.id,
     required this.email,
@@ -56,18 +59,24 @@ class AdminInvitationModel {
     this.resendCount = 0,
     this.lastResentAt,
     this.isUpgrade = false,
+    this.hasLoggedIn = false,
   });
 
   bool get isExpired =>
       status == InvitationStatus.expired ||
       (status == InvitationStatus.pending && DateTime.now().isAfter(expiresAt));
 
-  bool get canResend =>
-      status == InvitationStatus.pending &&
-      !isExpired &&
-      resendCount < 5 &&
-      (lastResentAt == null ||
-          DateTime.now().difference(lastResentAt!).inMinutes >= 60);
+  bool get canResend {
+    if (resendCount >= 10) return false;
+    final cooldownOk = lastResentAt == null ||
+        DateTime.now().difference(lastResentAt!).inMinutes >= 60;
+    if (!cooldownOk) return false;
+    // Pending and not expired — resend fresh activation email
+    if (status == InvitationStatus.pending && !isExpired) return true;
+    // Accepted but admin hasn't logged in yet — resend login reminder
+    if (status == InvitationStatus.accepted && !hasLoggedIn && !isUpgrade) return true;
+    return false;
+  }
 
   factory AdminInvitationModel.fromMap(Map<String, dynamic> m, String docId) {
     DateTime toDateTime(dynamic v) {
@@ -101,6 +110,7 @@ class AdminInvitationModel {
       resendCount: (m['resendCount'] as int?) ?? 0,
       lastResentAt: toDateTimeNullable(m['lastResentAt']),
       isUpgrade: m['isUpgrade'] as bool? ?? false,
+      hasLoggedIn: m['hasLoggedIn'] as bool? ?? false,
     );
   }
 }

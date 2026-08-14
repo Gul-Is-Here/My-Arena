@@ -9,8 +9,7 @@
 
 const admin = require("firebase-admin");
 const crypto = require("crypto");
-const { getEmailConfig } = require("./emailConfig");
-const { buildEmail } = require("./emailTemplates");
+// Lazy-loaded inside sendInviteEmail to avoid cold-start crash if emailConfig.js is absent.
 
 const INVITATIONS = "ownerInvitations";
 const USERS = "users";
@@ -63,6 +62,8 @@ async function writeAuditLog(action, actorUid, actorRole, entityId, targetUid, m
 }
 
 async function sendInviteEmail(email, name, code, isUpgrade) {
+  const { getEmailConfig } = require("./emailConfig");
+  const { buildEmail } = require("./emailTemplates");
   const { transporter, WEBMAIL_CONFIG } = getEmailConfig();
 
   const html = isUpgrade

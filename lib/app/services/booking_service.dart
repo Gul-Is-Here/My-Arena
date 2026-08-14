@@ -1,9 +1,8 @@
-import 'dart:io';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../data/models/booking_model.dart';
 
@@ -73,7 +72,7 @@ class BookingService {
   /// could fail after the customer was already shown a success screen.
   Future<String> createBookingWithDeposit(
     BookingModel booking, {
-    required File screenshot,
+    required XFile screenshot,
     required String accountUsed,
   }) async {
     final ref = _bookings.doc();
@@ -83,7 +82,7 @@ class BookingService {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? ref.id;
     final storageRef = _storage.ref(
         'bookings/$uid/deposit_${ref.id}_${DateTime.now().millisecondsSinceEpoch}.jpg');
-    await storageRef.putFile(screenshot);
+    await storageRef.putData(await screenshot.readAsBytes());
     final screenshotUrl = await storageRef.getDownloadURL();
     debugPrint('📸 [createBookingWithDeposit] screenshot uploaded → $screenshotUrl');
 
@@ -169,11 +168,11 @@ class BookingService {
       });
 
   Future<void> submitDeposit(String bookingId,
-      {required File screenshot, required String accountUsed}) async {
+      {required XFile screenshot, required String accountUsed}) async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? bookingId;
     final ref = _storage.ref(
         'bookings/$uid/deposit_${bookingId}_${DateTime.now().millisecondsSinceEpoch}.jpg');
-    await ref.putFile(screenshot);
+    await ref.putData(await screenshot.readAsBytes());
     final url = await ref.getDownloadURL();
     await updateStatus(bookingId, 'deposit_submitted', extra: {
       'depositPayment': {
@@ -222,11 +221,11 @@ class BookingService {
     }
   }
 
-  Future<void> submitRefund(String bookingId, File screenshot) async {
+  Future<void> submitRefund(String bookingId, XFile screenshot) async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? bookingId;
     final ref = _storage.ref(
         'bookings/$uid/refund_${bookingId}_${DateTime.now().millisecondsSinceEpoch}.jpg');
-    await ref.putFile(screenshot);
+    await ref.putData(await screenshot.readAsBytes());
     final url = await ref.getDownloadURL();
     await updateStatus(bookingId, 'refund_sent', extra: {
       'cancellation.refundScreenshot': url,
@@ -289,6 +288,18 @@ class BookingService {
         'status': 'ongoing',
       });
 
+  Future<void> extendSession(String bookingId, int extraHours) =>
+      _bookings.doc(bookingId).update({
+        'totalHours': FieldValue.increment(extraHours),
+      });
+
+  Future<void> checkoutSession(String bookingId, double amountCollected) =>
+      _bookings.doc(bookingId).update({
+        'status': BookingStatus.completed.key,
+        'completedAt': FieldValue.serverTimestamp(),
+        'amountPaid': FieldValue.increment(amountCollected),
+      });
+
   Future<void> markNoShow(String bookingId) =>
       updateStatus(bookingId, BookingStatus.completed.key, extra: {
         'noShow': true,
@@ -309,7 +320,7 @@ class BookingService {
   Future<List<String>> createRecurringBookings(
     BookingModel first,
     int totalWeeks, {
-    File? depositScreenshot,
+    XFile? depositScreenshot,
     String? depositAccount,
   }) async {
     final ids = <String>[];

@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
@@ -52,10 +50,8 @@ class ArenaImage extends StatelessWidget {
         errorWidget: (context2, url, err) => placeholder,
       );
     } else {
-      final file = File(path!);
-      imageWidget = file.existsSync()
-          ? Image.file(file, height: height, width: width, fit: BoxFit.cover)
-          : placeholder;
+      // Local file path — show placeholder on web since dart:io is unavailable.
+      imageWidget = placeholder;
     }
 
     return ClipRRect(borderRadius: radius, child: imageWidget);

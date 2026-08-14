@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -339,7 +338,7 @@ class ChatController extends GetxController {
         senderId: myUid,
         senderRole: myRole,
         senderName: senderName,
-        file: File(picked.path),
+        file: picked,
         participants: chat.participants,
         bookingRef: bookingRef,
       );

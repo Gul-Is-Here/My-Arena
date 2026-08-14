@@ -27,6 +27,9 @@ class _StaffDetailScreenState extends State<StaffDetailScreen> {
     super.initState();
     _staff = Get.arguments as UserModel;
     _selectedArenaIds = Set<String>.from(_staff.assignedArenas);
+    if (!Get.isRegistered<OwnerController>()) {
+      Get.put(OwnerController());
+    }
     _allArenas = Get.find<OwnerController>().myArenas.toList();
   }
 
@@ -295,23 +298,31 @@ class _PermissionsSection extends StatelessWidget {
   final UserModel staff;
   const _PermissionsSection({required this.staff});
 
+  String _label(String p) => p == 'edit_arena' ? 'Edit Arena' : 'Edit Courts';
+
   @override
   Widget build(BuildContext context) {
     if (staff.assignedArenas.isEmpty) return const SizedBox.shrink();
 
+    final arenaIdsWithPerms = staff.assignedArenas
+        .where((id) => staff.permissionsFor(id).isNotEmpty)
+        .toList();
+
+    if (arenaIdsWithPerms.isEmpty) return const SizedBox.shrink();
+
+    final ctrl = Get.find<StaffManagementController>();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Granted Permissions',
-            style: AppTextStyles.label),
+        Text('Granted Permissions', style: AppTextStyles.label),
         const SizedBox(height: 4),
-        Text('Permissions granted beyond default bookings view.',
+        Text('Tap × to revoke access.',
             style: AppTextStyles.bodySmall
                 .copyWith(color: AppColors.textSecondary)),
         const SizedBox(height: 10),
-        ...staff.assignedArenas.map((arenaId) {
+        ...arenaIdsWithPerms.map((arenaId) {
           final perms = staff.permissionsFor(arenaId);
-          if (perms.isEmpty) return const SizedBox.shrink();
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: AppCard(
@@ -325,15 +336,41 @@ class _PermissionsSection extends StatelessWidget {
                   const SizedBox(height: 6),
                   Wrap(
                     spacing: 6,
+                    runSpacing: 4,
                     children: perms.map((p) {
-                      final label = p == 'edit_arena' ? 'Edit Arena' : 'Edit Courts';
                       return Chip(
-                        label: Text(label),
+                        label: Text(_label(p)),
                         labelStyle: AppTextStyles.bodySmall
                             .copyWith(color: AppColors.onPrimary),
                         backgroundColor: AppColors.primary,
+                        deleteIcon: const Icon(Icons.close, size: 14,
+                            color: AppColors.onPrimary),
+                        onDeleted: () async {
+                          final confirm = await Get.dialog<bool>(AlertDialog(
+                            title: const Text('Revoke Access'),
+                            content: Text(
+                                'Remove "${_label(p)}" access from ${staff.name}?'),
+                            actions: [
+                              TextButton(
+                                  onPressed: () => Get.back(result: false),
+                                  child: const Text('Cancel')),
+                              TextButton(
+                                  onPressed: () => Get.back(result: true),
+                                  child: Text('Revoke',
+                                      style: TextStyle(
+                                          color: AppColors.error))),
+                            ],
+                          ));
+                          if (confirm == true) {
+                            await ctrl.revokePermission(
+                              staffUid: staff.uid,
+                              arenaId: arenaId,
+                              permission: p,
+                            );
+                          }
+                        },
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        padding: EdgeInsets.zero,
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
                       );
                     }).toList(),
                   ),

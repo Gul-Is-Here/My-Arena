@@ -12,8 +12,7 @@
 
 const admin = require("firebase-admin");
 const crypto = require("crypto");
-const { getEmailConfig } = require("./emailConfig");
-const { buildEmail } = require("./emailTemplates");
+// Lazy-loaded inside sendStaffInviteEmail to avoid cold-start crash if emailConfig.js is absent.
 
 const STAFF_INVITATIONS = "staffInvitations";
 const STAFF_PERM_REQUESTS = "staffPermissionRequests";
@@ -34,6 +33,8 @@ function hashCode(code) {
 
 // ── Auth helpers ────────────────────────────────────────────────────────────
 
+const ADMIN_ROLES = ["admin", "superAdmin", "operationsManager", "supportAgent", "finance", "contentManager", "moderator"];
+
 async function verifyOwner(req) {
   const authHeader = req.headers.authorization || "";
   if (!authHeader.startsWith("Bearer ")) return null;
@@ -41,9 +42,11 @@ async function verifyOwner(req) {
   try {
     const decoded = await admin.auth().verifyIdToken(token);
     const snap = await admin.firestore().collection(USERS).doc(decoded.uid).get();
-    const role = snap.data()?.role ?? "customer";
-    if (role !== "owner") return null;
-    return { uid: decoded.uid, name: snap.data()?.name ?? "Arena Owner" };
+    const data = snap.data();
+    const role = data?.role ?? "customer";
+    // Allow owners AND admin-tier roles to manage staff permissions.
+    if (role !== "owner" && !ADMIN_ROLES.includes(role)) return null;
+    return { uid: decoded.uid, role, name: data?.name ?? "Arena Owner" };
   } catch (_) {
     return null;
   }
@@ -85,6 +88,8 @@ async function writeAuditLog(action, actorUid, actorRole, entityId, targetUid, m
 }
 
 async function sendStaffInviteEmail(email, staffName, ownerName, arenaNames, code) {
+  const { getEmailConfig } = require("./emailConfig");
+  const { buildEmail } = require("./emailTemplates");
   const { transporter, WEBMAIL_CONFIG } = getEmailConfig();
   const arenaList = arenaNames.length > 0
     ? arenaNames.map(n => `<li>${n}</li>`).join("")
@@ -391,7 +396,7 @@ async function revokeStaffInvitation(db, owner, body, res) {
   }
 
   const inv = invSnap.data();
-  if (inv.ownerId !== owner.uid) {
+  if (!ADMIN_ROLES.includes(owner.role) && inv.ownerId !== owner.uid) {
     return res.status(403).json({ success: false, message: "Not your invitation." });
   }
   if (inv.status !== "pending") {
@@ -435,7 +440,7 @@ async function updateStaffAssignment(db, owner, body, res) {
   }
 
   const staffData = staffSnap.data();
-  if (staffData.ownerId !== owner.uid) {
+  if (!ADMIN_ROLES.includes(owner.role) && staffData.ownerId !== owner.uid) {
     return res.status(403).json({ success: false, message: "This staff member does not belong to your team." });
   }
 
@@ -541,7 +546,7 @@ async function resolvePermission(db, owner, body, res) {
   }
 
   const req = reqSnap.data();
-  if (req.ownerId !== owner.uid) {
+  if (!ADMIN_ROLES.includes(owner.role) && req.ownerId !== owner.uid) {
     return res.status(403).json({ success: false, message: "This request does not belong to your team." });
   }
   if (req.status !== "pending") {
@@ -583,6 +588,58 @@ async function resolvePermission(db, owner, body, res) {
   }).catch(e => console.error("Notification write failed:", e));
 
   return res.status(200).json({ success: true, message: approved ? "Permission granted." : "Request denied." });
+}
+
+// ── ACTION: revoke_permission ────────────────────────────────────────────────
+
+async function revokePermission(db, owner, body, res) {
+  const { staffUid, arenaId, permission } = body;
+  if (!staffUid || !arenaId || !permission) {
+    return res.status(400).json({ success: false, message: "staffUid, arenaId and permission are required." });
+  }
+
+  const staffRef = db.collection(USERS).doc(staffUid);
+  const staffSnap = await staffRef.get();
+  if (!staffSnap.exists) {
+    return res.status(404).json({ success: false, message: "Staff member not found." });
+  }
+
+  const staffData = staffSnap.data();
+  const callerIsAdmin = ADMIN_ROLES.includes(owner.role);
+  if (!callerIsAdmin && staffData.ownerId !== owner.uid) {
+    return res.status(403).json({ success: false, message: "This staff member does not belong to your team." });
+  }
+
+  const existing = staffData.arenaPermissions ?? {};
+  const current = existing[arenaId] ?? [];
+  const updated = current.filter(p => p !== permission);
+
+  if (updated.length === current.length) {
+    return res.status(200).json({ success: true, message: "Permission was not set." });
+  }
+
+  if (updated.length === 0) {
+    // Remove the key entirely when no permissions remain for this arena
+    await staffRef.update({
+      [`arenaPermissions.${arenaId}`]: admin.firestore.FieldValue.delete(),
+    });
+  } else {
+    await staffRef.update({
+      [`arenaPermissions.${arenaId}`]: updated,
+    });
+  }
+
+  // Notify staff
+  await admin.firestore().collection("notifications").add({
+    uid: staffUid,
+    title: "Permission Revoked",
+    body: `Your ${permission === 'edit_arena' ? 'Edit Arena' : 'Edit Courts'} access for an arena has been removed by your owner.`,
+    type: "staff_permission",
+    read: false,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  }).catch(e => console.error("Notification write failed:", e));
+
+  return res.status(200).json({ success: true, message: "Permission revoked." });
 }
 
 // ── Router ───────────────────────────────────────────────────────────────────
@@ -633,6 +690,8 @@ const staffManagementHandler = async (req, res) => {
         return await updateStaffAssignment(db, owner, req.body, res);
       case "resolve_permission":
         return await resolvePermission(db, owner, req.body, res);
+      case "revoke_permission":
+        return await revokePermission(db, owner, req.body, res);
       default:
         return res.status(400).json({ success: false, message: `Unknown action: ${action}` });
     }

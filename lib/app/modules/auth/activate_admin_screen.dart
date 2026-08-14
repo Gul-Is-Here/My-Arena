@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../controllers/auth_controller.dart';
+import '../../data/models/user_model.dart';
 import '../../services/otp_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text_styles.dart';
@@ -48,6 +49,10 @@ class _ActivateAdminScreenState extends State<ActivateAdminScreen> {
         code: _codeCtrl.text.trim().toUpperCase(),
         password: _passCtrl.text,
       );
+      // Ensure the portal context is admin-tier before signing in, so that
+      // any fallback user-doc creation (Firestore fetch failed) never
+      // overwrites the intended role with UserRole.customer.
+      AuthController.to.selectedRole.value = UserRole.admin;
       await AuthController.to.signInWithEmail(
         email: _emailCtrl.text.trim(),
         password: _passCtrl.text,

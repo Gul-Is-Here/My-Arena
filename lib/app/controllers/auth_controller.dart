@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide User;
 import 'package:firebase_auth/firebase_auth.dart' as fb show User;
 import 'package:flutter/material.dart';
@@ -329,6 +330,9 @@ class AuthController extends GetxController {
           'This account has been ${profile.accountStatus.name}. Contact support.');
     }
     await _service.touchLastLogin(fbUser.uid);
+    if (profile.role.isAdminTier) {
+      unawaited(_service.markAdminInvitationLoggedIn(fbUser.uid));
+    }
     _saveSession(profile);
     _watchProfile(fbUser.uid);
 
@@ -426,9 +430,7 @@ class AuthController extends GetxController {
 
   final RxDouble photoUploadProgress = 0.0.obs;
 
-  Future<void> uploadProfilePhoto(
-    dynamic file, // dart:io File
-  ) async {
+  Future<void> uploadProfilePhoto(XFile file) async {
     await _run(() async {
       final user = currentUser.value;
       if (user == null) return;

@@ -83,6 +83,9 @@ class _EarningsScreenState extends State<EarningsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!Get.isRegistered<OwnerBookingController>()) {
+      Get.put(OwnerBookingController(), permanent: true);
+    }
     final bookings = OwnerBookingController.to;
     final selectedRange = _selectedRange;
 

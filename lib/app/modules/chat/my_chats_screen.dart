@@ -53,6 +53,7 @@ class _MyChatsScreenState extends State<MyChatsScreen>
       floatingActionButton: Padding(
         padding: const EdgeInsets.only(bottom: 84),
         child: FloatingActionButton.extended(
+          heroTag: 'my_chats_fab',
           backgroundColor: AppColors.primary,
           foregroundColor: AppColors.onPrimary,
           icon: const Icon(Icons.support_agent),

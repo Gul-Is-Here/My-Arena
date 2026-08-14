@@ -125,7 +125,7 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                     _summaryCard(b),
                     const SizedBox(height: 14),
                     _paymentCard(b),
-                    if (b.depositScreenshot != null) ...[
+                    if (!b.isPosBooking && b.depositScreenshot != null) ...[
                       const SizedBox(height: 14),
                       _depositProofCard(context, b),
                     ],
@@ -376,6 +376,7 @@ class BookingDetailOwnerScreen extends StatelessWidget {
   }
 
   Widget _paymentCard(BookingModel b) {
+    if (b.isPosBooking) return _posPaymentCard(b);
     final hasScreenshot = b.depositScreenshot != null;
     return _card(
       child: Column(
@@ -430,6 +431,94 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                     Text(hasScreenshot ? 'Screenshot Uploaded' : 'Awaiting Screenshot',
                         style: AppTextStyles.caption.copyWith(
                             color: hasScreenshot ? _cyan : _amber,
+                            fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _posPaymentCard(BookingModel b) {
+    final paid = b.amountPaid ?? 0;
+    final remaining = b.remainingAmount;
+    final fullyPaid = remaining <= 0;
+    final method = b.posPaymentMethod ?? 'cash';
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Payment Info',
+              style: AppTextStyles.titleMedium.copyWith(color: _onSurface, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 14),
+          _amountRow('Court Total', 'PKR ${b.totalAmount.toStringAsFixed(0)}'),
+          if (b.posDiscount > 0) ...[
+            const SizedBox(height: 8),
+            _amountRow('Discount', '− PKR ${b.posDiscount.toStringAsFixed(0)}'),
+          ],
+          if (b.posAddOnsTotal > 0) ...[
+            const SizedBox(height: 8),
+            _amountRow('Add-ons', '+ PKR ${b.posAddOnsTotal.toStringAsFixed(0)}'),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.check_circle, size: 16, color: _greenFixed),
+                  const SizedBox(width: 8),
+                  Text('Amount Paid',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                          color: _greenFixed, fontWeight: FontWeight.w700)),
+                ],
+              ),
+              Text('PKR ${paid.toStringAsFixed(0)}',
+                  style: AppTextStyles.titleMedium.copyWith(
+                      color: _greenFixed, fontSize: 15, fontWeight: FontWeight.w800)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _amountRow('Balance Due', 'PKR ${remaining.toStringAsFixed(0)}'),
+          const SizedBox(height: 14),
+          const Divider(height: 1, color: _outline),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Payment Method',
+                  style: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar, fontSize: 13)),
+              Text(method[0].toUpperCase() + method.substring(1),
+                  style: AppTextStyles.bodyMedium.copyWith(
+                      color: _onSurface, fontWeight: FontWeight.w700, fontSize: 13)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Payment Status',
+                  style: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar, fontSize: 13)),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: (fullyPaid ? _greenFixed : _amber).withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                      color: (fullyPaid ? _greenFixed : _amber).withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(fullyPaid ? Icons.check_circle_outline : Icons.pending_outlined,
+                        size: 13, color: fullyPaid ? _greenFixed : _amber),
+                    const SizedBox(width: 5),
+                    Text(fullyPaid ? 'Fully Paid' : 'Balance Pending',
+                        style: AppTextStyles.caption.copyWith(
+                            color: fullyPaid ? _greenFixed : _amber,
                             fontWeight: FontWeight.w700)),
                   ],
                 ),

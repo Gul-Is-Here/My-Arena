@@ -36,6 +36,44 @@ service cloud.firestore {
       ];
     }
 
+    // Checks a named permission for the current user.
+    // superAdmin always passes; for all other admin-tier roles we check
+    // customPermissions (explicit deny wins over role default).
+    // This mirrors the Flutter PermissionService.can() two-layer logic but
+    // only covers the permissions we can enumerate in rules without duplicating
+    // the full matrix. Role-default grants are enforced by the role checks below.
+    function hasPerm(permName) {
+      let custom = userDoc().get('customPermissions', {});
+      // Explicit deny always blocks.
+      return !(custom.get(permName, true) == false);
+    }
+
+    // Convenience wrappers for the most sensitive write operations.
+    function canSuspendUser() {
+      return isSuperAdmin() ||
+        (isAdminTier() && hasPerm('suspendUser'));
+    }
+
+    function canChangeRole() {
+      return isSuperAdmin() ||
+        (isAdmin() && hasPerm('changeUserRole'));
+    }
+
+    function canManageSettings() {
+      return isSuperAdmin() ||
+        (isAdmin() && hasPerm('manageSettings'));
+    }
+
+    function canApproveArena() {
+      return isSuperAdmin() ||
+        (isAdminTier() && hasPerm('approveArena'));
+    }
+
+    function canViewFinancials() {
+      return isSuperAdmin() ||
+        (isAdminTier() && hasPerm('viewFinancials'));
+    }
+
     function isOwner() {
       return isAuth() && role() == 'owner';
     }
@@ -66,10 +104,17 @@ service cloud.firestore {
       allow update: if isAuth() && (
         (uid() == userId &&
           !request.resource.data.diff(resource.data)
-            .affectedKeys().hasAny(['role', 'isActive']))
+            .affectedKeys().hasAny(['role', 'isActive', 'accountStatus',
+              'customPermissions', 'managedArenaIds', 'managedOwnerIds']))
+        || (canChangeRole() &&
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['role', 'customPermissions', 'managedArenaIds', 'managedOwnerIds']))
+        || (canSuspendUser() &&
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['accountStatus', 'isActive']))
         || isAdmin()
       );
-      allow delete: if isAdmin();
+      allow delete: if isSuperAdmin();
 
       match /favorites/{arenaId} {
         allow read, write: if isAuth() && uid() == userId;
@@ -246,7 +291,7 @@ service cloud.firestore {
     // ── Settings (admin-managed config) ───────────────────────────────
     match /settings/{docId} {
       allow read: if isAuth();
-      allow write: if isAdmin();
+      allow write: if canManageSettings();
     }
 
     // ── Waitlist ──────────────────────────────────────────────────────
@@ -357,6 +402,33 @@ service cloud.firestore {
     match /finance/{docId} {
       allow read: if isAdminTier();
       allow write: if isAdmin();
+    }
+
+    // ── POS collections ───────────────────────────────────────────────
+    match /posTransactions/{txnId} {
+      allow read: if isOwner() || isAdminTier() || isStaff();
+      allow create: if isOwner() || isStaff();
+      allow update: if isOwner(); // refunds only
+      allow delete: if false;
+    }
+
+    match /posExpenses/{expId} {
+      allow read: if isOwner() || isAdminTier() || isStaff();
+      allow create: if isOwner() || isStaff();
+      allow update: if isOwner();
+      allow delete: if isOwner();
+    }
+
+    match /posShifts/{shiftId} {
+      allow read: if isOwner() || isAdminTier() || isStaff();
+      allow create: if isOwner() || isStaff();
+      allow update: if isOwner() || isStaff();
+      allow delete: if false;
+    }
+
+    match /arenas/{arenaId}/posProducts/{productId} {
+      allow read: if isOwner() || isStaff() || isAdminTier();
+      allow create, update, delete: if isOwner();
     }
 
     // ── Slot locks ────────────────────────────────────────────────────

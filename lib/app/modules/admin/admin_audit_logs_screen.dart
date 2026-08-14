@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -81,12 +80,11 @@ class _AdminAuditLogsScreenState extends State<AdminAuditLogsScreen> {
       ].join(','));
     }
     try {
-      final file = File(
-          '${Directory.systemTemp.path}/audit_logs_${DateTime.now().millisecondsSinceEpoch}.csv');
-      await file.writeAsString(buf.toString());
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        subject: 'MyArena Audit Logs ${DateFormat('yyyy-MM-dd').format(DateTime.now())}',
+      await SharePlus.instance.share(
+        ShareParams(
+          text: buf.toString(),
+          subject: 'MyArena Audit Logs ${DateFormat('yyyy-MM-dd').format(DateTime.now())}',
+        ),
       );
     } catch (e) {
       Get.snackbar('Export failed', e.toString(),

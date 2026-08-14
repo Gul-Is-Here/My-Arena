@@ -173,6 +173,27 @@ class BookingModel {
   /// Total number of weeks in the series (e.g. 8).
   final int? recurringTotal;
 
+  // ── POS / walk-in payment method ──────────────────────────────────────
+  /// Non-null only for owner manual bookings. Values: 'cash', 'jazzcash', 'easypaisa', 'card'.
+  final String? posPaymentMethod;
+
+  // ── POS payment amounts ────────────────────────────────────────────────
+  /// Amount actually collected at the time of booking (POS/walk-in only).
+  /// Null = online booking (uses 30% deposit model instead).
+  final double? amountPaid;
+
+  /// True for bookings created through the POS walk-in flow.
+  final bool isPosBooking;
+
+  /// Discount applied at POS (absolute amount, e.g. 200.0 = PKR 200 off).
+  final double posDiscount;
+
+  /// List of add-on product IDs included in this booking.
+  final List<String> posAddOnIds;
+
+  /// Total cost of POS add-ons (stored to avoid re-fetching product prices).
+  final double posAddOnsTotal;
+
   // ── Group booking ─────────────────────────────────────────────────────
   final bool isGroupBooking;
   /// Total number of players sharing the slot.
@@ -210,12 +231,21 @@ class BookingModel {
     this.isGroupBooking = false,
     this.groupSize = 1,
     this.joinCode,
+    this.posPaymentMethod,
+    this.amountPaid,
+    this.isPosBooking = false,
+    this.posDiscount = 0,
+    this.posAddOnIds = const [],
+    this.posAddOnsTotal = 0,
   });
 
-  double get totalAmount => totalAmountStored ?? pricePerHour * totalHours;
+  double get totalAmount =>
+      (totalAmountStored ?? pricePerHour * totalHours) + posAddOnsTotal - posDiscount;
   double get depositAmount =>
       totalAmount * BookingSettings.depositPercent / 100;
-  double get remainingAmount => totalAmount - depositAmount;
+  // POS bookings store the actual amount paid; online bookings use deposit model.
+  double get remainingAmount =>
+      isPosBooking ? totalAmount - (amountPaid ?? 0) : totalAmount - depositAmount;
 
   DateTime get startDateTime =>
       DateTime(date.year, date.month, date.day, startHour);
@@ -287,6 +317,12 @@ class BookingModel {
         if (isGroupBooking) 'isGroupBooking': true,
         if (isGroupBooking) 'groupSize': groupSize,
         if (joinCode != null) 'joinCode': joinCode,
+        if (posPaymentMethod != null) 'posPaymentMethod': posPaymentMethod,
+        if (isPosBooking) 'isPosBooking': true,
+        if (amountPaid != null) 'amountPaid': amountPaid,
+        if (posDiscount > 0) 'posDiscount': posDiscount,
+        if (posAddOnIds.isNotEmpty) 'posAddOnIds': posAddOnIds,
+        if (posAddOnsTotal > 0) 'posAddOnsTotal': posAddOnsTotal,
       };
 
   factory BookingModel.fromMap(Map<String, dynamic> m) => BookingModel(
@@ -332,6 +368,12 @@ class BookingModel {
         isGroupBooking: m['isGroupBooking'] ?? false,
         groupSize: (m['groupSize'] ?? 1) as int,
         joinCode: m['joinCode'] as String?,
+        posPaymentMethod: m['posPaymentMethod'] as String?,
+        isPosBooking: m['isPosBooking'] ?? false,
+        amountPaid: m['amountPaid'] != null ? (m['amountPaid'] as num).toDouble() : null,
+        posDiscount: (m['posDiscount'] as num?)?.toDouble() ?? 0,
+        posAddOnIds: List<String>.from(m['posAddOnIds'] as List? ?? []),
+        posAddOnsTotal: (m['posAddOnsTotal'] as num?)?.toDouble() ?? 0,
       );
 
   bool get isRecurring => recurringGroupId != null;
@@ -346,6 +388,12 @@ class BookingModel {
     String? ownerId,
     bool? hasReview,
     RescheduleRequest? rescheduleRequest,
+    String? posPaymentMethod,
+    double? amountPaid,
+    bool? isPosBooking,
+    double? posDiscount,
+    List<String>? posAddOnIds,
+    double? posAddOnsTotal,
   }) =>
       BookingModel(
         id: id,
@@ -376,5 +424,12 @@ class BookingModel {
         isGroupBooking: isGroupBooking,
         groupSize: groupSize,
         joinCode: joinCode,
+        posPaymentMethod: posPaymentMethod ?? this.posPaymentMethod,
+        amountPaid: amountPaid ?? this.amountPaid,
+        isPosBooking: isPosBooking ?? this.isPosBooking,
+        posDiscount: posDiscount ?? this.posDiscount,
+        posAddOnIds: posAddOnIds ?? this.posAddOnIds,
+        posAddOnsTotal: posAddOnsTotal ?? this.posAddOnsTotal,
+        totalAmountStored: totalAmountStored,
       );
 }

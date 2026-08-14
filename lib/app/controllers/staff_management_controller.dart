@@ -149,6 +149,23 @@ class StaffManagementController extends GetxController {
     });
   }
 
+  Future<void> revokePermission({
+    required String staffUid,
+    required String arenaId,
+    required String permission,
+  }) async {
+    await _run(() async {
+      final token = await _idToken();
+      await _post(token, {
+        'action': 'revoke_permission',
+        'staffUid': staffUid,
+        'arenaId': arenaId,
+        'permission': permission,
+      });
+      _snack('Access Removed', 'Permission has been revoked.');
+    });
+  }
+
   Future<void> resolvePermission(String requestId,
       {required bool approved}) async {
     await _run(() async {

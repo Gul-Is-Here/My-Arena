@@ -73,10 +73,14 @@ extension UserRoleX on UserRole {
       this == UserRole.contentManager ||
       this == UserRole.moderator;
 
-  static UserRole fromString(String? role) => UserRole.values.firstWhere(
-        (r) => r.name == role?.trim(),
-        orElse: () => UserRole.customer,
-      );
+  static UserRole fromString(String? role) {
+    if (role == null) return UserRole.customer;
+    final normalized = role.trim().toLowerCase().replaceAll('_', '');
+    return UserRole.values.firstWhere(
+      (r) => r.name.toLowerCase() == normalized,
+      orElse: () => UserRole.customer,
+    );
+  }
 }
 
 class UserModel {

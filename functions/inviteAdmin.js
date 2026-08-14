@@ -10,8 +10,8 @@
 
 const admin = require("firebase-admin");
 const crypto = require("crypto");
-const { getEmailConfig } = require("./emailConfig");
-const { buildEmail } = require("./emailTemplates");
+// emailConfig and emailTemplates are lazy-loaded inside sendAdminInviteEmail
+// so that a missing emailConfig.js does not crash the entire module at cold start.
 
 const INVITATIONS = "adminInvitations";
 const USERS = "users";
@@ -69,6 +69,8 @@ async function writeAuditLog(action, actorUid, actorRole, entityId, targetUid, m
 }
 
 async function sendAdminInviteEmail(email, name, role, code) {
+  const { getEmailConfig } = require("./emailConfig");
+  const { buildEmail } = require("./emailTemplates");
   const { transporter, WEBMAIL_CONFIG } = getEmailConfig();
   const roleLabel = role.replace(/([A-Z])/g, " $1").trim();
 
@@ -101,6 +103,72 @@ async function sendAdminInviteEmail(email, name, role, code) {
     from: `"MyArena" <${WEBMAIL_CONFIG.email}>`,
     to: email,
     subject: `Your invitation to join MyArena as ${roleLabel}`,
+    html,
+  });
+}
+
+async function sendLoginReminderEmail(email, name, role) {
+  const { getEmailConfig } = require("./emailConfig");
+  const { buildEmail } = require("./emailTemplates");
+  const { transporter, WEBMAIL_CONFIG } = getEmailConfig();
+  const roleLabel = role.replace(/([A-Z])/g, " $1").trim();
+
+  const html = buildEmail({
+    role: "admin",
+    headline: `Your MyArena admin account is ready, ${name}!`,
+    bodyHtml: `
+      <p style="margin:0 0 12px;">
+        Your <strong>${roleLabel}</strong> account on the MyArena platform is activated and ready to use.
+      </p>
+      <p style="margin:0;">
+        Open the MyArena app, switch to the <strong>Owner / Admin</strong> portal tab, and sign in
+        with your email and the password you set during activation.
+      </p>
+    `,
+    footerNote: `
+      🔐 Use your email and the password you already created to sign in — no new activation code needed.
+    `,
+    securityNote: "Didn't request this? Contact your MyArena super administrator.",
+  });
+
+  await transporter.sendMail({
+    from: `"MyArena" <${WEBMAIL_CONFIG.email}>`,
+    to: email,
+    subject: "Reminder: Sign in to your MyArena admin account",
+    html,
+  });
+}
+
+async function sendRoleUpgradeEmail(email, name, role) {
+  const { getEmailConfig } = require("./emailConfig");
+  const { buildEmail } = require("./emailTemplates");
+  const { transporter, WEBMAIL_CONFIG } = getEmailConfig();
+  const roleLabel = role.replace(/([A-Z])/g, " $1").trim();
+
+  const html = buildEmail({
+    role: "admin",
+    headline: `Your MyArena role has been upgraded, ${name}!`,
+    bodyHtml: `
+      <p style="margin:0 0 12px;">
+        Your account has been granted <strong>${roleLabel}</strong> access on the MyArena platform.
+      </p>
+      <p style="margin:0;">
+        You can now sign in to the MyArena app with your existing credentials and
+        use the <strong>"Admin or Staff? Sign in here"</strong> link on the login screen
+        to access the admin panel.
+      </p>
+    `,
+    footerNote: `
+      🔐 As a ${roleLabel} you will have access to the MyArena admin panel
+      with permissions appropriate to your role.
+    `,
+    securityNote: "Didn't expect this? Contact your MyArena super administrator immediately.",
+  });
+
+  await transporter.sendMail({
+    from: `"MyArena" <${WEBMAIL_CONFIG.email}>`,
+    to: email,
+    subject: `Your MyArena role has been upgraded to ${roleLabel}`,
     html,
   });
 }
@@ -202,6 +270,13 @@ async function inviteAdmin(db, caller, body, res) {
       targetRole, email: normalizedEmail, isUpgrade: true,
     });
 
+    // Notify the existing user that their role was upgraded (non-fatal).
+    try {
+      await sendRoleUpgradeEmail(normalizedEmail, name.trim(), targetRole);
+    } catch (e) {
+      console.error("Upgrade notification email failed (non-fatal):", e);
+    }
+
     return res.status(200).json({
       success: true,
       isUpgrade: true,
@@ -260,6 +335,7 @@ async function inviteAdmin(db, caller, body, res) {
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     resendCount: 0,
     isUpgrade: false,
+    hasLoggedIn: false,
   });
 
   try {
@@ -304,13 +380,16 @@ async function resendInvitation(db, caller, body, res) {
   }
 
   const inv = invSnap.data();
-  if (inv.status !== "pending") {
+
+  // Allow resend if pending OR accepted-but-not-yet-logged-in
+  const canResendAccepted = inv.status === "accepted" && inv.hasLoggedIn === false;
+  if (inv.status !== "pending" && !canResendAccepted) {
+    if (inv.status === "accepted") {
+      return res.status(400).json({ success: false, message: "Admin has already logged in." });
+    }
     return res.status(400).json({ success: false, message: `Cannot resend a ${inv.status} invitation.` });
   }
-  if (inv.expiresAt.toDate() < new Date()) {
-    return res.status(400).json({ success: false, message: "Invitation expired. Revoke and create a new one." });
-  }
-  if ((inv.resendCount ?? 0) >= 5) {
+  if ((inv.resendCount ?? 0) >= 10) {
     return res.status(429).json({ success: false, message: "Maximum resends reached." });
   }
   if (inv.lastResentAt) {
@@ -320,22 +399,32 @@ async function resendInvitation(db, caller, body, res) {
     }
   }
 
-  // Generate a fresh code
-  const activationCode = generateActivationCode();
-  const codeHash = hashCode(activationCode);
-  const expiresAt = new Date(Date.now() + INVITE_TTL_HOURS * 3_600_000);
-
   await invRef.update({
-    codeHash,
-    expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
     resendCount: admin.firestore.FieldValue.increment(1),
     lastResentAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 
-  try {
-    await sendAdminInviteEmail(inv.email, inv.name, inv.targetRole, activationCode);
-  } catch (e) {
-    console.error("Resend email failed (non-fatal):", e);
+  if (canResendAccepted) {
+    // Account is activated but admin hasn't logged in yet — send a login reminder.
+    try {
+      await sendLoginReminderEmail(inv.email, inv.name, inv.targetRole);
+    } catch (e) {
+      console.error("Login reminder email failed (non-fatal):", e);
+    }
+  } else {
+    // Still pending — generate a fresh code and extend expiry.
+    const activationCode = generateActivationCode();
+    const codeHash = hashCode(activationCode);
+    const expiresAt = new Date(Date.now() + INVITE_TTL_HOURS * 3_600_000);
+    await invRef.update({
+      codeHash,
+      expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+    });
+    try {
+      await sendAdminInviteEmail(inv.email, inv.name, inv.targetRole, activationCode);
+    } catch (e) {
+      console.error("Resend email failed (non-fatal):", e);
+    }
   }
 
   await writeAuditLog("admin.invitation_resent", caller.uid, caller.role, invitationId, inv.targetUid, {

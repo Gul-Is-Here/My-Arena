@@ -3,8 +3,10 @@ import 'package:get/get.dart';
 
 import '../controllers/auth_controller.dart';
 import '../controllers/owner_controller.dart';
+import '../data/enums/permission.dart';
 import '../data/models/user_model.dart';
 import '../routes/app_routes.dart';
+import '../services/permission_service.dart';
 
 /// Redirects unauthenticated users to login.
 class AuthMiddleware extends GetMiddleware {
@@ -88,6 +90,34 @@ class OwnerOrArenaStaffMiddleware extends GetMiddleware {
       return null;
     }
     return const RouteSettings(name: AppRoutes.unauthorized);
+  }
+}
+
+/// Requires admin-tier role AND a specific permission.
+/// SuperAdmins are always allowed through regardless of customPermissions.
+class PermissionMiddleware extends GetMiddleware {
+  final Permission permission;
+  PermissionMiddleware(this.permission);
+
+  @override
+  int? get priority => 2;
+
+  @override
+  RouteSettings? redirect(String? route) {
+    final auth = Get.find<AuthController>();
+    if (!auth.isLoggedIn) {
+      return const RouteSettings(name: AppRoutes.login);
+    }
+    final role = auth.currentUser.value?.role;
+    if (!(role?.isAdminTier ?? false)) {
+      return const RouteSettings(name: AppRoutes.unauthorized);
+    }
+    // SuperAdmin always passes — never blocked by permission middleware.
+    if (role == UserRole.superAdmin) return null;
+    if (!PermissionService.to.can(permission)) {
+      return const RouteSettings(name: AppRoutes.unauthorized);
+    }
+    return null;
   }
 }
 

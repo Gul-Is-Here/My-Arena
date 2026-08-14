@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -169,7 +168,7 @@ class BoostController extends GetxController {
             : null,
         createdAt: DateTime.now(),
       );
-      await _boostService.createRequest(req, File(screenshot.value!.path));
+      await _boostService.createRequest(req, screenshot.value!);
       isSubmitting.value = false;
       _resetForm();
       Get.back();

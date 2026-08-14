@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -352,7 +351,7 @@ class BookingController extends GetxController {
   Future<XFile?> pickDepositScreenshot() =>
       _picker.pickImage(source: ImageSource.gallery);
 
-  Future<String> submitDeposit(File screenshot, String accountUsed) async {
+  Future<String> submitDeposit(XFile screenshot, String accountUsed) async {
     final b = draft!;
     String bookingId;
     if (b.isRecurring && b.recurringTotal != null && b.recurringTotal! > 1) {

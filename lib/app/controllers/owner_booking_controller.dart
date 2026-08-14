@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -142,7 +141,7 @@ class OwnerBookingController extends GetxController {
   Future<void> sendRefund(String id) async {
     final picked = await _picker.pickImage(source: ImageSource.gallery);
     if (picked == null) return;
-    await _service.submitRefund(id, File(picked.path));
+    await _service.submitRefund(id, picked);
   }
 
   /// Called by the QR scanner when the owner scans a customer's booking QR.
@@ -165,6 +164,29 @@ class OwnerBookingController extends GetxController {
     await _service.checkIn(bookingId);
     return null; // null = success
   }
+
+  /// Returns null on success, error string on failure.
+  Future<String?> extendSession(BookingModel booking, int extraHours) async {
+    final sameCourt = bookings.where((b) =>
+        b.courtId == booking.courtId &&
+        b.date.year == booking.date.year &&
+        b.date.month == booking.date.month &&
+        b.date.day == booking.date.day &&
+        b.id != booking.id &&
+        !b.isCancelled);
+
+    final currentEnd = booking.startHour + booking.totalHours;
+    final newEnd = currentEnd + extraHours;
+    final conflict = sameCourt.any((b) =>
+        b.startHour >= currentEnd && b.startHour < newEnd);
+    if (conflict) return 'Next slot is already booked — cannot extend';
+
+    await _service.extendSession(booking.id, extraHours);
+    return null;
+  }
+
+  Future<void> checkoutSession(String bookingId, double amountCollected) =>
+      _service.checkoutSession(bookingId, amountCollected);
 
   Future<void> markNoShow(String bookingId) => _service.markNoShow(bookingId);
 

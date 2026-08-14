@@ -30,6 +30,7 @@ class MyTeamScreen extends StatelessWidget {
           bottom: MediaQuery.of(context).padding.bottom + 68,
         ),
         child: FloatingActionButton.extended(
+          heroTag: 'my_team_fab',
           onPressed: () => _showInviteSheet(context, ctrl),
           backgroundColor: AppColors.primary,
           foregroundColor: AppColors.onPrimary,

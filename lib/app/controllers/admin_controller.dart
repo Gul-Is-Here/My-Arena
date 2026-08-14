@@ -143,7 +143,7 @@ class AdminController extends GetxController {
   // ── Derived lists ─────────────────────────────────────────────────────
 
   List<ArenaModel> get pendingArenas =>
-      arenas.where((a) => a.status == ArenaStatus.pending).toList();
+      scopedArenas.where((a) => a.status == ArenaStatus.pending).toList();
 
   List<BoostRequestModel> get pendingBoosts =>
       boosts.where((b) => b.status == BoostStatus.pending).toList();

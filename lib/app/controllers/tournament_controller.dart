@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -121,7 +120,7 @@ class TournamentController extends GetxController {
 
   // ── Tournament CRUD ────────────────────────────────────────────────
 
-  Future<void> create(TournamentModel t, {File? banner}) async {
+  Future<void> create(TournamentModel t, {XFile? banner}) async {
     await _service.createTournament(t, banner: banner);
   }
 
@@ -135,7 +134,7 @@ class TournamentController extends GetxController {
 
   // ── Registration ───────────────────────────────────────────────────
 
-  Future<void> register(RegistrationModel reg, {File? paymentScreenshot}) async {
+  Future<void> register(RegistrationModel reg, {XFile? paymentScreenshot}) async {
     await _service.createRegistration(reg, paymentScreenshot: paymentScreenshot);
   }
 

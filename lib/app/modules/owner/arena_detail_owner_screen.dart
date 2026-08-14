@@ -61,6 +61,9 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!Get.isRegistered<OwnerController>()) {
+      Get.put(OwnerController());
+    }
     final owner = OwnerController.to;
     final String? arenaId = Get.arguments as String?;
     if (arenaId == null) {

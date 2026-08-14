@@ -11,6 +11,7 @@ import '../../services/booking_service.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/slot_status.dart';
 import '../../widgets/slot_picker_widgets.dart';
+import 'pos_receipt_screen.dart';
 
 /// Walk-in booking created by the owner — confirmed immediately since
 /// payment is taken in person. Uses the same live slot grid as the
@@ -28,8 +29,10 @@ class _ManualBookingScreenState extends State<ManualBookingScreen> {
   final _phoneCtrl = TextEditingController();
   final _bookingService = BookingService();
 
-  late final List<ArenaModel> arenas = OwnerController.to.myArenas;
-  late ArenaModel _arena = arenas.isNotEmpty ? arenas.first : ArenaModel.empty();
+  String _paymentMethod = 'cash'; // cash | jazzcash | easypaisa | card
+
+  late List<ArenaModel> arenas;
+  late ArenaModel _arena;
   CourtModel? _court;
   DateTime _date = DateTime.now();
   int _duration = 1;
@@ -47,6 +50,11 @@ class _ManualBookingScreenState extends State<ManualBookingScreen> {
   @override
   void initState() {
     super.initState();
+    if (!Get.isRegistered<OwnerController>()) {
+      Get.put(OwnerController());
+    }
+    arenas = OwnerController.to.myArenas;
+    _arena = arenas.isNotEmpty ? arenas.first : ArenaModel.empty();
     _court = _activeCourts.isNotEmpty ? _activeCourts.first : null;
     _loadBookedSlots();
   }
@@ -146,28 +154,35 @@ class _ManualBookingScreenState extends State<ManualBookingScreen> {
     final startHour = _selectedHours.reduce((a, b) => a < b ? a : b);
     setState(() => _submitting = true);
     try {
-      await OwnerBookingController.to.addManualBooking(
-        BookingModel(
-          id: '',
-          arenaId: _arena.id,
+      final booking = BookingModel(
+        id: '',
+        arenaId: _arena.id,
+        arenaName: _arena.name,
+        courtId: court.id,
+        courtName: court.name,
+        customerName: _nameCtrl.text.trim(),
+        bookedByRole: 'owner',
+        date: DateTime(_date.year, _date.month, _date.day),
+        startHour: startHour,
+        totalHours: _selectedHours.length,
+        pricePerHour: court.pricePerHour,
+        createdAt: DateTime.now(),
+        posPaymentMethod: _paymentMethod,
+      );
+      await OwnerBookingController.to.addManualBooking(booking);
+      Get.back();
+      Get.to(
+        () => PosReceiptScreen(
+          booking: booking.copyWith(),
           arenaName: _arena.name,
-          courtId: court.id,
           courtName: court.name,
-          customerName: _nameCtrl.text.trim(),
-          bookedByRole: 'owner',
-          date: DateTime(_date.year, _date.month, _date.day),
+          date: _date,
           startHour: startHour,
           totalHours: _selectedHours.length,
-          pricePerHour: court.pricePerHour,
-          createdAt: DateTime.now(),
+          total: _total,
+          paymentMethod: _paymentMethod,
+          customerPhone: _phoneCtrl.text.trim(),
         ),
-      );
-      Get.back();
-      Get.snackbar(
-        'Walk-in booked',
-        '${court.name} · ${_fmtDate(_date)} · ${fmtHour12(startHour)}',
-        snackPosition: SnackPosition.BOTTOM,
-        margin: const EdgeInsets.all(16),
       );
     } catch (e) {
       setState(() => _submitting = false);
@@ -352,6 +367,14 @@ class _ManualBookingScreenState extends State<ManualBookingScreen> {
                         const SizedBox(height: 24),
                       ],
 
+                      const _SectionLabel('PAYMENT METHOD'),
+                      const SizedBox(height: 10),
+                      _PaymentMethodPicker(
+                        selected: _paymentMethod,
+                        onSelect: (m) => setState(() => _paymentMethod = m),
+                      ),
+                      const SizedBox(height: 20),
+
                       const _SectionLabel('CUSTOMER DETAILS'),
                       const SizedBox(height: 10),
                       _DarkField(
@@ -522,6 +545,65 @@ class _DarkChip extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _PaymentMethodPicker extends StatelessWidget {
+  final String selected;
+  final ValueChanged<String> onSelect;
+
+  const _PaymentMethodPicker({required this.selected, required this.onSelect});
+
+  static const _methods = [
+    ('cash', 'Cash', Icons.payments_outlined),
+    ('jazzcash', 'JazzCash', Icons.account_balance_wallet_outlined),
+    ('easypaisa', 'Easypaisa', Icons.mobile_friendly_outlined),
+    ('card', 'Card', Icons.credit_card_outlined),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: _methods.map((m) {
+        final (key, label, icon) = m;
+        final sel = selected == key;
+        return GestureDetector(
+          onTap: () => onSelect(key),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 130),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: sel ? SlotPickerColors.greenCta : SlotPickerColors.surface,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: sel
+                    ? SlotPickerColors.greenCta
+                    : Colors.white.withValues(alpha: 0.08),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon,
+                    size: 15,
+                    color: sel ? AppColors.onPrimary : SlotPickerColors.muted),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: sel ? AppColors.onPrimary : SlotPickerColors.onBg,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 }

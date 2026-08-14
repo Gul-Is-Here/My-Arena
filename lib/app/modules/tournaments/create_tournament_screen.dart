@@ -1,7 +1,7 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-
-import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
@@ -32,6 +32,7 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
   final _descCtrl = TextEditingController();
   String _sport = 'Padel';
   XFile? _banner;
+  Uint8List? _bannerBytes;
   bool _submitting = false;
 
   // Step 2 — format
@@ -125,7 +126,7 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
           prizeDetails: _prizeCtrl.text.trim(),
           createdAt: DateTime.now(),
         ),
-        banner: _banner != null ? File(_banner!.path) : null,
+        banner: _banner,
       );
       Get.back();
       Get.snackbar(
@@ -285,7 +286,13 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
           GestureDetector(
             onTap: () async {
               final picked = await TournamentController.to.pickBanner();
-              if (picked != null) setState(() => _banner = picked);
+              if (picked != null) {
+                final bytes = await picked.readAsBytes();
+                setState(() {
+                  _banner = picked;
+                  _bannerBytes = bytes;
+                });
+              }
             },
             child: Container(
               height: 110,
@@ -303,7 +310,7 @@ class _CreateTournamentScreenState extends State<CreateTournamentScreen> {
               child: _banner != null
                   ? ClipRRect(
                       borderRadius: BorderRadius.circular(16),
-                      child: Image.file(File(_banner!.path),
+                      child: Image.memory(_bannerBytes!,
                           fit: BoxFit.cover,
                           width: double.infinity,
                           height: 110),

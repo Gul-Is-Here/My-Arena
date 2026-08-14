@@ -80,7 +80,7 @@ class _AdminArenasScreenState extends State<AdminArenasScreen> {
           onPressed: () => _showOwnerPicker(context, admin),
         ),
         body: Obx(() {
-          admin.arenas.length;
+          admin.scopedArenas.length;
           return TabBarView(
             children: [
               _pendingTab(admin),
@@ -422,7 +422,7 @@ class _AdminArenasScreenState extends State<AdminArenasScreen> {
         ),
         Expanded(
           child: Builder(builder: (_) {
-            final filtered = _applyFilter(admin.arenas.toList());
+            final filtered = _applyFilter(admin.scopedArenas);
             if (filtered.isEmpty) {
               return Center(
                 child: Text('No arenas match',

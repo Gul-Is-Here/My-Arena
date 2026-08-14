@@ -1,12 +1,13 @@
-import 'dart:io';
-
-import 'package:awesome_notifications/awesome_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+
+// awesome_notifications is native-only — import guarded at call sites via kIsWeb.
+import 'package:awesome_notifications/awesome_notifications.dart'
+    if (dart.library.html) '../utils/awesome_notifications_stub.dart';
 
 import '../controllers/auth_controller.dart';
 import '../controllers/booking_controller.dart';
@@ -37,27 +38,29 @@ class NotificationService {
   static bool _tokenRefreshSubscribed = false;
 
   static Future<void> init() async {
-    await AwesomeNotifications().initialize(
-      null, // default app icon
-      [
-        NotificationChannel(
-          channelKey: _channelKey,
-          channelName: 'MyArena notifications',
-          channelDescription: 'Booking, review and tournament updates',
-          defaultColor: const Color(0xFF2979FF),
-          importance: NotificationImportance.High,
-        ),
-      ],
-      debug: kDebugMode,
-    );
+    if (!kIsWeb) {
+      await AwesomeNotifications().initialize(
+        null, // default app icon
+        [
+          NotificationChannel(
+            channelKey: _channelKey,
+            channelName: 'MyArena notifications',
+            channelDescription: 'Booking, review and tournament updates',
+            defaultColor: const Color(0xFF2979FF),
+            importance: NotificationImportance.High,
+          ),
+        ],
+        debug: kDebugMode,
+      );
 
-    await AwesomeNotifications().setListeners(
-      onActionReceivedMethod: _onActionReceived,
-    );
+      await AwesomeNotifications().setListeners(
+        onActionReceivedMethod: _onActionReceived,
+      );
 
-    final isAllowed = await AwesomeNotifications().isNotificationAllowed();
-    if (!isAllowed) {
-      await AwesomeNotifications().requestPermissionToSendNotifications();
+      final isAllowed = await AwesomeNotifications().isNotificationAllowed();
+      if (!isAllowed) {
+        await AwesomeNotifications().requestPermissionToSendNotifications();
+      }
     }
 
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
@@ -69,15 +72,17 @@ class NotificationService {
     FirebaseMessaging.onMessage.listen((msg) {
       final n = msg.notification;
       if (n == null) return;
-      AwesomeNotifications().createNotification(
-        content: NotificationContent(
-          id: DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
-          channelKey: _channelKey,
-          title: n.title ?? 'MyArena',
-          body: n.body ?? '',
-          payload: msg.data.map((k, v) => MapEntry(k, v?.toString())),
-        ),
-      );
+      if (!kIsWeb) {
+        AwesomeNotifications().createNotification(
+          content: NotificationContent(
+            id: DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
+            channelKey: _channelKey,
+            title: n.title ?? 'MyArena',
+            body: n.body ?? '',
+            payload: msg.data.map((k, v) => MapEntry(k, v?.toString())),
+          ),
+        );
+      }
     });
 
     // App opened by tapping a notification while backgrounded.
@@ -191,7 +196,7 @@ class NotificationService {
     // On iOS, the APNS token may not be ready at app start.
     // If it isn't, skip getting the FCM token now — onTokenRefresh fires
     // once the device finishes APNS registration.
-    if (Platform.isIOS) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
       try {
         final apns = await _fcm.getAPNSToken();
         if (apns == null) {

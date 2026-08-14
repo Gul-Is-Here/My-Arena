@@ -35,6 +35,7 @@ abstract class AppRoutes {
   // Phase 2 — Customer module
   static const String arenaList = '/customer/arena-list';
   static const String arenaDetailCustomer = '/customer/arena-detail';
+  static const String arenaMapView = '/customer/arena-map';
 
   // Phase 3 — Booking
   static const String availabilityAlerts = '/booking/alerts';
@@ -126,4 +127,15 @@ abstract class AppRoutes {
   static const String customerTickets = '/customer/tickets';
   static const String customerTicketDetail = '/customer/ticket-detail';
   static const String submitTicket = '/customer/submit-ticket';
+
+  // Phase 6 — POS (Owner)
+  static const String posDashboard = '/owner/pos';
+  static const String posLiveCourts = '/owner/pos/courts';
+  static const String posWalkIn = '/owner/pos/walk-in';
+  static const String posReceipt = '/owner/pos/receipt';
+  static const String posTransactions = '/owner/pos/transactions';
+  static const String posExpenses = '/owner/pos/expenses';
+  static const String posShift = '/owner/pos/shift';
+  static const String posReports = '/owner/pos/reports';
+  static const String posProducts = '/owner/pos/products';
 }

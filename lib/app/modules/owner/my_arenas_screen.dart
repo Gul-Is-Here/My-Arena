@@ -40,6 +40,9 @@ class MyArenasScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!Get.isRegistered<OwnerController>()) {
+      Get.put(OwnerController());
+    }
     final owner = OwnerController.to;
     final showSearch = false.obs;
     final query = ''.obs;

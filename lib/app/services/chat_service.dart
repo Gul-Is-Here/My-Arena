@@ -1,7 +1,6 @@
-import 'dart:io';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../data/models/chat_model.dart';
 
@@ -289,14 +288,14 @@ class ChatService {
     required String senderId,
     required String senderRole,
     String? senderName,
-    required File file,
+    required XFile file,
     required List<String> participants,
     Map<String, dynamic>? bookingRef,
   }) async {
-    final ext = file.path.split('.').last;
+    final ext = file.name.split('.').last;
     final ref = _storage.ref(
         'chats/$chatId/${DateTime.now().millisecondsSinceEpoch}.$ext');
-    await ref.putFile(file);
+    await ref.putData(await file.readAsBytes());
     final url = await ref.getDownloadURL();
 
     final msgRef = _chats.doc(chatId).collection('messages').doc();

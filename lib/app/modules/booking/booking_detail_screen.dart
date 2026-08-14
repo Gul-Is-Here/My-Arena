@@ -1064,26 +1064,36 @@ class _TotalPaidTile extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Deposit Paid',
-                  style: TextStyle(color: SlotPickerColors.muted, fontSize: 12.5)),
-              Text('PKR ${booking.depositAmount.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                      color: SlotPickerColors.onBg,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600)),
+              Text(
+                booking.isPosBooking ? 'Amount Paid' : 'Deposit Paid',
+                style: const TextStyle(color: SlotPickerColors.muted, fontSize: 12.5),
+              ),
+              Text(
+                'PKR ${(booking.isPosBooking ? (booking.amountPaid ?? 0) : booking.depositAmount).toStringAsFixed(0)}',
+                style: const TextStyle(
+                    color: SlotPickerColors.onBg,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600),
+              ),
             ],
           ),
           const SizedBox(height: 6),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Remaining at Venue',
-                  style: TextStyle(color: SlotPickerColors.muted, fontSize: 12.5)),
-              Text('PKR ${booking.remainingAmount.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                      color: SlotPickerColors.onBg,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600)),
+              Text(
+                booking.isPosBooking ? 'Balance Due' : 'Remaining at Venue',
+                style: const TextStyle(color: SlotPickerColors.muted, fontSize: 12.5),
+              ),
+              Text(
+                'PKR ${booking.remainingAmount.toStringAsFixed(0)}',
+                style: TextStyle(
+                    color: booking.isPosBooking && booking.remainingAmount <= 0
+                        ? SlotPickerColors.green
+                        : SlotPickerColors.onBg,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600),
+              ),
             ],
           ),
         ],

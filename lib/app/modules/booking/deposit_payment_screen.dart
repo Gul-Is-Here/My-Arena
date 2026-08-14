@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -19,12 +19,19 @@ class DepositPaymentScreen extends StatefulWidget {
 
 class _DepositPaymentScreenState extends State<DepositPaymentScreen> {
   XFile? _screenshot;
+  Uint8List? _screenshotBytes;
   bool _submitting = false;
   bool _copied = false;
 
   Future<void> _pickScreenshot() async {
     final picked = await Get.find<BookingController>().pickDepositScreenshot();
-    if (picked != null) setState(() => _screenshot = picked);
+    if (picked != null) {
+      final bytes = await picked.readAsBytes();
+      setState(() {
+        _screenshot = picked;
+        _screenshotBytes = bytes;
+      });
+    }
   }
 
   Future<void> _copyNumber(String number) async {
@@ -224,8 +231,8 @@ class _DepositPaymentScreenState extends State<DepositPaymentScreen> {
                       child: _screenshot != null
                           ? ClipRRect(
                               borderRadius: BorderRadius.circular(16),
-                              child: Image.file(
-                                File(_screenshot!.path),
+                              child: Image.memory(
+                                _screenshotBytes!,
                                 height: 180,
                                 width: double.infinity,
                                 fit: BoxFit.cover,
@@ -310,7 +317,7 @@ class _DepositPaymentScreenState extends State<DepositPaymentScreen> {
                           setState(() => _submitting = true);
                           try {
                             await c.submitDeposit(
-                              File(_screenshot!.path),
+                              _screenshot!,
                               c.jazzCashNumber.value,
                             );
                             Get.offNamed(AppRoutes.bookingConfirmation);

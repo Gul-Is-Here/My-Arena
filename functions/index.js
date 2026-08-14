@@ -440,40 +440,6 @@ exports.onArenaCreated = onDocumentCreated("arenas/{arenaId}", async (event) => 
   );
 });
 
-// ── Booking reminders: push 2 hours before confirmed bookings ─────────
-// Runs every 15 min; finds bookings starting in 2h ±15min and sends a push.
-exports.sendBookingReminders = onSchedule({ schedule: "every 15 minutes", timeZone: "Asia/Karachi" }, async () => {
-  const db = admin.firestore();
-  const now = new Date();
-  const windowStart = new Date(now.getTime() + 105 * 60 * 1000); // 1h45m ahead
-  const windowEnd   = new Date(now.getTime() + 135 * 60 * 1000); // 2h15m ahead
-
-  const snap = await db.collection("bookings")
-    .where("status", "==", "confirmed")
-    .where("startDateTime", ">=", admin.firestore.Timestamp.fromDate(windowStart))
-    .where("startDateTime", "<=", admin.firestore.Timestamp.fromDate(windowEnd))
-    .get();
-
-  let sent = 0;
-  await Promise.all(snap.docs.map(async (doc) => {
-    const b = doc.data();
-    if (!b.customerId || b.reminderSent) return;
-    const hour = b.startHour ?? 0;
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const h12 = ((hour % 12) || 12);
-    await sendPush(
-      b.customerId,
-      `⏰ Booking in 2 hours`,
-      `${b.arenaName} · ${b.courtName} at ${h12}:00 ${ampm}. Don't forget your QR code!`,
-      "booking_reminder",
-      doc.id,
-    );
-    await doc.ref.update({ reminderSent: true });
-    sent++;
-  }));
-  console.log(`sendBookingReminders: ${sent} reminders sent.`);
-});
-
 // ── Account deletion (GDPR / App Store compliance) ───────────────────
 // Called by the app with a valid Firebase ID token in the Authorization
 // header. Deletes Firebase Auth user, anonymizes Firestore docs, removes

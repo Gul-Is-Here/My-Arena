@@ -1,9 +1,9 @@
-import 'dart:io';
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:geoflutterfire_plus/geoflutterfire_plus.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../data/models/arena_model.dart';
 import '../data/models/court_model.dart';
@@ -280,22 +280,22 @@ class ArenaService {
   // ── Firebase Storage — images ─────────────────────────────────────────
 
   Future<List<String>> uploadArenaImages(
-      String arenaId, List<File> files) async {
+      String arenaId, List<XFile> files) async {
     final urls = <String>[];
     for (int i = 0; i < files.length; i++) {
       final ref = _storage.ref(
           'arenas/$arenaId/images/${DateTime.now().millisecondsSinceEpoch}_$i.jpg');
-      await ref.putFile(files[i]);
+      await ref.putData(await files[i].readAsBytes());
       urls.add(await ref.getDownloadURL());
     }
     return urls;
   }
 
   Future<String> uploadCourtImage(
-      String arenaId, String courtId, File file) async {
+      String arenaId, String courtId, XFile file) async {
     final ref = _storage.ref(
         'arenas/$arenaId/courts/$courtId/${DateTime.now().millisecondsSinceEpoch}.jpg');
-    await ref.putFile(file);
+    await ref.putData(await file.readAsBytes());
     return ref.getDownloadURL();
   }
 

@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -806,7 +806,8 @@ class _EditProfileSheet extends StatefulWidget {
 class _EditProfileSheetState extends State<_EditProfileSheet> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _phoneCtrl;
-  File? _picked;
+  XFile? _picked;
+  Uint8List? _pickedBytes;
   bool _saving = false;
   final _picker = ImagePicker();
 
@@ -832,7 +833,13 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       maxHeight: 1024,
       imageQuality: 85,
     );
-    if (xf != null && mounted) setState(() => _picked = File(xf.path));
+    if (xf != null && mounted) {
+      final bytes = await xf.readAsBytes();
+      setState(() {
+        _picked = xf;
+        _pickedBytes = bytes;
+      });
+    }
   }
 
   void _showSourceSheet() {
@@ -879,7 +886,10 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                     style: TextStyle(color: _red)),
                 onTap: () async {
                   Navigator.pop(context);
-                  setState(() => _picked = null);
+                  setState(() {
+                    _picked = null;
+                    _pickedBytes = null;
+                  });
                 },
               ),
             const SizedBox(height: 8),
@@ -1002,7 +1012,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: _picked != null
-                      ? Image.file(_picked!, fit: BoxFit.cover)
+                      ? Image.memory(_pickedBytes!, fit: BoxFit.cover)
                       : (user?.avatar.isNotEmpty == true
                           ? Image.network(user!.avatar, fit: BoxFit.cover,
                               errorBuilder: (ctx, err, stack) =>

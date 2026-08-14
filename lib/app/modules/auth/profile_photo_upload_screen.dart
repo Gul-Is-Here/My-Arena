@@ -1,5 +1,5 @@
-import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -22,7 +22,8 @@ class _ProfilePhotoUploadScreenState extends State<ProfilePhotoUploadScreen>
   final auth = AuthController.to;
   final _picker = ImagePicker();
 
-  File? _selected;
+  XFile? _selected;
+  Uint8List? _selectedBytes;
   bool _uploading = false;
   String? _error;
 
@@ -83,8 +84,10 @@ class _ProfilePhotoUploadScreenState extends State<ProfilePhotoUploadScreen>
         imageQuality: 85,
       );
       if (xfile == null) return;
+      final bytes = await xfile.readAsBytes();
       setState(() {
-        _selected = File(xfile.path);
+        _selected = xfile;
+        _selectedBytes = bytes;
         _error = null;
       });
       _avatarCtrl.reset();
@@ -98,6 +101,7 @@ class _ProfilePhotoUploadScreenState extends State<ProfilePhotoUploadScreen>
   void _removeImage() {
     setState(() {
       _selected = null;
+      _selectedBytes = null;
       _error = null;
     });
     _pulseCtrl.repeat(reverse: true);
@@ -255,7 +259,7 @@ class _ProfilePhotoUploadScreenState extends State<ProfilePhotoUploadScreen>
                               ? ScaleTransition(
                                   scale: _avatarScale,
                                   child: _AvatarWithImage(
-                                    file: _selected!,
+                                    bytes: _selectedBytes!,
                                     onEdit: _uploading ? null : _showSourceSheet,
                                   ),
                                 )
@@ -430,9 +434,9 @@ class _AvatarPlaceholder extends StatelessWidget {
 }
 
 class _AvatarWithImage extends StatelessWidget {
-  final File file;
+  final Uint8List bytes;
   final VoidCallback? onEdit;
-  const _AvatarWithImage({required this.file, this.onEdit});
+  const _AvatarWithImage({required this.bytes, this.onEdit});
 
   @override
   Widget build(BuildContext context) {
@@ -453,8 +457,8 @@ class _AvatarWithImage extends StatelessWidget {
             ],
           ),
           child: ClipOval(
-            child: Image.file(
-              file,
+            child: Image.memory(
+              bytes,
               fit: BoxFit.cover,
               width: 160,
               height: 160,

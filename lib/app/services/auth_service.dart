@@ -1,9 +1,9 @@
-import 'dart:io';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../data/models/user_model.dart';
 
@@ -19,7 +19,12 @@ class AuthService {
 
   User? get firebaseUser => _auth.currentUser;
 
-  bool get isAppleAvailable => Platform.isIOS || Platform.isMacOS;
+  bool get isAppleAvailable {
+    if (kIsWeb) return false;
+    // ignore: avoid_dynamic_calls
+    final p = defaultTargetPlatform;
+    return p == TargetPlatform.iOS || p == TargetPlatform.macOS;
+  }
 
   // ── Firestore users/{uid} ────────────────────────────────────────────
 
@@ -43,6 +48,18 @@ class AuthService {
 
   Future<void> touchLastLogin(String uid) =>
       _users.doc(uid).update({'lastLogin': FieldValue.serverTimestamp()});
+
+  Future<void> markAdminInvitationLoggedIn(String uid) async {
+    final snap = await _db
+        .collection('adminInvitations')
+        .where('targetUid', isEqualTo: uid)
+        .where('hasLoggedIn', isEqualTo: false)
+        .limit(1)
+        .get();
+    if (snap.docs.isNotEmpty) {
+      await snap.docs.first.reference.update({'hasLoggedIn': true});
+    }
+  }
 
   // ── Email & password ─────────────────────────────────────────────────
 
@@ -145,7 +162,7 @@ class AuthService {
   /// returns the download URL. Also writes it to the user's Firestore doc.
   Future<String> uploadProfilePhoto(
     String uid,
-    File file, {
+    XFile file, {
     void Function(double progress)? onProgress,
   }) async {
     // Path: users/{uid}/avatar.jpg — covered by the deployed wildcard rule
@@ -156,8 +173,8 @@ class AuthService {
         .child(uid)
         .child('avatar.jpg');
 
-    final task = ref.putFile(
-      file,
+    final task = ref.putData(
+      await file.readAsBytes(),
       SettableMetadata(contentType: 'image/jpeg'),
     );
 

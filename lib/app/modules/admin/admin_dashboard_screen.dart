@@ -6,7 +6,9 @@ import '../../controllers/analytics_controller.dart';
 import '../../controllers/auth_controller.dart';
 import '../../controllers/ticket_controller.dart';
 import '../../controllers/tournament_controller.dart';
+import '../../data/enums/permission.dart';
 import '../../routes/app_routes.dart';
+import '../../services/permission_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text_styles.dart';
 import 'admin_arenas_screen.dart';
@@ -36,9 +38,9 @@ class AdminDashboardScreen extends StatelessWidget {
 
     final tabs = <Widget>[
       const _AdminHomeTab(),
-      const AdminArenasScreen(),
-      const AdminTicketsScreen(),
-      const AdminChatsScreen(),
+      _PermGate(Permission.viewArenas, const AdminArenasScreen()),
+      _PermGate(Permission.viewAllTickets, const AdminTicketsScreen()),
+      _PermGate(Permission.viewAllTickets, const AdminChatsScreen()),
       const _AdminMenuTab(),
     ];
 
@@ -354,7 +356,11 @@ class _AdminHomeTab extends StatelessWidget {
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-                child: Obx(() => GestureDetector(
+                child: Obx(() {
+                  if (!PermissionService.to.can(Permission.viewFinancials)) {
+                    return const SizedBox.shrink();
+                  }
+                  return GestureDetector(
                       onTap: () => Get.toNamed(AppRoutes.adminRevenueAnalytics),
                       child: Container(
                         padding: const EdgeInsets.all(20),
@@ -432,7 +438,8 @@ class _AdminHomeTab extends StatelessWidget {
                           ],
                         ),
                       ),
-                    )),
+                    );
+                }),
               ),
             ),
 
@@ -565,47 +572,58 @@ class _AdminHomeTab extends StatelessWidget {
                   )),
             ),
 
-            // ── Quick actions ────────────────────────────────────────────
+            // ── Analytics quick actions (permission-gated) ───────────────
             SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-                child: Text(
-                  'Analytics',
-                  style: AppTextStyles.titleMedium.copyWith(
-                    color: AppColors.textPrimary,
+              child: Obx(() {
+                final perm = PermissionService.to;
+                final hasAnalytics = perm.can(Permission.viewAnalytics);
+                final hasFinancials = perm.can(Permission.viewFinancials);
+                if (!hasAnalytics && !hasFinancials) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+                  child: Text(
+                    'Analytics',
+                    style: AppTextStyles.titleMedium.copyWith(color: AppColors.textPrimary),
                   ),
-                ),
-              ),
+                );
+              }),
             ),
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  _MenuRow(
-                    icon: Icons.query_stats,
-                    title: 'Booking Analytics',
-                    subtitle: 'Per-arena bookings, peak hours, trends',
-                    color: AppColors.primary,
-                    route: AppRoutes.adminBookingAnalytics,
-                  ),
-                  const SizedBox(height: 10),
-                  _MenuRow(
-                    icon: Icons.stacked_line_chart,
-                    title: 'Revenue Analytics',
-                    subtitle: 'Arena revenue, averages, line charts',
-                    color: AppColors.success,
-                    route: AppRoutes.adminRevenueAnalytics,
-                  ),
-                  const SizedBox(height: 10),
-                  _MenuRow(
-                    icon: Icons.leaderboard_outlined,
-                    title: 'Staff Analytics',
-                    subtitle: 'Bookings handled, revenue, performance',
-                    color: AppColors.secondary,
-                    route: AppRoutes.adminStaffAnalytics,
-                  ),
-                ]),
-              ),
+              sliver: Obx(() {
+                final perm = PermissionService.to;
+                final rows = <Widget>[];
+                if (perm.can(Permission.viewAnalytics))
+                  rows.addAll([
+                    _MenuRow(
+                      icon: Icons.query_stats,
+                      title: 'Booking Analytics',
+                      subtitle: 'Per-arena bookings, peak hours, trends',
+                      color: AppColors.primary,
+                      route: AppRoutes.adminBookingAnalytics,
+                    ),
+                    const SizedBox(height: 10),
+                    _MenuRow(
+                      icon: Icons.leaderboard_outlined,
+                      title: 'Staff Analytics',
+                      subtitle: 'Bookings handled, revenue, performance',
+                      color: AppColors.secondary,
+                      route: AppRoutes.adminStaffAnalytics,
+                    ),
+                  ]);
+                if (perm.can(Permission.viewFinancials))
+                  rows.addAll([
+                    const SizedBox(height: 10),
+                    _MenuRow(
+                      icon: Icons.stacked_line_chart,
+                      title: 'Revenue Analytics',
+                      subtitle: 'Arena revenue, averages, line charts',
+                      color: AppColors.success,
+                      route: AppRoutes.adminRevenueAnalytics,
+                    ),
+                  ]);
+                return SliverList(delegate: SliverChildListDelegate(rows));
+              }),
             ),
 
             const SliverToBoxAdapter(child: SizedBox(height: 32)),
@@ -860,82 +878,135 @@ class _AdminMenuTab extends StatelessWidget {
             ),
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              sliver: Obx(() => SliverList(
-                    delegate: SliverChildListDelegate([
-                      AdminMenuTile(
-                        icon: Icons.rocket_launch_outlined,
-                        title: 'Boost Management',
-                        subtitle: 'Requests, payments & history',
-                        badge: admin.pendingBoosts.length,
-                        route: AppRoutes.adminBoosts,
-                        color: AppColors.accent,
-                      ),
-                      AdminMenuTile(
-                        icon: Icons.group_outlined,
-                        title: 'User Management',
-                        subtitle: 'Ban/unban, roles, staff',
-                        route: AppRoutes.adminUsers,
-                        color: AppColors.secondary,
-                      ),
-                      AdminMenuTile(
-                        icon: Icons.person_search_outlined,
-                        title: 'Customer Management',
-                        subtitle: 'Search, suspend, view history',
-                        route: AppRoutes.adminCustomers,
-                        color: AppColors.secondary,
-                      ),
-                      AdminMenuTile(
-                        icon: Icons.calendar_month_outlined,
-                        title: 'Booking Management',
-                        subtitle: 'All bookings, approve, refund, cancel',
-                        route: AppRoutes.adminBookings,
-                        color: AppColors.accent,
-                      ),
-                      AdminMenuTile(
-                        icon: Icons.payments_outlined,
-                        title: 'Finance & Payouts',
-                        subtitle: 'Revenue, commissions, owner payouts',
-                        route: AppRoutes.adminFinance,
-                        color: AppColors.success,
-                      ),
-                      AdminMenuTile(
-                        icon: Icons.emoji_events_outlined,
-                        title: 'Tournaments',
-                        subtitle: 'Approvals & platform events',
-                        badge: tournaments.pendingApproval.length,
-                        route: AppRoutes.adminTournaments,
-                        color: AppColors.primary,
-                      ),
-                      AdminMenuTile(
-                        icon: Icons.notifications_outlined,
-                        title: 'Notifications',
-                        subtitle: 'Bookings, tickets, boosts, payments',
-                        badge: admin.unreadNotifications,
-                        route: AppRoutes.adminNotifications,
-                        color: AppColors.warning,
-                      ),
-                      AdminMenuTile(
-                        icon: Icons.settings_outlined,
-                        title: 'Platform Settings',
-                        subtitle: 'Deposit %, cancellation, JazzCash',
-                        route: AppRoutes.adminSettings,
-                        color: AppColors.textSecondary,
-                      ),
-                      AdminMenuTile(
-                        icon: Icons.receipt_long_outlined,
-                        title: 'Audit Logs',
-                        subtitle: 'All admin & staff actions',
-                        route: AppRoutes.adminAuditLogs,
-                        color: AppColors.textSecondary,
-                      ),
-                      const SizedBox(height: 24),
-                    ]),
-                  )),
+              sliver: Obx(() {
+                    final perm = PermissionService.to;
+                    return SliverList(
+                      delegate: SliverChildListDelegate([
+                        if (perm.can(Permission.viewBoosts))
+                          AdminMenuTile(
+                            icon: Icons.rocket_launch_outlined,
+                            title: 'Boost Management',
+                            subtitle: 'Requests, payments & history',
+                            badge: admin.pendingBoosts.length,
+                            route: AppRoutes.adminBoosts,
+                            color: AppColors.accent,
+                          ),
+                        if (perm.can(Permission.viewUsers))
+                          AdminMenuTile(
+                            icon: Icons.group_outlined,
+                            title: 'User Management',
+                            subtitle: 'Ban/unban, roles, staff',
+                            route: AppRoutes.adminUsers,
+                            color: AppColors.secondary,
+                          ),
+                        if (perm.can(Permission.viewUsers))
+                          AdminMenuTile(
+                            icon: Icons.person_search_outlined,
+                            title: 'Customer Management',
+                            subtitle: 'Search, suspend, view history',
+                            route: AppRoutes.adminCustomers,
+                            color: AppColors.secondary,
+                          ),
+                        if (perm.can(Permission.viewAllBookings))
+                          AdminMenuTile(
+                            icon: Icons.calendar_month_outlined,
+                            title: 'Booking Management',
+                            subtitle: 'All bookings, approve, refund, cancel',
+                            route: AppRoutes.adminBookings,
+                            color: AppColors.accent,
+                          ),
+                        if (perm.can(Permission.viewFinancials))
+                          AdminMenuTile(
+                            icon: Icons.payments_outlined,
+                            title: 'Finance & Payouts',
+                            subtitle: 'Revenue, commissions, owner payouts',
+                            route: AppRoutes.adminFinance,
+                            color: AppColors.success,
+                          ),
+                        if (perm.can(Permission.manageTournaments))
+                          AdminMenuTile(
+                            icon: Icons.emoji_events_outlined,
+                            title: 'Tournaments',
+                            subtitle: 'Approvals & platform events',
+                            badge: tournaments.pendingApproval.length,
+                            route: AppRoutes.adminTournaments,
+                            color: AppColors.primary,
+                          ),
+                        if (perm.can(Permission.viewAdminNotifications))
+                          AdminMenuTile(
+                            icon: Icons.notifications_outlined,
+                            title: 'Notifications',
+                            subtitle: 'Bookings, tickets, boosts, payments',
+                            badge: admin.unreadNotifications,
+                            route: AppRoutes.adminNotifications,
+                            color: AppColors.warning,
+                          ),
+                        if (perm.can(Permission.manageSettings))
+                          AdminMenuTile(
+                            icon: Icons.settings_outlined,
+                            title: 'Platform Settings',
+                            subtitle: 'Deposit %, cancellation, JazzCash',
+                            route: AppRoutes.adminSettings,
+                            color: AppColors.textSecondary,
+                          ),
+                        if (perm.can(Permission.viewAuditLogs))
+                          AdminMenuTile(
+                            icon: Icons.receipt_long_outlined,
+                            title: 'Audit Logs',
+                            subtitle: 'All admin & staff actions',
+                            route: AppRoutes.adminAuditLogs,
+                            color: AppColors.textSecondary,
+                          ),
+                        const SizedBox(height: 24),
+                      ]),
+                    );
+                  }),
             ),
           ],
         ),
       ),
     );
+  }
+}
+
+/// Wraps a tab/screen in a reactive permission check.
+/// Shows a "Permission Required" placeholder if the user lacks [permission].
+/// Reacts immediately when Super Admin adds/removes a permission while logged in.
+class _PermGate extends StatelessWidget {
+  final Permission permission;
+  final Widget child;
+  const _PermGate(this.permission, this.child);
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      // Reading currentUser.value makes this reactive to real-time profile updates.
+      Get.find<AuthController>().currentUser.value;
+      if (PermissionService.to.can(permission)) return child;
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.lock_outline, size: 48, color: AppColors.textGrey),
+                const SizedBox(height: 16),
+                Text('Permission Required',
+                    style: AppTextStyles.titleLarge.copyWith(color: AppColors.textPrimary)),
+                const SizedBox(height: 8),
+                Text(
+                  'You don\'t have access to this section.\nContact your Super Admin.',
+                  style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    });
   }
 }
 

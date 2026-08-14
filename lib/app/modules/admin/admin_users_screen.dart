@@ -64,7 +64,19 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
             IconButton(
               icon: const Icon(Icons.person_add_outlined, color: AppColors.primary),
               tooltip: 'Invite Owner',
-              onPressed: () => _showInviteDialog(context, admin),
+              onPressed: () {
+                final limit = admin.remainingOwnerInvites;
+                if (limit != null && limit <= 0) {
+                  Get.snackbar(
+                    'Invite Limit Reached',
+                    'You have used all your owner invite slots.',
+                    backgroundColor: AppColors.error,
+                    colorText: Colors.white,
+                  );
+                  return;
+                }
+                _showInviteDialog(context, admin);
+              },
             ),
           ],
           bottom: PreferredSize(
@@ -548,7 +560,7 @@ class _InvitationTile extends StatelessWidget {
               const SizedBox(width: 4),
               Text(
                 inv.status == InvitationStatus.accepted
-                    ? 'Accepted ${_fmt(inv.acceptedAt)}'
+                    ? (inv.isUpgrade ? 'Role upgraded ${_fmt(inv.acceptedAt)}' : 'Accepted ${_fmt(inv.acceptedAt)}')
                     : expiredOverride
                         ? 'Expired ${_fmt(inv.expiresAt)}'
                         : inv.status == InvitationStatus.pending
@@ -895,7 +907,11 @@ class _AdminInvitationTile extends StatelessWidget {
               const SizedBox(width: 4),
               Text(
                 inv.status == InvitationStatus.accepted
-                    ? 'Accepted ${_fmt(inv.acceptedAt)}'
+                    ? (inv.isUpgrade
+                        ? 'Role upgraded ${_fmt(inv.acceptedAt)}'
+                        : inv.hasLoggedIn
+                            ? 'Accepted ${_fmt(inv.acceptedAt)}'
+                            : 'Awaiting first login')
                     : expiredOverride
                         ? 'Expired ${_fmt(inv.expiresAt)}'
                         : inv.status == InvitationStatus.pending
@@ -916,15 +932,25 @@ class _AdminInvitationTile extends StatelessWidget {
               ],
             ],
           ),
-          if (inv.status == InvitationStatus.pending && !expiredOverride) ...[
+          if ((inv.status == InvitationStatus.pending && !expiredOverride) ||
+              (inv.status == InvitationStatus.accepted && !inv.hasLoggedIn && !inv.isUpgrade)) ...[
             const SizedBox(height: 10),
             Row(
               children: [
                 if (inv.canResend)
                   Expanded(
                     child: OutlinedButton.icon(
-                      icon: const Icon(Icons.send_outlined, size: 14),
-                      label: Text('Resend${inv.resendCount > 0 ? ' (${inv.resendCount})' : ''}'),
+                      icon: Icon(
+                        inv.status == InvitationStatus.accepted
+                            ? Icons.notifications_outlined
+                            : Icons.send_outlined,
+                        size: 14,
+                      ),
+                      label: Text(
+                        inv.status == InvitationStatus.accepted
+                            ? 'Remind${inv.resendCount > 0 ? ' (${inv.resendCount})' : ''}'
+                            : 'Resend${inv.resendCount > 0 ? ' (${inv.resendCount})' : ''}',
+                      ),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.primary,
                         side: const BorderSide(color: AppColors.primary),
@@ -934,7 +960,10 @@ class _AdminInvitationTile extends StatelessWidget {
                       onPressed: () async {
                         try {
                           await admin.resendAdminInvitation(inv.id);
-                          Get.snackbar('Sent', 'Invitation resent.', backgroundColor: AppColors.success, colorText: Colors.white);
+                          final msg = inv.status == InvitationStatus.accepted
+                              ? 'Login reminder sent.'
+                              : 'Invitation resent.';
+                          Get.snackbar('Sent', msg, backgroundColor: AppColors.success, colorText: Colors.white);
                         } catch (e) {
                           Get.snackbar('Failed', e.toString().replaceFirst('Exception: ', ''), backgroundColor: AppColors.error, colorText: Colors.white);
                         }
