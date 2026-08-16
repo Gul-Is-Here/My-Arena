@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -40,6 +42,8 @@ class _ManualBookingScreenState extends State<ManualBookingScreen> {
 
   List<BookingModel> _bookedSlots = [];
   Set<int> _blockedHours = {};
+  Set<int> _lockedHours = {};
+  StreamSubscription<Set<int>>? _slotLocksSub;
   final _blockedService = BlockedSlotService();
   bool _loadingSlots = false;
   bool _submitting = false;
@@ -63,34 +67,50 @@ class _ManualBookingScreenState extends State<ManualBookingScreen> {
   void dispose() {
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
+    _slotLocksSub?.cancel();
     super.dispose();
   }
 
-  Future<void> _loadBookedSlots() async {
+  void _loadBookedSlots() {
     final court = _court;
     if (court == null) {
-      setState(() => _bookedSlots = []);
+      setState(() {
+        _bookedSlots = [];
+        _lockedHours = {};
+      });
       return;
     }
     setState(() => _loadingSlots = true);
-    try {
-      final slots = await _bookingService.bookedSlots(court.id, _date);
-      final blocked =
-          await _blockedService.blockedHours(_arena.id, court.id, _date);
+    _slotLocksSub?.cancel();
+    _slotLocksSub = _bookingService
+        .bookedHoursStream(court.id, _date)
+        .listen((hours) {
       if (!mounted) return;
+      // If the owner had selected a slot that just became taken, deselect it.
+      final conflict = _selectedHours.any(hours.contains);
       setState(() {
-        _bookedSlots = slots;
-        _blockedHours = blocked;
+        _lockedHours = hours;
+        _loadingSlots = false;
+        if (conflict) _selectedHours.clear();
       });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _bookedSlots = [];
-        _blockedHours = {};
-      });
-    } finally {
+      if (conflict) {
+        Get.snackbar(
+          'Slot no longer available',
+          'Another booking just came in for this slot.',
+          snackPosition: SnackPosition.TOP,
+          duration: const Duration(seconds: 3),
+        );
+      }
+    }, onError: (_) {
       if (mounted) setState(() => _loadingSlots = false);
-    }
+    });
+
+    // Blocked hours are owner-set and change rarely — one-shot is fine.
+    _blockedService
+        .blockedHours(_arena.id, court.id, _date)
+        .then((blocked) {
+      if (mounted) setState(() => _blockedHours = blocked);
+    }).catchError((_) {});
   }
 
   List<int> get _hourOptions {
@@ -107,6 +127,7 @@ class _ManualBookingScreenState extends State<ManualBookingScreen> {
         hour: hour,
         bookedSlots: _bookedSlots,
         blockedHours: _blockedHours,
+        lockedHours: _lockedHours,
       );
 
   void _setDuration(int hours) {

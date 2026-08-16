@@ -116,7 +116,7 @@ class _DepositPaymentScreenState extends State<DepositPaymentScreen> {
                   const SizedBox(height: 6),
                   Center(
                     child: Text(
-                      'PKR ${b.depositAmount.toStringAsFixed(0)}',
+                      'PKR ${c.depositAmount.toStringAsFixed(0)}',
                       style: const TextStyle(
                         color: SlotPickerColors.greenCta,
                         fontSize: 34,

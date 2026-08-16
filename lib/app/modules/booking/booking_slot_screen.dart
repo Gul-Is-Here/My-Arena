@@ -259,7 +259,19 @@ class BookingSlotScreen extends StatelessWidget {
                 GestureDetector(
                   onTap: n == 0
                       ? null
-                      : () {
+                      : () async {
+                          final error = await c.validateSlots();
+                          if (error != null) {
+                            Get.snackbar(
+                              'Slot Unavailable',
+                              error,
+                              snackPosition: SnackPosition.TOP,
+                              duration: const Duration(seconds: 4),
+                              backgroundColor: AppColors.error.withValues(alpha: 0.9),
+                              colorText: Colors.white,
+                            );
+                            return;
+                          }
                           c.buildDraft();
                           Get.toNamed(AppRoutes.bookingSummary);
                         },

@@ -19,11 +19,17 @@ import '../../widgets/profile_tab.dart';
 const _kTablet = 720.0;
 const _kDesktop = 1100.0;
 
-class OwnerDashboardScreen extends StatelessWidget {
+class OwnerDashboardScreen extends StatefulWidget {
   const OwnerDashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  State<OwnerDashboardScreen> createState() => _OwnerDashboardScreenState();
+}
+
+class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
+  @override
+  void initState() {
+    super.initState();
     if (!Get.isRegistered<OwnerController>()) Get.put(OwnerController());
     if (!Get.isRegistered<OwnerBookingController>()) {
       Get.put(OwnerBookingController(), permanent: true);
@@ -34,6 +40,10 @@ class OwnerDashboardScreen extends StatelessWidget {
     if (!Get.isRegistered<StaffManagementController>()) {
       Get.put(StaffManagementController(), permanent: true);
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return LayoutBuilder(builder: (context, constraints) {
       return constraints.maxWidth >= _kTablet
           ? const _WideShell()

@@ -33,7 +33,7 @@ class _CancellationScreenState extends State<CancellationScreen> {
   @override
   Widget build(BuildContext context) {
     final c = Get.find<BookingController>();
-    final String id = Get.arguments as String;
+    final String id = (Get.arguments as String?) ?? '';
     final booking = c.bookings.firstWhereOrNull((b) => b.id == id);
 
     if (booking == null) {

@@ -501,11 +501,15 @@ class AuthController extends GetxController {
           Get.currentRoute == AppRoutes.ownerPendingApproval) {
         goToRoleDashboard();
       }
-    });
+    }, onError: (e) => debugPrint('profile stream error: $e'));
   }
 
   Future<void> signOut() async {
     _profileSub?.cancel();
+    // Remove this device's FCM token before signing out so the logged-out
+    // user stops receiving pushes on this device.
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) await NotificationService.onSignOut(uid);
     await _service.signOut();
     _box.remove(_sessionKey);
     currentUser.value = null;

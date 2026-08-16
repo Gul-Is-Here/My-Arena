@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 
 import '../controllers/auth_controller.dart';
 import '../data/models/user_model.dart';
@@ -10,13 +11,11 @@ import '../routes/app_routes.dart';
 import '../theme/app_colors.dart';
 import '../theme/theme_controller.dart';
 
-// ── Palette aliases ───────────────────────────────────────────────────────────
 const _bg = AppColors.background;
 const _surface = AppColors.surface;
 const _elevated = AppColors.elevated;
 const _border = AppColors.border;
 const _lime = AppColors.primary;
-const _blue = AppColors.secondary;
 const _onSurface = AppColors.textPrimary;
 const _muted = AppColors.textSecondary;
 const _dim = AppColors.textDisabled;
@@ -24,7 +23,6 @@ const _red = AppColors.error;
 const _green = AppColors.success;
 const _onLime = AppColors.onPrimary;
 
-/// Premium customer profile tab — 2026 AI-era design.
 class ProfileTab extends StatefulWidget {
   const ProfileTab({super.key});
 
@@ -32,246 +30,220 @@ class ProfileTab extends StatefulWidget {
   State<ProfileTab> createState() => _ProfileTabState();
 }
 
-class _ProfileTabState extends State<ProfileTab> with TickerProviderStateMixin {
-  late final AnimationController _enterCtrl;
-  late final Animation<double> _fade;
-  late final Animation<Offset> _slide;
-
-  late final AnimationController _headerCtrl;
-  late final Animation<double> _headerScale;
-  late final Animation<double> _headerFade;
-
-  @override
-  void initState() {
-    super.initState();
-
-    _enterCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    );
-    _fade = CurvedAnimation(parent: _enterCtrl, curve: Curves.easeOut);
-    _slide = Tween(
-      begin: const Offset(0, 0.06),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _enterCtrl, curve: Curves.easeOutCubic));
-
-    _headerCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    );
-    _headerScale = Tween(
-      begin: 0.88,
-      end: 1.0,
-    ).animate(CurvedAnimation(parent: _headerCtrl, curve: Curves.elasticOut));
-    _headerFade = CurvedAnimation(parent: _headerCtrl, curve: Curves.easeOut);
-
-    _headerCtrl.forward();
-    Future.delayed(const Duration(milliseconds: 180), () {
-      if (mounted) _enterCtrl.forward();
-    });
-  }
-
-  @override
-  void dispose() {
-    _enterCtrl.dispose();
-    _headerCtrl.dispose();
-    super.dispose();
-  }
-
+class _ProfileTabState extends State<ProfileTab> {
   @override
   Widget build(BuildContext context) {
     final auth = AuthController.to;
-    final theme = ThemeController.to;
 
     return Container(
       color: _bg,
-      child: Stack(
-        children: [
-          // Ambient lime glow top-right
-          Positioned(
-            top: -80,
-            right: -60,
-            child: IgnorePointer(
-              child: Container(
-                width: 260,
-                height: 260,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [_lime.withValues(alpha: 0.06), Colors.transparent],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          // Ambient blue glow bottom-left
-          Positioned(
-            bottom: 120,
-            left: -80,
-            child: IgnorePointer(
-              child: Container(
-                width: 220,
-                height: 220,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [_blue.withValues(alpha: 0.05), Colors.transparent],
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          SafeArea(
-            child: CustomScrollView(
-              physics: const BouncingScrollPhysics(),
-              slivers: [
-                // ── Header ────────────────────────────────────────────────
-                SliverToBoxAdapter(
-                  child: FadeTransition(
-                    opacity: _headerFade,
-                    child: ScaleTransition(
-                      scale: _headerScale,
-                      child: Obx(() {
-                        final user = auth.currentUser.value;
-                        return _ProfileHeader(
-                          user: user,
-                          onCameraTap: user?.role == UserRole.customer
-                              ? () => Get.toNamed(AppRoutes.profilePhotoUpload)
-                              : () => _showEditProfile(context, auth),
-                        );
-                      }),
+      child: SafeArea(
+        child: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            // ── Top bar ────────────────────────────────────────────────────
+            SliverToBoxAdapter(
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                child: Row(
+                  children: [
+                    Text(
+                      'ArenaPro',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: _lime,
+                        letterSpacing: -0.5,
+                      ),
                     ),
-                  ),
+                    const Spacer(),
+                    _IconBtn(
+                      icon: Icons.notifications_outlined,
+                      onTap: () => Get.toNamed(AppRoutes.notifications),
+                    ),
+                    const SizedBox(width: 8),
+                    _IconBtn(
+                      icon: Icons.settings_outlined,
+                      onTap: () {},
+                    ),
+                  ],
                 ),
+              ),
+            ),
 
-                // ── Body content ──────────────────────────────────────────
-                SliverToBoxAdapter(
-                  child: FadeTransition(
-                    opacity: _fade,
-                    child: SlideTransition(
-                      position: _slide,
-                      child: Obx(() {
-                        final user = auth.currentUser.value;
-                        return Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const SizedBox(height: 24),
+            // ── Avatar + info ───────────────────────────────────────────────
+            SliverToBoxAdapter(
+              child: Obx(() {
+                final user = auth.currentUser.value;
+                return _ProfileHeader(
+                  user: user,
+                  onCameraTap: () => _showEditProfile(context, auth),
+                );
+              }),
+            ),
 
-                              // Settings
-                              _SectionLabel('Settings'),
-                              const SizedBox(height: 12),
-                              _SettingsCard(
-                                children: [
-                                  _SettingsTile(
-                                    icon: Icons.person_outline_rounded,
-                                    label: 'Edit Profile',
-                                    subtitle: 'Name, phone number',
-                                    onTap: () =>
-                                        _showEditProfile(context, auth),
-                                  ),
-                                  _SettingsDivider(),
-                                  Obx(
-                                    () => _SettingsTile(
-                                      icon: theme.isDarkMode.value
-                                          ? Icons.dark_mode_rounded
-                                          : Icons.light_mode_rounded,
-                                      label: 'Dark Mode',
-                                      subtitle: theme.isDarkMode.value
-                                          ? 'On'
-                                          : 'Off',
-                                      onTap: theme.toggleTheme,
-                                      trailing: _GlowSwitch(
-                                        value: theme.isDarkMode.value,
-                                        onChanged: (_) => theme.toggleTheme(),
-                                      ),
-                                    ),
-                                  ),
-                                  _SettingsDivider(),
-                                  _SettingsTile(
-                                    icon: Icons.notifications_outlined,
-                                    label: 'Notifications',
-                                    subtitle: 'Alerts & reminders',
-                                    onTap: () =>
-                                        Get.toNamed(AppRoutes.notifications),
-                                  ),
-                                  if (user?.role == UserRole.owner) ...[
-                                    _SettingsDivider(),
-                                    _SettingsTile(
-                                      icon: Icons.rocket_launch_outlined,
-                                      label: 'My Boost Requests',
-                                      subtitle: 'Arena promotion status',
-                                      onTap: () =>
-                                          Get.toNamed(AppRoutes.boostStatus),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                              const SizedBox(height: 16),
+            // ── Stats cards ─────────────────────────────────────────────────
+            SliverToBoxAdapter(
+              child: Obx(() {
+                final user = auth.currentUser.value;
+                final since = user?.createdAt != null
+                    ? DateFormat('MMM yyyy').format(user!.createdAt!)
+                    : '—';
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _StatCard(
+                          label: 'Member Since',
+                          value: since,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _StatCard(
+                          label: 'Total Bookings',
+                          value: '—',
+                          showArrow: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ),
 
-                              // Sign out
-                              _SettingsCard(
-                                borderColor: _red.withValues(alpha: 0.2),
-                                children: [
-                                  _SettingsTile(
-                                    icon: Icons.logout_rounded,
-                                    label: 'Sign Out',
-                                    subtitle: 'Log out of your account',
-                                    iconColor: _red,
-                                    labelColor: _red,
-                                    showChevron: false,
-                                    onTap: auth.signOut,
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-
-                              // Delete account
-                              _SettingsCard(
-                                borderColor: _red.withValues(alpha: 0.35),
-                                children: [
-                                  _SettingsTile(
-                                    icon: Icons.delete_forever_rounded,
-                                    label: 'Delete Account',
-                                    subtitle: 'Permanently remove all data',
-                                    iconColor: _red,
-                                    labelColor: _red,
-                                    showChevron: false,
-                                    onTap: () =>
-                                        _confirmDeleteAccount(context, auth),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Center(
-                                child: Text(
-                                  'Account deletion is permanent and cannot be undone.',
-                                  style: TextStyle(
-                                    fontSize: 11.5,
-                                    color: _red.withValues(alpha: 0.55),
-                                    height: 1.5,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                            ],
+            // ── ACCOUNT section ─────────────────────────────────────────────
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 28, 20, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _SectionLabel('Account'),
+                    const SizedBox(height: 12),
+                    _SettingsCard(
+                      children: [
+                        _SettingsTile(
+                          icon: Icons.person_outline_rounded,
+                          label: 'Edit Profile',
+                          onTap: () => _showEditProfile(context, auth),
+                        ),
+                        _SettingsDivider(),
+                        Obx(() {
+                          final theme = ThemeController.to;
+                          return _SettingsTile(
+                            icon: theme.isDarkMode.value
+                                ? Icons.dark_mode_rounded
+                                : Icons.light_mode_rounded,
+                            label: 'Dark Mode',
+                            onTap: theme.toggleTheme,
+                            trailing: _GlowSwitch(
+                              value: theme.isDarkMode.value,
+                              onChanged: (_) => theme.toggleTheme(),
+                            ),
+                          );
+                        }),
+                        _SettingsDivider(),
+                        _SettingsTile(
+                          icon: Icons.notifications_outlined,
+                          label: 'Notifications',
+                          onTap: () => Get.toNamed(AppRoutes.notifications),
+                        ),
+                        _SettingsDivider(),
+                        _SettingsTile(
+                          icon: Icons.lock_outline_rounded,
+                          label: 'Privacy & Security',
+                          onTap: () => Get.snackbar(
+                            'Coming Soon',
+                            'Privacy & Security settings will be available soon.',
+                            snackPosition: SnackPosition.BOTTOM,
                           ),
-                        );
-                      }),
+                        ),
+                        _SettingsDivider(),
+                        _SettingsTile(
+                          icon: Icons.credit_card_outlined,
+                          label: 'Payment Methods',
+                          onTap: () => Get.snackbar(
+                            'Coming Soon',
+                            'Payment Methods will be available soon.',
+                            snackPosition: SnackPosition.BOTTOM,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
-        ],
+
+            // ── SUPPORT section ─────────────────────────────────────────────
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _SectionLabel('Support'),
+                    const SizedBox(height: 12),
+                    _SettingsCard(
+                      children: [
+                        _SettingsTile(
+                          icon: Icons.help_outline_rounded,
+                          label: 'Help & Support',
+                          onTap: () => Get.toNamed(AppRoutes.helpSupport),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── Sign Out + Delete Account ───────────────────────────────────
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+                child: _SettingsCard(
+                  borderColor: _red.withValues(alpha: 0.25),
+                  children: [
+                    _SettingsTile(
+                      icon: Icons.logout_rounded,
+                      label: 'Sign Out',
+                      iconColor: _red,
+                      labelColor: _red,
+                      showChevron: false,
+                      onTap: auth.signOut,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                child: _SettingsCard(
+                  borderColor: _red.withValues(alpha: 0.35),
+                  children: [
+                    _SettingsTile(
+                      icon: Icons.delete_forever_rounded,
+                      label: 'Delete Account',
+                      iconColor: _red,
+                      labelColor: _red,
+                      showChevron: false,
+                      onTap: () => _confirmDeleteAccount(context, auth),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 100)),
+          ],
+        ),
       ),
     );
   }
-
-  // ── Edit profile sheet ─────────────────────────────────────────────────────
 
   void _showEditProfile(BuildContext context, AuthController auth) {
     showModalBottomSheet(
@@ -285,15 +257,14 @@ class _ProfileTabState extends State<ProfileTab> with TickerProviderStateMixin {
     );
   }
 
-  // ── Delete account dialog ──────────────────────────────────────────────────
-
   void _confirmDeleteAccount(BuildContext context, AuthController auth) {
     final confirmCtrl = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _elevated,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
             Container(
@@ -332,12 +303,14 @@ class _ProfileTabState extends State<ProfileTab> with TickerProviderStateMixin {
               style: const TextStyle(fontSize: 14, letterSpacing: 1.5),
               decoration: InputDecoration(
                 hintText: 'DELETE',
-                hintStyle: TextStyle(color: _muted.withValues(alpha: 0.5)),
+                hintStyle:
+                    TextStyle(color: _muted.withValues(alpha: 0.5)),
                 filled: true,
                 fillColor: _bg,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: _red.withValues(alpha: 0.4)),
+                  borderSide:
+                      BorderSide(color: _red.withValues(alpha: 0.4)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -374,7 +347,8 @@ class _ProfileTabState extends State<ProfileTab> with TickerProviderStateMixin {
                   ? const SizedBox(
                       width: 16,
                       height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child:
+                          CircularProgressIndicator(strokeWidth: 2),
                     )
                   : Text(
                       'Delete Forever',
@@ -391,7 +365,32 @@ class _ProfileTabState extends State<ProfileTab> with TickerProviderStateMixin {
   }
 }
 
-// ── Profile Header ─────────────────────────────────────────────────────────────
+// ── Top bar icon button ────────────────────────────────────────────────────────
+
+class _IconBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _IconBtn({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: _surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _border.withValues(alpha: 0.5)),
+        ),
+        child: Icon(icon, size: 20, color: _muted),
+      ),
+    );
+  }
+}
+
+// ── Profile header ─────────────────────────────────────────────────────────────
 
 class _ProfileHeader extends StatelessWidget {
   final UserModel? user;
@@ -401,184 +400,122 @@ class _ProfileHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final initials = _initials(user?.name ?? '');
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
-      decoration: BoxDecoration(
-        color: _surface,
-        border: Border(
-          bottom: BorderSide(color: _border.withValues(alpha: 0.5)),
-        ),
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
         children: [
-          // Avatar
+          // Avatar with green ring + camera badge
           Stack(
             clipBehavior: Clip.none,
             alignment: Alignment.center,
             children: [
-              // Outer glow ring
+              // Green ring
               Container(
-                width: 116,
-                height: 116,
+                width: 106,
+                height: 106,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [
-                      _lime.withValues(alpha: 0.5),
-                      _blue.withValues(alpha: 0.3),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _lime.withValues(alpha: 0.18),
-                      blurRadius: 28,
-                      spreadRadius: 2,
-                    ),
-                  ],
+                  border: Border.all(color: _green, width: 3),
                 ),
               ),
-              // Avatar circle
+              // Avatar
               Container(
-                width: 108,
-                height: 108,
-                decoration: BoxDecoration(
+                width: 96,
+                height: 96,
+                decoration: const BoxDecoration(
                   shape: BoxShape.circle,
                   color: _elevated,
-                  border: Border.all(color: _bg, width: 3),
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: user?.avatar.isNotEmpty == true
                     ? Image.network(
                         user!.avatar,
                         fit: BoxFit.cover,
-                        errorBuilder: (ctx, err, stack) =>
+                        errorBuilder: (_, __, ___) =>
                             _InitialsAvatar(initials: initials),
                       )
                     : _InitialsAvatar(initials: initials),
               ),
-              // Edit button
+              // Camera badge
               Positioned(
-                bottom: -2,
-                right: -2,
+                bottom: 0,
+                right: 0,
                 child: GestureDetector(
                   onTap: onCameraTap,
                   child: Container(
-                    width: 34,
-                    height: 34,
+                    width: 30,
+                    height: 30,
                     decoration: BoxDecoration(
                       color: _lime,
                       shape: BoxShape.circle,
-                      border: Border.all(color: _bg, width: 2.5),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _lime.withValues(alpha: 0.4),
-                          blurRadius: 10,
-                        ),
-                      ],
+                      border: Border.all(color: _bg, width: 2),
                     ),
                     child: const Icon(
-                      Icons.camera_alt_rounded,
-                      color: _onLime,
-                      size: 16,
-                    ),
+                        Icons.camera_alt_rounded, color: _onLime, size: 15),
                   ),
                 ),
               ),
-              // Online dot
-              Positioned(top: 6, right: 6, child: _OnlineDot()),
             ],
           ),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+
+          // Verified badge
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: _green.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: _green.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(Icons.verified_rounded, size: 13, color: _green),
+                SizedBox(width: 4),
+                Text(
+                  'Verified',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: _green,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
 
           // Name
           Text(
             user?.name.isNotEmpty == true ? user!.name : 'My Profile',
             style: const TextStyle(
-              fontSize: 24,
+              fontSize: 22,
               fontWeight: FontWeight.w800,
               color: _onSurface,
-              letterSpacing: -0.5,
-              height: 1.1,
+              letterSpacing: -0.4,
             ),
           ),
+
           const SizedBox(height: 4),
 
-          // Email / phone
-          Text(
-            user?.email.isNotEmpty == true ? user!.email : (user?.phone ?? ''),
-            style: const TextStyle(
-              fontSize: 14,
-              color: _muted,
-              letterSpacing: 0.1,
+          // Email
+          if (user?.email.isNotEmpty == true)
+            Text(
+              user!.email,
+              style: const TextStyle(fontSize: 13, color: _muted),
             ),
-          ),
-          const SizedBox(height: 12),
 
-          // Role badge + optional verified badge
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      _lime.withValues(alpha: 0.15),
-                      _blue.withValues(alpha: 0.1),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: _lime.withValues(alpha: 0.3)),
-                ),
-                child: Text(
-                  (user?.role.name ?? 'customer').toUpperCase(),
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: _lime,
-                    letterSpacing: 2,
-                  ),
-                ),
-              ),
-              if (user?.email.isNotEmpty == true) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _green.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: _green.withValues(alpha: 0.25)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: const [
-                      Icon(Icons.verified_rounded, size: 12, color: _green),
-                      SizedBox(width: 4),
-                      Text(
-                        'VERIFIED',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: _green,
-                          letterSpacing: 1.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
+          const SizedBox(height: 2),
+
+          // Phone
+          if (user?.phone.isNotEmpty == true)
+            Text(
+              user!.phone,
+              style: const TextStyle(fontSize: 13, color: _muted),
+            ),
         ],
       ),
     );
@@ -604,10 +541,9 @@ class _InitialsAvatar extends StatelessWidget {
         child: Text(
           initials,
           style: const TextStyle(
-            fontSize: 36,
+            fontSize: 32,
             fontWeight: FontWeight.w800,
             color: _lime,
-            letterSpacing: -1,
           ),
         ),
       ),
@@ -615,45 +551,60 @@ class _InitialsAvatar extends StatelessWidget {
   }
 }
 
-class _OnlineDot extends StatefulWidget {
-  @override
-  State<_OnlineDot> createState() => _OnlineDotState();
-}
+// ── Stat card ─────────────────────────────────────────────────────────────────
 
-class _OnlineDotState extends State<_OnlineDot>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1400),
-  )..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
+class _StatCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool showArrow;
+  const _StatCard({
+    required this.label,
+    required this.value,
+    this.showArrow = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: Tween(begin: 0.45, end: 1.0).animate(_ctrl),
-      child: Container(
-        width: 14,
-        height: 14,
+    return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: _green,
-          shape: BoxShape.circle,
-          border: Border.all(color: _surface, width: 2),
-          boxShadow: [
-            BoxShadow(color: _green.withValues(alpha: 0.5), blurRadius: 6),
+          color: _surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _border.withValues(alpha: 0.5)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style:
+                  const TextStyle(fontSize: 11, color: _muted),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: _onSurface,
+                  ),
+                ),
+                if (showArrow) ...[
+                  const SizedBox(width: 2),
+                  const Icon(Icons.chevron_right_rounded,
+                      size: 16, color: _muted),
+                ],
+              ],
+            ),
           ],
         ),
-      ),
     );
   }
 }
 
-// ── Settings ───────────────────────────────────────────────────────────────────
+// ── Section label ─────────────────────────────────────────────────────────────
 
 class _SectionLabel extends StatelessWidget {
   final String text;
@@ -673,6 +624,8 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
+// ── Settings card ─────────────────────────────────────────────────────────────
+
 class _SettingsCard extends StatelessWidget {
   final List<Widget> children;
   final Color? borderColor;
@@ -683,22 +636,13 @@ class _SettingsCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: _surface,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: borderColor ?? _border.withValues(alpha: 0.6),
+          color: borderColor ?? _border.withValues(alpha: 0.5),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.15),
-            blurRadius: 12,
-            offset: const Offset(0, 3),
-          ),
-        ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: Column(children: children),
-      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(children: children),
     );
   }
 }
@@ -706,7 +650,6 @@ class _SettingsCard extends StatelessWidget {
 class _SettingsTile extends StatelessWidget {
   final IconData icon;
   final String label;
-  final String subtitle;
   final VoidCallback onTap;
   final Widget? trailing;
   final Color? iconColor;
@@ -716,7 +659,6 @@ class _SettingsTile extends StatelessWidget {
   const _SettingsTile({
     required this.icon,
     required this.label,
-    required this.subtitle,
     required this.onTap,
     this.trailing,
     this.iconColor,
@@ -731,47 +673,36 @@ class _SettingsTile extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         splashColor: (iconColor ?? _lime).withValues(alpha: 0.06),
-        highlightColor: (iconColor ?? _lime).withValues(alpha: 0.04),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
               Container(
-                width: 38,
-                height: 38,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
                   color: (iconColor ?? _lime).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(11),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, size: 20, color: iconColor ?? _lime),
+                child:
+                    Icon(icon, size: 18, color: iconColor ?? _lime),
               ),
-              const SizedBox(width: 13),
+              const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: labelColor ?? _onSurface,
-                      ),
-                    ),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(fontSize: 12, color: _muted),
-                    ),
-                  ],
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: labelColor ?? _onSurface,
+                  ),
                 ),
               ),
               trailing ??
                   (showChevron
-                      ? const Icon(
-                          Icons.chevron_right_rounded,
-                          size: 20,
-                          color: _dim,
-                        )
+                      ? const Icon(Icons.chevron_right_rounded,
+                          size: 18, color: _dim)
                       : const SizedBox.shrink()),
             ],
           ),
@@ -787,13 +718,59 @@ class _SettingsDivider extends StatelessWidget {
     return Divider(
       height: 1,
       thickness: 1,
-      indent: 67,
+      indent: 64,
       color: _border.withValues(alpha: 0.4),
     );
   }
 }
 
-// ── Edit Profile Sheet ─────────────────────────────────────────────────────────
+// ── Glow switch ───────────────────────────────────────────────────────────────
+
+class _GlowSwitch extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  const _GlowSwitch({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => onChanged(!value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeInOut,
+        width: 46,
+        height: 26,
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: value ? _lime : _elevated,
+          borderRadius: BorderRadius.circular(13),
+          boxShadow: value
+              ? [
+                  BoxShadow(
+                    color: _lime.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                  ),
+                ]
+              : [],
+        ),
+        child: AnimatedAlign(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeInOut,
+          alignment:
+              value ? Alignment.centerRight : Alignment.centerLeft,
+          child: Container(
+            width: 20,
+            height: 20,
+            decoration: const BoxDecoration(
+                color: _bg, shape: BoxShape.circle),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Edit Profile Sheet ────────────────────────────────────────────────────────
 
 class _EditProfileSheet extends StatefulWidget {
   final AuthController auth;
@@ -828,11 +805,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
 
   Future<void> _pickImage(ImageSource source) async {
     final xf = await _picker.pickImage(
-      source: source,
-      maxWidth: 1024,
-      maxHeight: 1024,
-      imageQuality: 85,
-    );
+        source: source, maxWidth: 1024, maxHeight: 1024, imageQuality: 85);
     if (xf != null && mounted) {
       final bytes = await xf.readAsBytes();
       setState(() {
@@ -858,9 +831,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               width: 36,
               height: 4,
               decoration: BoxDecoration(
-                color: _border,
-                borderRadius: BorderRadius.circular(2),
-              ),
+                  color: _border, borderRadius: BorderRadius.circular(2)),
             ),
             const SizedBox(height: 16),
             ListTile(
@@ -872,26 +843,14 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.photo_library_rounded, color: _lime),
+              leading:
+                  const Icon(Icons.photo_library_rounded, color: _lime),
               title: const Text('Photo Library'),
               onTap: () {
                 Navigator.pop(context);
                 _pickImage(ImageSource.gallery);
               },
             ),
-            if (widget.auth.currentUser.value?.avatar.isNotEmpty == true)
-              ListTile(
-                leading: const Icon(Icons.delete_outline_rounded, color: _red),
-                title: const Text('Remove Photo',
-                    style: TextStyle(color: _red)),
-                onTap: () async {
-                  Navigator.pop(context);
-                  setState(() {
-                    _picked = null;
-                    _pickedBytes = null;
-                  });
-                },
-              ),
             const SizedBox(height: 8),
           ],
         ),
@@ -904,27 +863,19 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     if (name.isEmpty) return;
     setState(() => _saving = true);
     try {
-      if (_picked != null) {
-        await widget.auth.uploadProfilePhoto(_picked!);
-      }
+      if (_picked != null) await widget.auth.uploadProfilePhoto(_picked!);
       await widget.auth.updateProfile(
           name: name, phone: _phoneCtrl.text.trim());
       if (mounted) {
         Navigator.pop(context);
-        Get.snackbar(
-          'Profile Updated',
-          'Your changes have been saved.',
-          snackPosition: SnackPosition.BOTTOM,
-        );
+        Get.snackbar('Profile Updated', 'Your changes have been saved.',
+            snackPosition: SnackPosition.BOTTOM);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
-        Get.snackbar(
-          'Error',
-          'Failed to save profile. Please try again.',
-          snackPosition: SnackPosition.BOTTOM,
-        );
+        Get.snackbar('Error', 'Failed to save. Please try again.',
+            snackPosition: SnackPosition.BOTTOM);
       }
     }
   }
@@ -944,18 +895,13 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Handle bar
           Container(
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: _border,
-              borderRadius: BorderRadius.circular(2),
-            ),
+                color: _border, borderRadius: BorderRadius.circular(2)),
           ),
           const SizedBox(height: 20),
-
-          // Title
           Row(
             children: [
               Container(
@@ -972,11 +918,10 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               const Text(
                 'Edit Profile',
                 style: TextStyle(
-                  color: _onSurface,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.3,
-                ),
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: _onSurface,
+                    letterSpacing: -0.3),
               ),
             ],
           ),
@@ -988,75 +933,62 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             child: Stack(
               alignment: Alignment.center,
               children: [
-                // Glow ring
-                Container(
-                  width: 96,
-                  height: 96,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [
-                        _lime.withValues(alpha: 0.4),
-                        _blue.withValues(alpha: 0.25),
-                      ],
-                    ),
-                  ),
-                ),
-                // Avatar
                 Container(
                   width: 88,
                   height: 88,
+                  decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: _green, width: 2.5)),
+                ),
+                Container(
+                  width: 80,
+                  height: 80,
                   decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _elevated,
-                  ),
+                      shape: BoxShape.circle, color: _elevated),
                   clipBehavior: Clip.antiAlias,
                   child: _picked != null
                       ? Image.memory(_pickedBytes!, fit: BoxFit.cover)
                       : (user?.avatar.isNotEmpty == true
-                          ? Image.network(user!.avatar, fit: BoxFit.cover,
-                              errorBuilder: (ctx, err, stack) =>
+                          ? Image.network(user!.avatar,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
                                   _InitialsAvatar(initials: initials))
                           : _InitialsAvatar(initials: initials)),
                 ),
-                // Camera badge
                 Positioned(
                   bottom: 0,
                   right: 0,
                   child: Container(
-                    width: 28,
-                    height: 28,
+                    width: 26,
+                    height: 26,
                     decoration: BoxDecoration(
-                      color: _lime,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: _elevated, width: 2),
-                    ),
+                        color: _lime,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: _elevated, width: 2)),
                     child: const Icon(Icons.camera_alt_rounded,
-                        color: _onLime, size: 14),
+                        color: _onLime, size: 13),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            'Tap to change photo',
-            style: TextStyle(fontSize: 12, color: _muted),
-          ),
+          const SizedBox(height: 4),
+          Text('Tap to change photo',
+              style: TextStyle(fontSize: 12, color: _muted)),
 
-          // Upload progress bar
           if (_saving && _picked != null)
             Obx(() {
               final p = widget.auth.photoUploadProgress.value;
               return p > 0 && p < 1
                   ? Padding(
-                      padding: const EdgeInsets.only(top: 12),
+                      padding: const EdgeInsets.only(top: 10),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(4),
                         child: LinearProgressIndicator(
                           value: p,
                           backgroundColor: _border,
-                          valueColor: const AlwaysStoppedAnimation(_lime),
+                          valueColor:
+                              const AlwaysStoppedAnimation(_lime),
                           minHeight: 4,
                         ),
                       ),
@@ -1066,7 +998,6 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
 
           const SizedBox(height: 20),
 
-          // Fields
           _SheetField(
             controller: _nameCtrl,
             hint: 'Full name',
@@ -1081,7 +1012,6 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
           ),
           const SizedBox(height: 24),
 
-          // Save button
           SizedBox(
             width: double.infinity,
             height: 52,
@@ -1093,25 +1023,17 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 disabledBackgroundColor: _lime.withValues(alpha: 0.5),
                 elevation: 0,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+                    borderRadius: BorderRadius.circular(16)),
               ),
               child: _saving
                   ? const SizedBox(
                       width: 22,
                       height: 22,
                       child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        color: _onLime,
-                      ),
-                    )
-                  : const Text(
-                      'Save Changes',
+                          strokeWidth: 2.5, color: _onLime))
+                  : const Text('Save Changes',
                       style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      ),
-                    ),
+                          fontWeight: FontWeight.w800, fontSize: 15)),
             ),
           ),
         ],
@@ -1120,7 +1042,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   }
 }
 
-// ── Sheet Field ────────────────────────────────────────────────────────────────
+// ── Sheet field ───────────────────────────────────────────────────────────────
 
 class _SheetField extends StatelessWidget {
   final TextEditingController controller;
@@ -1160,51 +1082,6 @@ class _SheetField extends StatelessWidget {
         ),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      ),
-    );
-  }
-}
-
-// ── Glow Switch ────────────────────────────────────────────────────────────────
-
-class _GlowSwitch extends StatelessWidget {
-  final bool value;
-  final ValueChanged<bool> onChanged;
-  const _GlowSwitch({required this.value, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => onChanged(!value),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeInOut,
-        width: 46,
-        height: 26,
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          color: value ? _lime : _elevated,
-          borderRadius: BorderRadius.circular(13),
-          boxShadow: value
-              ? [
-                  BoxShadow(
-                    color: _lime.withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    spreadRadius: 0,
-                  ),
-                ]
-              : [],
-        ),
-        child: AnimatedAlign(
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeInOut,
-          alignment: value ? Alignment.centerRight : Alignment.centerLeft,
-          child: Container(
-            width: 20,
-            height: 20,
-            decoration: const BoxDecoration(color: _bg, shape: BoxShape.circle),
-          ),
-        ),
       ),
     );
   }

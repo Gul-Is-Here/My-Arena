@@ -43,7 +43,7 @@ class ChatRoomScreen extends StatefulWidget {
 class _ChatRoomScreenState extends State<ChatRoomScreen> {
   final _textCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
-  late final String chatId = Get.arguments as String;
+  late final String chatId = (Get.arguments as String?) ?? '';
 
   @override
   void dispose() {
@@ -136,7 +136,9 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   }
 
   // Guards against double-taps while an approve/reject write is in flight.
-  bool _actionBusy = false;
+  // RxBool so the Obx banner rebuilds immediately when set, without waiting
+  // for the Firestore stream to propagate.
+  final _actionBusy = false.obs;
 
   OwnerBookingController get _ownerCtrl {
     if (!Get.isRegistered<OwnerBookingController>()) {
@@ -146,28 +148,76 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   }
 
   Future<void> _approveBooking(BookingModel b) async {
-    if (_actionBusy) return;
-    setState(() => _actionBusy = true);
+    if (_actionBusy.value) return;
+    _actionBusy.value = true;
     try {
       await _ownerCtrl.approve(b.id, booking: b);
+      // Don't reset _actionBusy on success — the Firestore stream will update
+      // pinned.status to 'confirmed', making canAct permanently false.
       Get.snackbar(
         'Booking Approved',
         '${b.courtName} · ${b.timeRange}',
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
+      _actionBusy.value = false;
       Get.snackbar(
         'Approval failed',
         e.toString(),
         snackPosition: SnackPosition.BOTTOM,
       );
-    } finally {
-      if (mounted) setState(() => _actionBusy = false);
+    }
+  }
+
+  Future<void> _approveRecurringSeries(String recurringGroupId, int total) async {
+    if (_actionBusy.value) return;
+    _actionBusy.value = true;
+    try {
+      await _ownerCtrl.approveSeries(recurringGroupId);
+      Get.snackbar(
+        'Recurring Booking Approved',
+        '$total sessions confirmed',
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    } catch (e) {
+      _actionBusy.value = false;
+      Get.snackbar('Approval failed', e.toString(), snackPosition: SnackPosition.BOTTOM);
+    }
+  }
+
+  Future<void> _rejectRecurringSeries(String recurringGroupId) async {
+    if (_actionBusy.value) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _surface,
+        title: Text('Reject all sessions?',
+            style: AppTextStyles.titleMedium.copyWith(color: _onSurface)),
+        content: Text(
+          'This will reject all pending occurrences in the recurring series. The customer will be notified.',
+          style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Reject All', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    _actionBusy.value = true;
+    try {
+      await _ownerCtrl.rejectSeries(recurringGroupId);
+    } catch (e) {
+      _actionBusy.value = false;
+      Get.snackbar('Rejection failed', e.toString(), snackPosition: SnackPosition.BOTTOM);
     }
   }
 
   Future<void> _rejectBooking(BookingModel b) async {
-    if (_actionBusy) return;
+    if (_actionBusy.value) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -197,17 +247,17 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
       ),
     );
     if (confirmed != true) return;
-    setState(() => _actionBusy = true);
+    _actionBusy.value = true;
     try {
       await _ownerCtrl.reject(b.id);
+      // Don't reset on success — stream update will change pinned booking.
     } catch (e) {
+      _actionBusy.value = false;
       Get.snackbar(
         'Rejection failed',
         e.toString(),
         snackPosition: SnackPosition.BOTTOM,
       );
-    } finally {
-      if (mounted) setState(() => _actionBusy = false);
     }
   }
 
@@ -519,9 +569,40 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                 final pinned = c.pinnedBookingFor(chat, bookings);
                 if (pinned != null) {
                   final snap = _snapOf(pinned);
-                  final canAct =
-                      !_actionBusy &&
-                      pinned.ownerId == c.myUid &&
+                  final isOwner = pinned.ownerId == c.myUid;
+                  final canAct = !_actionBusy.value && isOwner;
+
+                  // Recurring series: collect all occurrences from this chat's
+                  // pair bookings so the owner can see and act on all of them.
+                  if (pinned.isRecurring) {
+                    final gid = pinned.recurringGroupId!;
+                    final series = bookings
+                        .where((b) => b.recurringGroupId == gid)
+                        .toList()
+                      ..sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
+                    final pendingCount = series
+                        .where((b) => b.status == BookingStatus.depositSubmitted)
+                        .length;
+                    return _BookingContextBanner(
+                      snapshot: snap,
+                      onTap: () => _showBookingSnapshotSheet(snap),
+                      onSwitch: bookings.length > 1
+                          ? () => _showBookingPicker(chat, bookings, pinned.id)
+                          : null,
+                      bookingCount: bookings.length,
+                      // Show approve/reject only when there are pending occurrences.
+                      onApprove: canAct && pendingCount > 0
+                          ? () => _approveRecurringSeries(gid, pendingCount)
+                          : null,
+                      onReject: canAct && pendingCount > 0
+                          ? () => _rejectRecurringSeries(gid)
+                          : null,
+                      recurringOccurrences: series,
+                    );
+                  }
+
+                  // Non-recurring: existing single-booking flow.
+                  final canActSingle = canAct &&
                       pinned.status == BookingStatus.depositSubmitted;
                   return _BookingContextBanner(
                     snapshot: snap,
@@ -530,8 +611,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                         ? () => _showBookingPicker(chat, bookings, pinned.id)
                         : null,
                     bookingCount: bookings.length,
-                    onApprove: canAct ? () => _approveBooking(pinned) : null,
-                    onReject: canAct ? () => _rejectBooking(pinned) : null,
+                    onApprove: canActSingle ? () => _approveBooking(pinned) : null,
+                    onReject: canActSingle ? () => _rejectBooking(pinned) : null,
                   );
                 }
                 // Stream not loaded yet — fall through to legacy snapshot.
@@ -1137,6 +1218,9 @@ class _BookingContextBanner extends StatelessWidget {
   final VoidCallback? onApprove;
   final VoidCallback? onReject;
 
+  /// Non-null for recurring series — all occurrences, sorted by date.
+  final List<BookingModel>? recurringOccurrences;
+
   const _BookingContextBanner({
     required this.snapshot,
     required this.onTap,
@@ -1144,6 +1228,7 @@ class _BookingContextBanner extends StatelessWidget {
     this.bookingCount = 1,
     this.onApprove,
     this.onReject,
+    this.recurringOccurrences,
   });
 
   static Color _statusColor(String status) {
@@ -1301,6 +1386,11 @@ class _BookingContextBanner extends StatelessWidget {
                 ),
               ],
             ),
+            // Recurring series: show a compact per-week status row.
+            if (recurringOccurrences != null && recurringOccurrences!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _RecurringOccurrencesRow(occurrences: recurringOccurrences!),
+            ],
             if (onApprove != null || onReject != null) ...[
               const SizedBox(height: 10),
               Row(
@@ -1317,9 +1407,9 @@ class _BookingContextBanner extends StatelessWidget {
                             color: AppColors.error.withValues(alpha: 0.45),
                           ),
                         ),
-                        child: const Text(
-                          'Reject',
-                          style: TextStyle(
+                        child: Text(
+                          recurringOccurrences != null ? 'Reject All' : 'Reject',
+                          style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
                             color: AppColors.error,
@@ -1339,9 +1429,9 @@ class _BookingContextBanner extends StatelessWidget {
                           color: AppColors.primary,
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Text(
-                          'Approve',
-                          style: TextStyle(
+                        child: Text(
+                          recurringOccurrences != null ? 'Approve All' : 'Approve',
+                          style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w800,
                             color: AppColors.onPrimary,
@@ -1356,6 +1446,98 @@ class _BookingContextBanner extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Compact per-week status row inside a recurring booking banner.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _RecurringOccurrencesRow extends StatelessWidget {
+  final List<BookingModel> occurrences;
+  const _RecurringOccurrencesRow({required this.occurrences});
+
+  static const _mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  Color _dotColor(BookingStatus s) {
+    switch (s) {
+      case BookingStatus.confirmed:
+      case BookingStatus.completed:
+        return AppColors.success;
+      case BookingStatus.rejected:
+      case BookingStatus.cancelled:
+        return AppColors.error;
+      case BookingStatus.depositSubmitted:
+      case BookingStatus.pendingDeposit:
+        return AppColors.warning;
+      default:
+        return AppColors.textSecondary;
+    }
+  }
+
+  String _statusShort(BookingStatus s) {
+    switch (s) {
+      case BookingStatus.confirmed:   return 'Confirmed';
+      case BookingStatus.completed:   return 'Done';
+      case BookingStatus.rejected:    return 'Rejected';
+      case BookingStatus.cancelled:   return 'Cancelled';
+      case BookingStatus.depositSubmitted: return 'Pending';
+      default: return 'Pending';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '🔄 Recurring · ${occurrences.length} sessions',
+          style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textSecondary,
+            letterSpacing: 0.3,
+          ),
+        ),
+        const SizedBox(height: 5),
+        Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          children: occurrences.map((occ) {
+            final d = occ.date;
+            final dot = _dotColor(occ.status);
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: dot.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: dot.withValues(alpha: 0.30)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${d.day} ${_mo[d.month - 1]} · ${_statusShort(occ.status)}',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                      color: dot,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
 }
@@ -1860,8 +2042,9 @@ class _SupportContextBar extends StatelessWidget {
                               );
                               final ticket = controller.userTickets
                                   .firstWhereOrNull((t) => t.id == ticketId);
-                              if (ticket != null)
+                              if (ticket != null) {
                                 controller.selectTicket(ticket);
+                              }
                               Get.snackbar(
                                 'Ticket Created',
                                 subject,

@@ -22,7 +22,7 @@ class AdminArenaDetailScreen extends StatelessWidget {
     if (!Get.isRegistered<AnalyticsController>()) {
       Get.put(AnalyticsController(), permanent: true);
     }
-    final id = Get.arguments as String;
+    final id = (Get.arguments as String?) ?? '';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Arena Detail')),

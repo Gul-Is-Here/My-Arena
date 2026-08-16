@@ -47,6 +47,7 @@ import '../modules/customer/arena_list_screen.dart';
 import '../modules/customer/arena_map_view_screen.dart';
 import '../modules/customer/customer_dashboard_screen.dart';
 import '../modules/owner/add_arena_screen.dart';
+import '../modules/owner/promotions_screen.dart';
 import '../modules/owner/edit_arena_screen.dart';
 import '../modules/owner/arena_detail_owner_screen.dart';
 import '../modules/owner/boost_request_screen.dart';
@@ -82,6 +83,7 @@ import '../modules/admin/admin_booking_detail_screen.dart';
 import '../modules/admin/admin_customers_screen.dart';
 import '../modules/admin/admin_customer_detail_screen.dart';
 import '../modules/admin/admin_finance_screen.dart';
+import '../modules/admin/admin_promotions_screen.dart';
 import '../data/enums/permission.dart';
 import '../middleware/auth_middleware.dart';
 import '../modules/shared/edit_profile_screen.dart';
@@ -298,7 +300,18 @@ class AppPages {
       middlewares: [AuthMiddleware()],
     ),
 
-    // Phase 3 — Owner booking management
+        GetPage(
+      name: AppRoutes.ownerPromotions,
+      page: () {
+        final args = Get.arguments as Map<String, String>;
+        return PromotionsScreen(
+          arenaId: args['arenaId']!,
+          arenaName: args['arenaName']!,
+        );
+      },
+      middlewares: [OwnerMiddleware()],
+    ),
+// Phase 3 — Owner booking management
     GetPage(
       name: AppRoutes.ownerEarnings,
       page: () => const EarningsScreen(),
@@ -407,6 +420,11 @@ class AppPages {
       name: AppRoutes.adminFinance,
       page: () => const AdminFinanceScreen(),
       middlewares: [PermissionMiddleware(Permission.viewFinancials)],
+    ),
+    GetPage(
+      name: AppRoutes.adminPromotions,
+      page: () => const AdminPromotionsScreen(),
+      middlewares: [PermissionMiddleware(Permission.manageSettings)],
     ),
     GetPage(
       name: AppRoutes.adminArenaDetail,

@@ -128,6 +128,12 @@ abstract class AppRoutes {
   static const String customerTicketDetail = '/customer/ticket-detail';
   static const String submitTicket = '/customer/submit-ticket';
 
+  // Owner: Promotions
+  static const String ownerPromotions = '/owner/promotions';
+
+  // Admin: Platform Promotions
+  static const String adminPromotions = '/admin/promotions';
+
   // Phase 6 — POS (Owner)
   static const String posDashboard = '/owner/pos';
   static const String posLiveCourts = '/owner/pos/courts';

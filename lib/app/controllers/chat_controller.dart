@@ -464,6 +464,43 @@ class ChatController extends GetxController {
   }
 
   /// Sent by the owner when a booking is approved.
+  Future<void> sendRecurringConfirmedMessage(
+    BookingModel first,
+    int confirmedCount,
+    int totalCount,
+  ) async {
+    final chatId = await _service.getOrCreateBookingChat(
+      bookingId: first.id,
+      arenaId: first.arenaId,
+      customerId: first.customerId,
+      ownerId: first.ownerId,
+      title: first.arenaName,
+      subtitle: '${first.courtName} · ${first.timeRange}',
+      requesterUid: myUid,
+      bookingSnapshot: BookingSnapshot(
+        arenaName: first.arenaName,
+        courtName: first.courtName,
+        date: first.date,
+        timeRange: first.timeRange,
+        totalAmount: first.totalAmount,
+        depositAmount: first.depositAmount,
+        status: BookingStatus.confirmed.key,
+      ),
+    );
+    final text = confirmedCount == totalCount
+        ? '✅ Your recurring booking is confirmed! $totalCount sessions starting from ${first.courtName}. '
+            'Remaining payment is due at the arena for each session. See you there! 🎉'
+        : '✅ $confirmedCount of $totalCount recurring sessions were confirmed. '
+            'Some sessions may be unavailable. Please check your booking details.';
+    await _service.sendText(
+      chatId: chatId,
+      senderId: myUid,
+      senderRole: 'system',
+      text: text,
+      participants: [first.customerId, first.ownerId],
+    );
+  }
+
   Future<void> sendBookingConfirmedMessage(BookingModel b) async {
     final chatId = await _service.getOrCreateBookingChat(
       bookingId: b.id,
@@ -486,7 +523,7 @@ class ChatController extends GetxController {
     await _service.sendText(
       chatId: chatId,
       senderId: myUid,
-      senderRole: 'owner',
+      senderRole: 'system',
       text: '✅ Your booking is confirmed! '
           'Remaining Rs ${b.remainingAmount.toStringAsFixed(0)} is payable at the arena. See you there! 🎉',
       participants: [b.customerId, b.ownerId],

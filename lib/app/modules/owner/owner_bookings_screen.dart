@@ -86,12 +86,14 @@ class _CustomerInfo {
 }
 
 // ── Date range filter ─────────────────────────────────────────────────────────
-enum _RangeFilter { today, week, month, custom }
+enum _RangeFilter { all, today, week, month, custom }
 
 bool _inRange(DateTime d, _RangeFilter f, DateTimeRange? custom) {
   final now = DateTime.now();
   final that = DateTime(d.year, d.month, d.day);
   switch (f) {
+    case _RangeFilter.all:
+      return true;
     case _RangeFilter.today:
       return that == DateTime(now.year, now.month, now.day);
     case _RangeFilter.week:
@@ -164,7 +166,7 @@ class OwnerBookingsScreen extends StatefulWidget {
 class _OwnerBookingsScreenState extends State<OwnerBookingsScreen> {
   final _searchCtrl = TextEditingController();
   final _searchQuery = ''.obs;
-  final Rx<_RangeFilter> _rangeFilter = _RangeFilter.today.obs;
+  final Rx<_RangeFilter> _rangeFilter = _RangeFilter.all.obs;
   final Rx<DateTimeRange?> _customRange = Rx<DateTimeRange?>(null);
   final Rx<_StatusTab> _statusTab = _StatusTab.all.obs;
 
@@ -386,6 +388,7 @@ class _Header extends StatelessWidget {
                           b.status == BookingStatus.completed)
                       .fold<double>(0, (s, b) => s + b.totalAmount);
                   final label = switch (rangeFilter.value) {
+                    _RangeFilter.all => 'All time',
                     _RangeFilter.today => 'Today',
                     _RangeFilter.week => 'This week',
                     _RangeFilter.month => 'This month',
@@ -455,6 +458,7 @@ class _FiltersBar extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             children: [
               for (final (f, label) in [
+                (_RangeFilter.all, 'All'),
                 (_RangeFilter.today, 'Today'),
                 (_RangeFilter.week, 'This week'),
                 (_RangeFilter.month, 'This month'),
@@ -854,6 +858,23 @@ class _BookingCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
 
+                      // Recurring badge
+                      if (b.isRecurring) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.repeat, size: 11, color: _secondary),
+                            const SizedBox(width: 3),
+                            Text(
+                              'Week ${b.recurringWeek ?? '?'} of ${b.recurringTotal ?? '?'} · Recurring',
+                              style: AppTextStyles.caption.copyWith(
+                                  color: _secondary, fontSize: 10.5, fontWeight: FontWeight.w700),
+                            ),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 4),
+
                       // Row 3: Date + Time + Amount
                       Row(
                         children: [
@@ -901,13 +922,16 @@ class _BookingCard extends StatelessWidget {
                               child: SizedBox(
                                 height: 40,
                                 child: FilledButton(
-                                  onPressed: () => _showApproveDialog(context, b, controller, resolveCustomerName),
+                                  onPressed: b.isRecurring && b.recurringGroupId != null
+                                      ? () => _showApproveSeriesDialog(context, b, controller, resolveCustomerName)
+                                      : () => _showApproveDialog(context, b, controller, resolveCustomerName),
                                   style: FilledButton.styleFrom(
                                     backgroundColor: _green,
                                     foregroundColor: Colors.white,
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                   ),
-                                  child: const Text('Confirm', style: TextStyle(fontWeight: FontWeight.w800)),
+                                  child: Text(b.isRecurring ? 'Confirm All' : 'Confirm',
+                                      style: const TextStyle(fontWeight: FontWeight.w800)),
                                 ),
                               ),
                             ),
@@ -916,13 +940,16 @@ class _BookingCard extends StatelessWidget {
                               child: SizedBox(
                                 height: 40,
                                 child: OutlinedButton(
-                                  onPressed: () => _showRejectDialog(context, b, controller, resolveCustomerName),
+                                  onPressed: b.isRecurring && b.recurringGroupId != null
+                                      ? () => _showRejectSeriesDialog(context, b, controller, resolveCustomerName)
+                                      : () => _showRejectDialog(context, b, controller, resolveCustomerName),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: _red,
                                     side: BorderSide(color: _red.withValues(alpha: 0.5)),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                   ),
-                                  child: const Text('Reject', style: TextStyle(fontWeight: FontWeight.w700)),
+                                  child: Text(b.isRecurring ? 'Reject All' : 'Reject',
+                                      style: const TextStyle(fontWeight: FontWeight.w700)),
                                 ),
                               ),
                             ),
@@ -1526,6 +1553,152 @@ Future<void> _showRejectDialog(
         Get.back();
         c.reject(b.id);
         Get.snackbar('Rejected', '$name\'s booking has been rejected.',
+            snackPosition: SnackPosition.BOTTOM, backgroundColor: _red, colorText: Colors.white,
+            margin: const EdgeInsets.all(16));
+      },
+    ),
+  );
+}
+
+Future<void> _showApproveSeriesDialog(
+    BuildContext context, BookingModel b, OwnerBookingController c,
+    Future<String> Function(BookingModel) resolveName) async {
+  final name = await resolveName(b);
+  final total = b.recurringTotal ?? 1;
+  final seriesBookings = c.seriesFor(b.recurringGroupId!);
+  final totalDeposit = seriesBookings.fold<double>(0, (s, x) => s + x.totalAmount);
+  final screenshotUrl = b.depositScreenshot;
+  if (!context.mounted) return;
+  showDialog(
+    context: context,
+    builder: (_) => Dialog(
+      backgroundColor: _surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(Icons.repeat_on_outlined, color: _green, size: 22),
+              const SizedBox(width: 10),
+              Text('Approve Recurring Series',
+                  style: AppTextStyles.titleMedium.copyWith(color: _textPrimary)),
+            ]),
+            const SizedBox(height: 12),
+            Text('$name · ${b.arenaName}',
+                style: AppTextStyles.bodySmall.copyWith(color: _textSecondary)),
+            const SizedBox(height: 4),
+            Text('$total sessions · PKR ${totalDeposit.toStringAsFixed(0)} total deposit',
+                style: AppTextStyles.bodySmall.copyWith(
+                    color: _green, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text('1 payment screenshot covers all $total sessions.',
+                style: AppTextStyles.bodySmall.copyWith(
+                    color: _textSecondary, fontSize: 12)),
+            if (screenshotUrl != null) ...[
+              const SizedBox(height: 16),
+              Text('Deposit Screenshot',
+                  style: AppTextStyles.caption.copyWith(color: _textSecondary)),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.network(
+                  screenshotUrl,
+                  fit: BoxFit.contain,
+                  loadingBuilder: (_, child, progress) => progress == null
+                      ? child
+                      : const SizedBox(
+                          height: 120,
+                          child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 80,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: _card,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text('Screenshot unavailable',
+                        style: AppTextStyles.caption.copyWith(color: _textSecondary)),
+                  ),
+                ),
+              ),
+            ] else ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _amber.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _amber.withValues(alpha: 0.4)),
+                ),
+                child: Row(children: [
+                  Icon(Icons.warning_amber_outlined, color: _amber, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text('No payment screenshot attached.',
+                      style: AppTextStyles.caption.copyWith(color: _amber))),
+                ]),
+              ),
+            ],
+            const SizedBox(height: 20),
+            Row(children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: Get.back,
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: _outline),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: Text('Cancel',
+                      style: AppTextStyles.label.copyWith(color: _textSecondary)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () async {
+                    Get.back();
+                    await c.approveSeries(b.recurringGroupId!);
+                    Get.snackbar('All Sessions Approved!',
+                        '$total sessions confirmed for $name.',
+                        snackPosition: SnackPosition.BOTTOM,
+                        backgroundColor: _green,
+                        colorText: Colors.white,
+                        margin: const EdgeInsets.all(16));
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _green,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: Text('Approve All',
+                      style: AppTextStyles.label.copyWith(color: Colors.white)),
+                ),
+              ),
+            ]),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> _showRejectSeriesDialog(
+    BuildContext context, BookingModel b, OwnerBookingController c,
+    Future<String> Function(BookingModel) resolveName) async {
+  final name = await resolveName(b);
+  if (!context.mounted) return;
+  showDialog(
+    context: context,
+    builder: (_) => _ConfirmDialog(
+      icon: Icons.cancel_outlined, iconColor: _red,
+      title: 'Reject All Sessions?',
+      subtitle: 'Reject all pending sessions in this recurring series for $name.\nYou\'ll need to refund the deposit manually.',
+      confirmLabel: 'Reject All', confirmColor: _red,
+      onConfirm: () {
+        Get.back();
+        c.rejectSeries(b.recurringGroupId!);
+        Get.snackbar('Series Rejected', 'All pending sessions for $name have been rejected.',
             snackPosition: SnackPosition.BOTTOM, backgroundColor: _red, colorText: Colors.white,
             margin: const EdgeInsets.all(16));
       },

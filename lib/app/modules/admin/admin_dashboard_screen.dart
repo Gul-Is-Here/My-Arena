@@ -943,6 +943,14 @@ class _AdminMenuTab extends StatelessWidget {
                           ),
                         if (perm.can(Permission.manageSettings))
                           AdminMenuTile(
+                            icon: Icons.local_offer_outlined,
+                            title: 'Platform Promotions',
+                            subtitle: 'Platform-wide promo codes & owner discount cap',
+                            route: AppRoutes.adminPromotions,
+                            color: AppColors.success,
+                          ),
+                        if (perm.can(Permission.manageSettings))
+                          AdminMenuTile(
                             icon: Icons.settings_outlined,
                             title: 'Platform Settings',
                             subtitle: 'Deposit %, cancellation, JazzCash',

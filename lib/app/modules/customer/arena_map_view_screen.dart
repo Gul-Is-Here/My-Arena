@@ -39,7 +39,6 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
   void initState() {
     super.initState();
     ever(_discovery.userPosition, (_) => _rebuild());
-    ever(_discovery.searchRadius, (_) => _rebuild());
     ever(_discovery.isLoading, (_) {
       if (!_discovery.isLoading.value) _rebuild();
     });
@@ -57,7 +56,7 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
     await _buildMarkersAndCircle();
     _animateCameraToFit();
     if (_discovery.nearby.isEmpty && !_discovery.isLoading.value) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _show50kmSheet());
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showNoArenasSnack());
     }
   }
 
@@ -240,7 +239,7 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
 
   Future<void> _buildMarkersAndCircle() async {
     final arenas = _discovery.nearby;
-    final radius = _discovery.searchRadius.value * 1000;
+    const radius = 30.0 * 1000; // 30 km in metres
 
     // Build all marker icons in parallel
     final icons = await Future.wait(
@@ -308,31 +307,17 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
     );
   }
 
-  double _zoomForRadius() =>
-      _discovery.searchRadius.value <= 30 ? 10.5 : 9.5;
+  double _zoomForRadius() => 10.5;
 
-  void _show50kmSheet() {
+  void _showNoArenasSnack() {
     if (!mounted) return;
-    if (_discovery.searchRadius.value >= 50) {
-      Get.snackbar(
-        'No arenas found',
-        'No arenas found within 50 km either.',
-        snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: AppColors.error.withValues(alpha: 0.9),
-        colorText: Colors.white,
-        margin: const EdgeInsets.all(16),
-      );
-      return;
-    }
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _NoArenasSheet(
-        onExpand: () {
-          Navigator.pop(context);
-          _discovery.expandTo50km();
-        },
-      ),
+    Get.snackbar(
+      'No arenas nearby',
+      'No arenas found within 30 km of your location.',
+      snackPosition: SnackPosition.BOTTOM,
+      backgroundColor: AppColors.error.withValues(alpha: 0.9),
+      colorText: Colors.white,
+      margin: const EdgeInsets.all(16),
     );
   }
 
@@ -355,31 +340,29 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
           ),
         ),
         actions: [
-          Obx(() => Container(
-                margin:
-                    const EdgeInsets.only(right: 12, top: 8, bottom: 8),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(20),
+          Container(
+          margin: const EdgeInsets.only(right: 12, top: 8, bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.black54,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.radio_button_checked,
+                  color: AppColors.secondary, size: 14),
+              const SizedBox(width: 6),
+              Text(
+                '30 km',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.radio_button_checked,
-                        color: AppColors.secondary, size: 14),
-                    const SizedBox(width: 6),
-                    Text(
-                      '${_discovery.searchRadius.value.toStringAsFixed(0)} km',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              )),
+              ),
+            ],
+          ),
+        ),
         ],
       ),
       body: Obx(() {
@@ -592,75 +575,3 @@ class _ArenaPopupCard extends StatelessWidget {
   }
 }
 
-// ── No Arenas Bottom Sheet ────────────────────────────────────────────────────
-
-class _NoArenasSheet extends StatelessWidget {
-  final VoidCallback onExpand;
-  const _NoArenasSheet({required this.onExpand});
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassCard(
-      radius: 24,
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.white24,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 20),
-          const Icon(Icons.location_off_outlined,
-              size: 48, color: AppColors.textGrey),
-          const SizedBox(height: 12),
-          Text('No Arenas Nearby', style: AppTextStyles.titleLarge),
-          const SizedBox(height: 8),
-          Text(
-            "We couldn't find any arenas within 30 km of your location.",
-            textAlign: TextAlign.center,
-            style: AppTextStyles.bodyMedium
-                .copyWith(color: AppColors.textGrey),
-          ),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(
-                        color: AppColors.textGrey.withValues(alpha: 0.4)),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
-                  ),
-                  child: const Text('Cancel',
-                      style: TextStyle(color: AppColors.textGrey)),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: onExpand,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: AppColors.onPrimary,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
-                  ),
-                  child: const Text('Expand to 50 km'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}

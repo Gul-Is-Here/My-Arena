@@ -10,9 +10,11 @@ import '../../controllers/discovery_controller.dart';
 import '../../controllers/favorites_controller.dart';
 import '../../data/models/arena_model.dart';
 import '../../data/models/court_model.dart';
+import '../../data/models/promotion_model.dart';
 import '../../data/models/review_model.dart';
 import '../../routes/app_routes.dart';
 import '../../services/arena_service.dart';
+import '../../services/promotion_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/arena_image.dart';
 
@@ -41,10 +43,30 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
   final ValueNotifier<CourtModel?> _selectedCourt = ValueNotifier(null);
 
   final ArenaService _svc = ArenaService();
+  final PromotionService _promoSvc = PromotionService();
 
   late final String _arenaId = (Get.arguments as String?) ?? '';
   late final Stream<ArenaModel?> _arenaStream = _svc.streamArena(_arenaId);
   late final Stream<List<CourtModel>> _courtsStream = _svc.courts(_arenaId);
+
+  List<PromotionModel> _offers = [];
+  bool _offersLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOffers();
+  }
+
+  Future<void> _loadOffers() async {
+    if (_arenaId.isEmpty) return;
+    try {
+      final offers = await _promoSvc.fetchActiveForArena(_arenaId);
+      if (mounted) setState(() { _offers = offers; _offersLoaded = true; });
+    } catch (_) {
+      if (mounted) setState(() => _offersLoaded = true);
+    }
+  }
 
   @override
   void dispose() {
@@ -128,6 +150,8 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
                 children: [
                   _buildHeader(arena, courts),
                   _buildLocationHours(arena, firstCourt),
+                  if (_offersLoaded && _offers.isNotEmpty)
+                    _buildAvailableOffers(_offers),
                   if (sports.isNotEmpty) _buildSportChips(sports),
                   if (amenities.isNotEmpty) _buildFacilities(amenities),
                   if (arena.description.isNotEmpty) _buildAbout(arena),
@@ -287,6 +311,52 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  // ── Available Offers ──────────────────────────────────────────────
+
+  Widget _buildAvailableOffers(List<PromotionModel> offers) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.local_offer_rounded,
+                  color: _greenCta, size: 18),
+              const SizedBox(width: 8),
+              const Text(
+                'Available Offers',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: _onBg,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _greenCta.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${offers.length}',
+                  style: const TextStyle(
+                    color: _greenCta,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ...offers.map((o) => _OfferCard(offer: o)),
         ],
       ),
     );
@@ -1432,6 +1502,131 @@ class _ReviewCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Offer card — shown in the "Available Offers" section on arena detail
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _OfferCard extends StatelessWidget {
+  final PromotionModel offer;
+  const _OfferCard({required this.offer});
+
+  static const _green = AppColors.primary;
+  static const _surface = AppColors.surface;
+  static const _muted = AppColors.textSecondary;
+  static const _onBg = AppColors.textPrimary;
+
+  @override
+  Widget build(BuildContext context) {
+    final isPlatform = offer.isPlatform;
+    final accentColor = isPlatform ? const Color(0xFF6C63FF) : _green;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: accentColor.withValues(alpha: 0.25),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Left accent stripe
+          Container(
+            width: 5,
+            height: 90,
+            decoration: BoxDecoration(
+              color: accentColor,
+              borderRadius: const BorderRadius.horizontal(
+                  left: Radius.circular(16)),
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      // Source badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: accentColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          offer.sourceLabel.toUpperCase(),
+                          style: TextStyle(
+                            color: accentColor,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      // Discount label
+                      Text(
+                        offer.discountLabel,
+                        style: TextStyle(
+                          color: accentColor,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    offer.title,
+                    style: const TextStyle(
+                      color: _onBg,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  _meta(offer),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _meta(PromotionModel o) {
+    final parts = <String>[];
+    if (o.minBookingAmount != null) {
+      parts.add('Min Rs. ${o.minBookingAmount!.toStringAsFixed(0)}');
+    }
+    if (o.maxDiscountAmount != null &&
+        o.discountType == DiscountType.percentage) {
+      parts.add('Up to Rs. ${o.maxDiscountAmount!.toStringAsFixed(0)} off');
+    }
+    if (o.expiresAt != null) {
+      final diff = o.expiresAt!.difference(DateTime.now());
+      if (diff.inDays <= 7 && diff.inDays >= 0) {
+        parts.add('Expires in ${diff.inDays + 1} day${diff.inDays == 0 ? '' : 's'}');
+      }
+    }
+    if (o.maxUses != null) {
+      final remaining = (o.maxUses! - o.usageCount).clamp(0, o.maxUses!);
+      if (remaining <= 10) parts.add('$remaining left');
+    }
+
+    if (parts.isEmpty) return const SizedBox.shrink();
+    return Text(
+      parts.join(' · '),
+      style: const TextStyle(color: _muted, fontSize: 11),
     );
   }
 }

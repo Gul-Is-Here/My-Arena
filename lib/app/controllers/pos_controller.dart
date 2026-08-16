@@ -9,6 +9,7 @@ import '../data/models/pos_expense_model.dart';
 import '../data/models/pos_product_model.dart';
 import '../data/models/pos_shift_model.dart';
 import '../data/models/pos_transaction_model.dart';
+import '../services/ledger_service.dart'; // also exports LedgerSource via pos_transaction_model
 import '../services/pos_service.dart';
 import 'auth_controller.dart';
 import 'owner_booking_controller.dart';
@@ -18,6 +19,7 @@ class PosController extends GetxController {
   static PosController get to => Get.find();
 
   final PosService _service = PosService();
+  final LedgerService _ledger = LedgerService();
 
   // ── Selected arena (POS context) ──────────────────────────────────────
   final Rx<ArenaModel?> selectedArena = Rx(null);
@@ -35,6 +37,9 @@ class PosController extends GetxController {
   final RxDouble todayRemaining = 0.0.obs;
   final RxDouble todayExpenses = 0.0.obs;
   final RxDouble todayNet = 0.0.obs;
+  // Breakdown: online deposit vs counter collection
+  final RxDouble todayOnlineCollected = 0.0.obs;
+  final RxDouble todayCounterCollected = 0.0.obs;
 
   // ── Loading ───────────────────────────────────────────────────────────
   final RxBool isLoading = false.obs;
@@ -119,10 +124,16 @@ class PosController extends GetxController {
         (e) => !e.date.isBefore(start) && e.date.isBefore(end));
 
     double revenue = 0, paid = 0, remaining = 0, exp = 0;
+    double onlineCollected = 0, counterCollected = 0;
     for (final t in todayTxns) {
       revenue += t.totalAmount;
       paid += t.amountPaid;
       remaining += t.remainingAmount;
+      if (t.source == LedgerSource.online) {
+        onlineCollected += t.amountPaid;
+      } else {
+        counterCollected += t.amountPaid;
+      }
     }
     for (final e in todayExp) {
       exp += e.amount;
@@ -132,6 +143,8 @@ class PosController extends GetxController {
     todayRemaining.value = remaining;
     todayExpenses.value = exp;
     todayNet.value = paid - exp;
+    todayOnlineCollected.value = onlineCollected;
+    todayCounterCollected.value = counterCollected;
   }
 
   void _listenProducts(String arenaId) {
@@ -194,6 +207,8 @@ class PosController extends GetxController {
     final bookings = todayBookingsForCourt(courtId);
 
     for (final b in bookings) {
+      // An ongoing booking always holds the court, even past its original end time.
+      if (b.status == BookingStatus.ongoing) return CourtLiveStatus.occupied;
       if (b.startHour <= nowHour && nowHour < b.startHour + b.totalHours) {
         return CourtLiveStatus.occupied;
       }
@@ -212,9 +227,10 @@ class PosController extends GetxController {
         b.date.year == now.year &&
         b.date.month == now.month &&
         b.date.day == now.day &&
-        b.startHour <= nowHour &&
-        nowHour < b.startHour + b.totalHours &&
-        !b.isCancelled);
+        !b.isCancelled &&
+        // Ongoing bookings hold the court even past the original end time.
+        (b.status == BookingStatus.ongoing ||
+            (b.startHour <= nowHour && nowHour < b.startHour + b.totalHours)));
   }
 
   // ── Transactions ──────────────────────────────────────────────────────
@@ -240,23 +256,9 @@ class PosController extends GetxController {
   // ── Expenses ──────────────────────────────────────────────────────────
 
   Future<void> addExpense(PosExpenseModel expense) async {
-    final id = await _service.addExpense(expense);
-    // Optimistic update — don't wait for stream
-    final saved = PosExpenseModel(
-      id: id,
-      arenaId: expense.arenaId,
-      arenaName: expense.arenaName,
-      category: expense.category,
-      amount: expense.amount,
-      description: expense.description,
-      date: expense.date,
-      addedById: expense.addedById,
-      addedByName: expense.addedByName,
-      receiptRef: expense.receiptRef,
-      shiftId: expense.shiftId,
-    );
-    expenses.insert(0, saved);
-    _recomputeStats();
+    await _service.addExpense(expense);
+    // Stream will update expenses list via _listenExpenses → assignAll.
+    // No manual insert here — that caused double-add (same race as addProduct).
     final shift = openShift.value;
     if (shift != null && expense.category != ExpenseCategory.other) {
       await _service.updateShiftSales(shift.id, expenseDelta: expense.amount);
@@ -277,38 +279,11 @@ class PosController extends GetxController {
   Future<void> toggleProduct(String arenaId, String productId, bool active) =>
       _service.toggleProduct(arenaId, productId, active);
 
-  Future<void> addProduct(PosProductModel product) async {
-    final id = await _service.upsertProduct(product);
-    final saved = PosProductModel(
-      id: id,
-      arenaId: product.arenaId,
-      name: product.name,
-      description: product.description,
-      category: product.category,
-      price: product.price,
-      isActive: product.isActive,
-      createdAt: product.createdAt,
-    );
-    if (saved.isActive) {
-      products.add(saved);
-      products.sort((a, b) => a.name.compareTo(b.name));
-    }
-  }
+  Future<void> addProduct(PosProductModel product) =>
+      _service.upsertProduct(product);
 
-  Future<void> updateProduct(PosProductModel product) async {
-    await _service.upsertProduct(product);
-    final idx = products.indexWhere((p) => p.id == product.id);
-    if (product.isActive) {
-      if (idx >= 0) {
-        products[idx] = product;
-      } else {
-        products.add(product);
-      }
-      products.sort((a, b) => a.name.compareTo(b.name));
-    } else if (idx >= 0) {
-      products.removeAt(idx);
-    }
-  }
+  Future<void> updateProduct(PosProductModel product) =>
+      _service.upsertProduct(product);
 
   Future<void> deleteProduct(String id) async {
     products.removeWhere((p) => p.id == id);
@@ -339,6 +314,39 @@ class PosController extends GetxController {
     final shift = openShift.value;
     if (shift == null) throw Exception('No open shift');
     await _service.closeShift(shift.id, closingCash, notes);
+    refreshStats();
+  }
+
+  // ── Balance collection ────────────────────────────────────────────────
+
+  /// Collect outstanding balance from an online booking at the counter.
+  Future<void> collectBalance({
+    required BookingModel booking,
+    required double amount,
+    required PosPaymentMethod method,
+    String? refNo,
+    String? notes,
+  }) async {
+    await _ledger.collectBalance(
+      booking: booking,
+      amount: amount,
+      method: method,
+      refNo: refNo,
+      shiftId: openShift.value?.id,
+      notes: notes,
+    );
+
+    final isCash = method == PosPaymentMethod.cash;
+    final isCard = method == PosPaymentMethod.card;
+    final shift = openShift.value;
+    if (shift != null) {
+      await _service.updateShiftSales(
+        shift.id,
+        cashDelta: isCash ? amount : 0,
+        cardDelta: isCard ? amount : 0,
+        otherDelta: (!isCash && !isCard) ? amount : 0,
+      );
+    }
     refreshStats();
   }
 

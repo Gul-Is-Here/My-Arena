@@ -9,7 +9,7 @@
  * no Cloud Function needed for phone verification.
  */
 
-const { onRequest } = require("firebase-functions/v2/https");
+const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onDocumentCreated, onDocumentUpdated, onDocumentDeleted } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const admin = require("firebase-admin");
@@ -31,9 +31,35 @@ exports.staffManagement = onRequest({ cors: true }, staffManagement);
 
 // ── FCM helpers ──────────────────────────────────────────────────────
 
-async function getToken(uid) {
+// Returns all valid FCM tokens stored for a user (supports multi-device).
+// Schema: users/{uid}.fcmTokens = { [token]: true }   (new, preferred)
+//         users/{uid}.fcmToken  = "..."                (legacy single-token)
+async function getTokens(uid) {
   const snap = await admin.firestore().collection("users").doc(uid).get();
-  return snap.data()?.fcmToken ?? null;
+  const data = snap.data();
+  if (!data) return [];
+  // Prefer the per-device map; fall back to legacy single field.
+  if (data.fcmTokens && typeof data.fcmTokens === "object") {
+    return Object.keys(data.fcmTokens).filter((t) => t && t.length > 0);
+  }
+  if (data.fcmToken && typeof data.fcmToken === "string") {
+    return [data.fcmToken];
+  }
+  return [];
+}
+
+// Remove a token that FCM has rejected (expired / device re-imaged).
+async function removeStaleToken(uid, token) {
+  const ref = admin.firestore().collection("users").doc(uid);
+  try {
+    await ref.update({
+      [`fcmTokens.${token}`]: admin.firestore.FieldValue.delete(),
+      // Clear legacy field too if it matches.
+      ...(await ref.get().then((s) => s.data()?.fcmToken === token
+        ? { fcmToken: admin.firestore.FieldValue.delete() }
+        : {})),
+    });
+  } catch (_) { /* best-effort */ }
 }
 
 async function sendPush(uid, title, body, type = "general", relatedId = null) {
@@ -49,14 +75,12 @@ async function sendPush(uid, title, body, type = "general", relatedId = null) {
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   }).catch((e) => console.error("inbox write failed:", e));
 
-  const token = await getToken(uid);
-  if (!token) return;
-  await admin.messaging().send({
-    token,
+  const tokens = await getTokens(uid);
+  if (tokens.length === 0) return;
+
+  const msgBase = {
     notification: { title, body },
     data: { type, ...(relatedId ? { relatedId } : {}) },
-    // High-priority delivery on both platforms so the OS wakes the app
-    // rather than deferring the push to a low-power batch window.
     android: {
       priority: "high",
       notification: { sound: "default", channelId: "my_arena_channel" },
@@ -65,7 +89,79 @@ async function sendPush(uid, title, body, type = "general", relatedId = null) {
       headers: { "apns-priority": "10" },
       payload: { aps: { sound: "default" } },
     },
-  });
+  };
+
+  await Promise.all(tokens.map(async (token) => {
+    try {
+      await admin.messaging().send({ ...msgBase, token });
+    } catch (e) {
+      const code = e.errorInfo?.code ?? e.code ?? "";
+      if (
+        code === "messaging/registration-token-not-registered" ||
+        code === "messaging/invalid-registration-token"
+      ) {
+        await removeStaleToken(uid, token);
+      } else {
+        console.error(`sendPush: FCM error for uid=${uid}:`, code, e.message);
+      }
+    }
+  }));
+}
+
+// ── Idempotent push — uses a deterministic doc ID so Cloud Function retries
+//    never duplicate the in-app inbox entry. FCM itself is best-effort.
+async function sendPushIdempotent(uid, title, body, type, relatedId, idempotencyKey) {
+  const db = admin.firestore();
+  const docId = idempotencyKey
+    ? `${uid}_${idempotencyKey}`
+    : null;
+  if (docId) {
+    // set with merge:false is idempotent — second write is a no-op if the
+    // doc already exists because Firestore merges the same data cleanly.
+    // Use a set with the deterministic ID rather than add().
+    const ref = db.collection("notifications").doc(docId);
+    const existing = await ref.get();
+    if (existing.exists) {
+      // Already delivered this notification event; skip FCM too.
+      return;
+    }
+    await ref.set({
+      uid, title, body, type,
+      ...(relatedId ? { relatedId } : {}),
+      read: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    }).catch((e) => console.error("idempotent inbox write failed:", e));
+  } else {
+    // Fallback to non-idempotent path (same as sendPush).
+    await db.collection("notifications").add({
+      uid, title, body, type,
+      ...(relatedId ? { relatedId } : {}),
+      read: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    }).catch((e) => console.error("inbox write failed:", e));
+  }
+
+  const tokens = await getTokens(uid);
+  if (tokens.length === 0) return;
+  const msgBase = {
+    notification: { title, body },
+    data: { type, ...(relatedId ? { relatedId } : {}) },
+    android: { priority: "high", notification: { sound: "default", channelId: "my_arena_channel" } },
+    apns: { headers: { "apns-priority": "10" }, payload: { aps: { sound: "default" } } },
+  };
+  await Promise.all(tokens.map(async (token) => {
+    try {
+      await admin.messaging().send({ ...msgBase, token });
+    } catch (e) {
+      const code = e.errorInfo?.code ?? e.code ?? "";
+      if (code === "messaging/registration-token-not-registered" ||
+          code === "messaging/invalid-registration-token") {
+        await removeStaleToken(uid, token);
+      } else {
+        console.error(`sendPushIdempotent: FCM error for uid=${uid}:`, code, e.message);
+      }
+    }
+  }));
 }
 
 // ── Booking: deposit submitted → notify owner ─────────────────────────
@@ -73,12 +169,28 @@ exports.onBookingCreated = onDocumentCreated("bookings/{bookingId}", async (even
   const data = event.data.data();
   const db = admin.firestore();
 
-  const title = "New Booking Request";
-  const body = `${data?.customerName ?? "A customer"} submitted a deposit for ${data?.courtName ?? "your court"}.`;
+  // For recurring series, only notify on week 1 to avoid duplicate notifications.
+  const isRecurring = !!data?.recurringGroupId;
+  const week = data?.recurringWeek ?? 1;
+  if (isRecurring && week > 1) {
+    // Still refresh availability but skip push notifications.
+    if (data?.arenaId) await refreshNextAvailable(db, data.arenaId);
+    return;
+  }
+
+  const title = isRecurring
+    ? "New Recurring Booking Request"
+    : "New Booking Request";
+  const body = isRecurring
+    ? `${data?.customerName ?? "A customer"} requested ${data?.recurringTotal ?? "multiple"} recurring sessions for ${data?.courtName ?? "your court"}.`
+    : `${data?.customerName ?? "A customer"} submitted a deposit for ${data?.courtName ?? "your court"}.`;
+
+  // Idempotency key: booking_created_{bookingId} — function retries are safe.
+  const idempKey = `booking_created_${event.params.bookingId}`;
 
   // Notify owner of new booking
   if (data?.ownerId) {
-    await sendPush(data.ownerId, title, body, "booking", event.params.bookingId);
+    await sendPushIdempotent(data.ownerId, title, body, "booking", event.params.bookingId, idempKey);
   }
 
   // Notify all staff assigned to this arena
@@ -119,23 +231,35 @@ exports.onBookingUpdated = onDocumentUpdated("bookings/{bookingId}", async (even
   if (before.status === after.status) return;
   const uid = after.customerId;
 
-  // Notify the customer of their booking status change
-  if (uid) {
+  // Notify the customer of their booking status change.
+  // For recurring series, only send a push for week 1 to avoid N duplicate notifications.
+  const isRecurring = !!after.recurringGroupId;
+  const week = after.recurringWeek ?? 1;
+  if (uid && (!isRecurring || week === 1)) {
+    let confirmedMsg = "Your booking is confirmed! Check the details.";
+    if (isRecurring && after.status === "confirmed") {
+      confirmedMsg = `Your recurring booking is confirmed! ${after.recurringTotal ?? "All"} sessions starting from ${after.courtName ?? "the court"}.`;
+    }
     const messages = {
-      confirmed: "Your booking is confirmed! Check the details.",
-      rejected: "Your booking was rejected.",
+      confirmed: confirmedMsg,
+      rejected: isRecurring ? "Your recurring booking was rejected." : "Your booking was rejected.",
       refund_sent: "Your refund has been sent.",
       completed: "Your session is complete! How was it? Leave a review.",
     };
     const msg = messages[after.status];
     if (msg) {
-      const titles = { confirmed: "Booking Confirmed ✅", completed: "Session Complete ⭐" };
-      await sendPush(uid, titles[after.status] ?? "Booking Update", msg, "booking", event.params.bookingId);
+      const titles = {
+        confirmed: isRecurring ? "Recurring Booking Confirmed ✅" : "Booking Confirmed ✅",
+        completed: "Session Complete ⭐",
+      };
+      // Idempotency key: booking_status_{bookingId}_{status} — retries are safe.
+      const idempKey = `booking_status_${event.params.bookingId}_${after.status}`;
+      await sendPushIdempotent(uid, titles[after.status] ?? "Booking Update", msg, "booking", event.params.bookingId, idempKey);
     }
   }
 
-  // Notify arena staff of booking status changes they need to act on or be aware of
-  if (after.arenaId) {
+  // Notify arena staff — suppress for recurring weeks > 1 to avoid N duplicate staff pushes.
+  if (after.arenaId && (!isRecurring || week === 1)) {
     const db2 = admin.firestore();
     const staffTitles = {
       deposit_submitted: "New Deposit Submitted",
@@ -318,7 +442,8 @@ exports.autoTransitionBookings = onSchedule("every 30 minutes", async () => {
     // instant. Recomputing midnight in the server's timezone (UTC) shifted
     // the end time by the UTC offset — add the hours to the raw instant.
     return data.date.toDate().getTime() +
-      (data.startHour + data.totalHours) * 3600000;
+      (data.startHour + data.totalHours) * 3600000 +
+      (data.extensionMinutes || 0) * 60000;
   }
 
   // confirmed + ongoing → completed
@@ -365,34 +490,66 @@ exports.autoTransitionBookings = onSchedule("every 30 minutes", async () => {
   console.log(`autoTransitionBookings: ${ops} bookings updated.`);
 });
 
-// ── Chat: new customer message → notify owner + arena staff ───────────
+// ── Chat: new message → notify the other party ──────────────────────
+// Routing is determined from the chat document, NOT the sender's role,
+// so notifications are correct regardless of which side is logged in.
 exports.onChatMessageCreated = onDocumentCreated("chats/{chatId}/messages/{msgId}", async (event) => {
   const msg = event.data.data();
-  // Only fan out for customer-sent messages in booking/arena chats.
-  if (!msg || msg.senderRole === "system" || msg.senderRole === "owner" || msg.senderRole === "staff") return;
-  if (msg.type === "system") return;
+  if (!msg || msg.type === "system" || msg.senderRole === "system") return;
 
   const db = admin.firestore();
   const chatSnap = await db.collection("chats").doc(event.params.chatId).get();
   if (!chatSnap.exists) return;
   const chat = chatSnap.data();
 
-  // Only booking-type chats (customer ↔ owner/staff); skip support tickets.
-  if (chat.type !== "booking" && !chat.arenaId) return;
-
-  const arenaId = chat.arenaId;
-  const ownerId = chat.ownerId;
   const preview = typeof msg.content === "string"
     ? msg.content.substring(0, 60)
     : "Sent a message";
-  const senderName = msg.senderName ?? "A customer";
-  const title = `New message from ${senderName}`;
+  const senderName = msg.senderName ?? "Someone";
 
-  if (ownerId) {
-    await sendPush(ownerId, title, preview, "chat", event.params.chatId);
+  // ── Booking chat (customer ↔ owner/staff) ────────────────────────
+  if (chat.type === "booking" || chat.arenaId) {
+    const senderRole = msg.senderRole ?? "customer";
+
+    if (senderRole === "customer") {
+      // Customer sent → notify owner + all arena staff
+      const title = `New message from ${senderName}`;
+      if (chat.ownerId) {
+        await sendPush(chat.ownerId, title, preview, "chat", event.params.chatId);
+      }
+      if (chat.arenaId) {
+        await notifyArenaStaff(db, chat.arenaId, title, preview, "chat", event.params.chatId);
+      }
+    } else {
+      // Owner or staff replied → notify the customer
+      const title = `Reply from ${senderName}`;
+      if (chat.customerId) {
+        await sendPush(chat.customerId, title, preview, "chat", event.params.chatId);
+      }
+    }
+    return;
   }
-  if (arenaId) {
-    await notifyArenaStaff(db, arenaId, title, preview, "chat", event.params.chatId);
+
+  // ── Support chat (customer/owner ↔ admin) ────────────────────────
+  if (chat.type === "support" || chat.type === "owner_support" ||
+      chat.type === "customer_support") {
+    const senderRole = msg.senderRole ?? "customer";
+    if (senderRole === "admin") {
+      // Admin replied → notify the ticket raiser (participants[0] is the non-admin user).
+      const participants = chat.participants ?? [];
+      const raiser = participants.find((p) => p !== msg.senderId) ?? participants[0];
+      if (raiser) {
+        await sendPush(raiser, `Reply from Support`, preview, "support", event.params.chatId);
+      }
+    } else {
+      // Customer/owner sent → notify admins and super admins
+      const adminsSnap = await db.collection("users")
+        .where("role", "in", ["admin", "superAdmin"])
+        .get();
+      await Promise.all(adminsSnap.docs.map((d) =>
+        sendPush(d.id, `Support message from ${senderName}`, preview, "support", event.params.chatId)
+      ));
+    }
   }
 });
 
@@ -497,6 +654,7 @@ exports.deleteAccount = onRequest(async (req, res) => {
       role: "customer",
       isActive: false,
       fcmToken: admin.firestore.FieldValue.delete(),
+      fcmTokens: admin.firestore.FieldValue.delete(),
       deletedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: false });
 
@@ -751,6 +909,25 @@ exports.sendBookingReminders = onSchedule("every 30 minutes", async () => {
   console.log(`sendBookingReminders: ${sent} reminders sent.`);
 });
 
+// ── Extension request created → notify owner ─────────────────────────
+exports.onExtensionRequestCreated = onDocumentCreated("extensionRequests/{reqId}", async (event) => {
+  const data = event.data.data();
+  if (!data) return;
+  const ownerId = data.ownerId;
+  const customerName = data.customerName ?? "A customer";
+  const mins = data.extensionMinutes ?? 0;
+  const courtName = data.courtName ?? "the court";
+  if (ownerId) {
+    await sendPush(
+      ownerId,
+      "Extension Request ⏱",
+      `${customerName} wants +${mins} min on ${courtName}. Tap to approve or reject.`,
+      "extension_request",
+      event.params.reqId,
+    );
+  }
+});
+
 // ── Tournament registration payment verified → notify customer ────────
 exports.onRegistrationUpdated = onDocumentUpdated("registrations/{regId}", async (event) => {
   const before = event.data.before.data();
@@ -919,4 +1096,166 @@ exports.exportAuditLogs = onRequest({ cors: true }, async (req, res) => {
   res.setHeader("Content-Type", "text/csv");
   res.setHeader("Content-Disposition", `attachment; filename="audit_logs_${Date.now()}.csv"`);
   res.status(200).send(csv);
+});
+
+// ── Promo: atomic claim (check maxUses + increment in one transaction) ─────────
+//
+// Called by BookingController.applyPromoCode() and .applyOffer() instead of
+// doing the read-check-write on the client, which is a race condition.
+//
+// Input:  { promoId: string, bookingTotal: number }
+// Output: { discount: number, code: string, title: string, scope: string }
+// Throws: FAILED_PRECONDITION if promo is not valid / limit reached
+//         NOT_FOUND if promo document doesn't exist
+//         UNAUTHENTICATED if caller is not signed in
+exports.validateAndApplyPromo = onCall({ region: "asia-south1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
+
+  const { promoId, bookingTotal } = request.data;
+  if (!promoId || typeof bookingTotal !== "number") {
+    throw new HttpsError("invalid-argument", "promoId and bookingTotal are required.");
+  }
+
+  const db = admin.firestore();
+  const promoRef = db.collection("promotions").doc(promoId);
+
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(promoRef);
+    if (!snap.exists) throw new HttpsError("not-found", "Promo code not found.");
+
+    const p = snap.data();
+    const now = new Date();
+
+    // Status check
+    if (p.status !== "active") {
+      throw new HttpsError("failed-precondition", "This offer is no longer active.");
+    }
+
+    // Expiry check
+    if (p.expiresAt && p.expiresAt.toDate() < now) {
+      throw new HttpsError("failed-precondition", "This offer has expired.");
+    }
+
+    // Minimum booking amount check
+    if (p.minBookingAmount != null && bookingTotal < p.minBookingAmount) {
+      throw new HttpsError(
+        "failed-precondition",
+        `Minimum booking amount of Rs. ${p.minBookingAmount.toFixed(0)} required.`
+      );
+    }
+
+    // maxUses check (null = unlimited)
+    if (p.maxUses != null && (p.usageCount ?? 0) >= p.maxUses) {
+      throw new HttpsError("failed-precondition", "This offer has reached its usage limit.");
+    }
+
+    // All checks passed — increment usage atomically
+    tx.update(promoRef, { usageCount: admin.firestore.FieldValue.increment(1) });
+
+    // Calculate discount
+    let discount = 0;
+    if (p.discountType === "percentage") {
+      discount = bookingTotal * (p.discountValue / 100);
+      if (p.maxDiscountAmount != null) discount = Math.min(discount, p.maxDiscountAmount);
+    } else {
+      discount = p.discountValue;
+    }
+    discount = Math.min(discount, bookingTotal); // never exceed total
+
+    return {
+      discount: Math.round(discount * 100) / 100,
+      code: p.code,
+      title: p.title,
+      scope: p.scope,
+    };
+  });
+});
+
+// ── Promo rollback — called when booking creation fails after promo was claimed ─
+// Decrements usageCount by 1 (never below 0). Idempotent — safe to call
+// multiple times because the Firestore transaction reads before decrementing.
+exports.rollbackPromo = onCall({ region: "asia-south1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Sign in required.");
+
+  const { promoId } = request.data;
+  if (!promoId) throw new HttpsError("invalid-argument", "promoId required.");
+
+  const db = admin.firestore();
+  const promoRef = db.collection("promotions").doc(promoId);
+
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(promoRef);
+    if (!snap.exists) return; // promo deleted — nothing to roll back
+    const current = (snap.data().usageCount ?? 0);
+    if (current <= 0) return; // already at zero
+    tx.update(promoRef, { usageCount: admin.firestore.FieldValue.increment(-1) });
+  });
+
+  return { success: true };
+});
+
+// ── Expire confirmed bookings with unpaid deposits (configurable deadline) ──
+// Reads settings/booking.paymentDeadlineHours (default: 24). Any booking
+// that is confirmed with paymentStatus == 'deposit_accepted' and was
+// confirmed more than N hours ago without amountPaid set is expired.
+// This is payment-deadline enforcement — releasing slots held with no payment.
+exports.expireUnpaidConfirmedBookings = onSchedule("every 60 minutes", async () => {
+  const db = admin.firestore();
+
+  // Read configurable deadline (default 24 h).
+  let deadlineHours = 24;
+  try {
+    const settingsSnap = await db.collection("settings").doc("booking").get();
+    if (settingsSnap.exists) {
+      deadlineHours = settingsSnap.data().paymentDeadlineHours ?? 24;
+    }
+  } catch (_) { /* use default */ }
+
+  const cutoff = new Date(Date.now() - deadlineHours * 3600 * 1000);
+  const cutoffTs = admin.firestore.Timestamp.fromDate(cutoff);
+
+  // Find confirmed bookings with deposit_accepted payment status where
+  // confirmedAt is before the cutoff and amountPaid is null/unset.
+  const snap = await db.collection("bookings")
+    .where("status", "==", "confirmed")
+    .where("paymentStatus", "==", "deposit_accepted")
+    .where("confirmedAt", "<=", cutoffTs)
+    .get();
+
+  if (snap.empty) return;
+
+  const batch = db.batch();
+  let expired = 0;
+
+  for (const doc of snap.docs) {
+    const data = doc.data();
+    // Skip if amountPaid is set — customer has paid.
+    if (data.amountPaid != null && data.amountPaid > 0) continue;
+    // Skip if the booking date has already passed — autoTransition handles those.
+    const bookingDate = data.date?.toDate();
+    if (bookingDate && bookingDate < new Date()) continue;
+
+    batch.update(doc.ref, {
+      status: "cancelled",
+      paymentStatus: "failed",
+      "cancellation.requestedAt": admin.firestore.FieldValue.serverTimestamp(),
+      "cancellation.reason": "payment_deadline_expired",
+    });
+    expired++;
+
+    // Notify customer.
+    if (data.customerId) {
+      sendPushIdempotent(
+        data.customerId,
+        "Booking Cancelled — Payment Deadline",
+        `Your booking for ${data.courtName ?? "the court"} was cancelled because the payment deadline passed.`,
+        "booking",
+        doc.id,
+        `payment_expired_${doc.id}`
+      ).catch(() => {});
+    }
+  }
+
+  if (expired > 0) await batch.commit();
+  console.log(`expireUnpaidConfirmedBookings: ${expired} bookings expired.`);
 });

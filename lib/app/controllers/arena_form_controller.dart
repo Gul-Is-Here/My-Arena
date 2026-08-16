@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
@@ -30,6 +31,10 @@ class ArenaFormController extends GetxController {
   // Step 3 — location
   final addressCtrl = TextEditingController();
   final Rx<LatLng?> pickedLatLng = Rx<LatLng?>(null);
+  // Populated by reverse geocoding when owner pins a location.
+  String _pickedCity        = '';
+  String _pickedCountry     = '';
+  String _pickedCountryCode = '';
 
   final RxBool isSubmitting = false.obs;
 
@@ -90,6 +95,25 @@ class ArenaFormController extends GetxController {
   void setLocation(LatLng latLng, String address) {
     pickedLatLng.value = latLng;
     addressCtrl.text = address;
+    // Reverse-geocode in background — does not block the UI.
+    _reverseGeocode(latLng);
+  }
+
+  Future<void> _reverseGeocode(LatLng latLng) async {
+    try {
+      final marks = await Geocoding().placemarkFromCoordinates(
+        latLng.latitude,
+        latLng.longitude,
+      );
+      if (marks.isNotEmpty) {
+        final p = marks.first;
+        _pickedCity        = (p.locality        ?? '').trim();
+        _pickedCountry     = (p.country         ?? '').trim();
+        _pickedCountryCode = (p.isoCountryCode  ?? '').trim();
+      }
+    } catch (_) {
+      // Geocoding failure is non-fatal — city/country stay empty.
+    }
   }
 
   Future<void> submit() async {
@@ -112,9 +136,13 @@ class ArenaFormController extends GetxController {
         description: descriptionCtrl.text.trim(),
         images: const [],
         location: ArenaLocation(
-          address: addressCtrl.text.trim(),
-          lat: location?.latitude ?? 0,
-          lng: location?.longitude ?? 0,
+          address:        addressCtrl.text.trim(),
+          city:           _pickedCity,
+          country:        _pickedCountry,
+          countryCode:    _pickedCountryCode,
+          normalizedCity: _pickedCity.toLowerCase().trim(),
+          lat:            location?.latitude  ?? 0,
+          lng:            location?.longitude ?? 0,
         ),
         status: ArenaStatus.pending,
       );
@@ -136,7 +164,7 @@ class ArenaFormController extends GetxController {
         final adminUid = FirebaseAuth.instance.currentUser?.uid;
         await _arenaService.updateArena(arenaId, {
           'adminCreatedFor': adminCreatedFor,
-          if (adminUid != null) 'adminCreatedBy': adminUid,
+          'adminCreatedBy': ?adminUid,
         });
       }
 
@@ -181,8 +209,11 @@ class ArenaFormController extends GetxController {
     descriptionCtrl.clear();
     images.clear();
     addressCtrl.clear();
-    pickedLatLng.value = null;
-    isSubmitting.value = false;
+    pickedLatLng.value  = null;
+    _pickedCity         = '';
+    _pickedCountry      = '';
+    _pickedCountryCode  = '';
+    isSubmitting.value  = false;
   }
 
   @override

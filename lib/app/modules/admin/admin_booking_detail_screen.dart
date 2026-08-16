@@ -12,7 +12,8 @@ class AdminBookingDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final BookingModel b = Get.arguments as BookingModel;
+    final b = Get.arguments;
+    if (b is! BookingModel) return const SizedBox.shrink();
     final ctrl = AdminBookingController.to;
 
     return Scaffold(

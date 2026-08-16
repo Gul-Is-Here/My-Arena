@@ -143,8 +143,7 @@ class ArenaService {
             .toList());
   }
 
-  /// Cursor-based page fetch — fallback when location is unavailable.
-  /// Returns a record: the arena list and the last document (cursor for next page).
+  /// Cursor-based page fetch — global, approved+active arenas, ordered by createdAt desc.
   Future<({List<ArenaModel> arenas, DocumentSnapshot? cursor})> fetchArenaPage({
     DocumentSnapshot? after,
     int limit = 20,
@@ -167,6 +166,17 @@ class ArenaService {
   /// Toggle arena ON/OFF.
   Future<void> toggleActive(String arenaId, bool isActive) =>
       _arenas.doc(arenaId).update({'isActive': isActive});
+
+  /// All featured + approved + active arenas — used by discovery for the
+  /// "Featured Near You" section. Distance filtering is done client-side.
+  Stream<List<ArenaModel>> featuredArenas() => _arenas
+      .where('isFeatured', isEqualTo: true)
+      .where('status', isEqualTo: 'approved')
+      .where('isActive', isEqualTo: true)
+      .snapshots()
+      .map((s) => s.docs
+          .map((d) => ArenaModel.fromMap({...d.data(), 'id': d.id}))
+          .toList());
 
   /// Admin-curated home carousel arenas, sorted by carouselOrder.
   Stream<List<ArenaModel>> carouselArenas() => _arenas

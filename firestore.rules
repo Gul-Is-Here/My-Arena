@@ -78,6 +78,14 @@ service cloud.firestore {
       return isAuth() && role() == 'owner';
     }
 
+    // True only when the signed-in user is the owner of the specific arena.
+    // Uses a get() to verify ownership — safe because each request chain is
+    // independent and Firestore caches the read within the evaluation.
+    function ownsArena(arenaId) {
+      return isOwner() &&
+        get(/databases/$(database)/documents/arenas/$(arenaId)).data.ownerId == uid();
+    }
+
     function isStaff() {
       return isAuth() && role() in ['staff', 'supportAgent', 'admin', 'superAdmin', 'operationsManager', 'moderator'];
     }
@@ -180,13 +188,30 @@ service cloud.firestore {
 
     // ── Bookings ──────────────────────────────────────────────────────
     match /bookings/{bookingId} {
-      allow read: if isAuth();
+      // Scoped: customers see their own, owners see their own, admin-tier
+      // (which includes 'staff' role) can read all for operational access.
+      // This closes the previous allow read: if isAuth() which leaked all
+      // booking PII (names, phones, payment details) to every auth'd user.
+      allow read: if isAuth() && (
+        resource.data.customerId == uid() ||
+        resource.data.ownerId == uid() ||
+        isAdminTier()
+      );
       // Suspended users (isActive=false) cannot create bookings
       allow create: if isActiveAuth() && isActive();
       allow update: if isAuth() && (
-        resource.data.customerId == uid() ||
         resource.data.ownerId == uid() ||
-        isStaff()
+        isStaff() ||
+        // Customers may update only non-financial, non-operational fields
+        // (e.g. cancel request, reschedule request). They must never touch
+        // amountPaid / totalAmount / checkedIn / status-machine fields.
+        (resource.data.customerId == uid() &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'amountPaid', 'totalAmount', 'remainingAmount', 'totalAmountStored',
+            'checkedIn', 'checkedInAt', 'completedAt', 'ownerId', 'courtId',
+            'arenaId', 'isPosBooking', 'posPaymentMethod', 'posDiscount',
+            'posAddOnIds', 'posAddOnsTotal', 'bookedByRole'
+          ]))
       );
       allow delete: if isAdmin();
     }
@@ -405,41 +430,195 @@ service cloud.firestore {
     }
 
     // ── POS collections ───────────────────────────────────────────────
+    // All POS reads/writes are now scoped to the arena that owns the record.
+    // ownsArena() verifies the user is the owner of that specific arena.
+    // isArenaStaff() verifies the user is staff assigned to that specific arena.
+    // isAdminTier() covers platform admin read-only access.
+
     match /posTransactions/{txnId} {
-      allow read: if isOwner() || isAdminTier() || isStaff();
-      allow create: if isOwner() || isStaff();
-      allow update: if isOwner(); // refunds only
+      allow read: if isAuth() && (
+        ownsArena(resource.data.arenaId) ||
+        isArenaStaff(resource.data.arenaId) ||
+        isAdminTier()
+      );
+      allow create: if isActiveAuth() && (
+        ownsArena(request.resource.data.arenaId) ||
+        isArenaStaff(request.resource.data.arenaId)
+      );
+      allow update: if isActiveAuth() && ownsArena(resource.data.arenaId);
       allow delete: if false;
     }
 
     match /posExpenses/{expId} {
-      allow read: if isOwner() || isAdminTier() || isStaff();
-      allow create: if isOwner() || isStaff();
-      allow update: if isOwner();
-      allow delete: if isOwner();
+      allow read: if isAuth() && (
+        ownsArena(resource.data.arenaId) ||
+        isArenaStaff(resource.data.arenaId) ||
+        isAdminTier()
+      );
+      allow create: if isActiveAuth() && (
+        ownsArena(request.resource.data.arenaId) ||
+        isArenaStaff(request.resource.data.arenaId)
+      );
+      allow update: if isActiveAuth() && ownsArena(resource.data.arenaId);
+      allow delete: if isActiveAuth() && ownsArena(resource.data.arenaId);
     }
 
     match /posShifts/{shiftId} {
-      allow read: if isOwner() || isAdminTier() || isStaff();
-      allow create: if isOwner() || isStaff();
-      allow update: if isOwner() || isStaff();
+      allow read: if isAuth() && (
+        ownsArena(resource.data.arenaId) ||
+        isArenaStaff(resource.data.arenaId) ||
+        isAdminTier()
+      );
+      allow create: if isActiveAuth() && (
+        ownsArena(request.resource.data.arenaId) ||
+        isArenaStaff(request.resource.data.arenaId)
+      );
+      // Staff can update shifts they opened; owners can update any shift.
+      allow update: if isActiveAuth() && (
+        ownsArena(resource.data.arenaId) ||
+        (isArenaStaff(resource.data.arenaId) && resource.data.staffId == uid())
+      );
       allow delete: if false;
     }
 
     match /arenas/{arenaId}/posProducts/{productId} {
-      allow read: if isOwner() || isStaff() || isAdminTier();
-      allow create, update, delete: if isOwner();
+      allow read: if isAuth() && (
+        ownsArena(arenaId) || isArenaStaff(arenaId) || isAdminTier()
+      );
+      allow create, update, delete: if isActiveAuth() && (
+        ownsArena(arenaId) || isArenaStaff(arenaId)
+      );
+    }
+
+    // ── Extension requests ────────────────────────────────────────────
+    // Customer creates (status must be 'pending') and can cancel their own.
+    // Owner/staff can approve or reject (full update; transaction enforces logic).
+    // No deletes.
+    match /extensionRequests/{reqId} {
+      allow read: if isAuth() && (
+        resource.data.customerId == uid() ||
+        resource.data.ownerId == uid() ||
+        isArenaStaff(resource.data.arenaId) ||
+        isAdminTier()
+      );
+      allow create: if isActiveAuth() &&
+        request.resource.data.customerId == uid() &&
+        request.resource.data.status == 'pending';
+      // Customer may only cancel their own pending request.
+      allow update: if isAuth() && (
+        (resource.data.customerId == uid() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'cancelledAt']) &&
+          request.resource.data.status == 'cancelled') ||
+        resource.data.ownerId == uid() ||
+        isArenaStaff(resource.data.arenaId)
+      );
+      allow delete: if false;
     }
 
     // ── Slot locks ────────────────────────────────────────────────────
     match /slotLocks/{lockId} {
       allow read: if isAuth();
+      // Creator must be the customer named in the lock (customer booking flow),
+      // OR an owner/staff of that arena (manual/POS booking flow).
+      // This prevents malicious users from creating fake locks to block slots.
       allow create: if isActiveAuth()
         && request.resource.data.keys().hasAll(['bookingId', 'courtId', 'arenaId', 'date'])
         && request.resource.data.bookingId is string
-        && request.resource.data.bookingId.size() > 0;
-      allow delete: if isAuth();
+        && request.resource.data.bookingId.size() > 0
+        && (
+          request.resource.data.get('customerId', '') == uid() ||
+          ownsArena(request.resource.data.arenaId) ||
+          isArenaStaff(request.resource.data.arenaId)
+        );
+      allow delete: if isAuth() && (
+        resource.data.get('customerId', '') == uid() ||
+        ownsArena(resource.data.arenaId) ||
+        isArenaStaff(resource.data.arenaId)
+      );
       allow update: if false;
+    }
+
+    // ── Recurring booking series ──────────────────────────────────────────
+    // One document per recurring series. Individual occurrences live in
+    // bookings/{bookingId} and reference this via recurringGroupId.
+    // Customers own their own series; owners can read series for their arenas;
+    // admin-tier has full read access.
+    match /recurringBookingSeries/{seriesId} {
+      // Allow get on non-existent doc (resource == null) so idempotency checks
+      // don't fail with permission-denied when the series doc was never created.
+      allow get: if isAuth() && (
+        resource == null ||
+        resource.data.customerId == uid() ||
+        resource.data.ownerId == uid() ||
+        isAdminTier() ||
+        isArenaStaff(resource.data.arenaId)
+      );
+      allow list: if isAuth() && (
+        resource.data.customerId == uid() ||
+        resource.data.ownerId == uid() ||
+        isAdminTier() ||
+        isArenaStaff(resource.data.arenaId)
+      );
+      // Customers create series documents as part of the booking flow.
+      allow create: if isActiveAuth() && (
+        // Customer creates the series doc during booking flow.
+        request.resource.data.customerId == uid() &&
+        request.resource.data.keys().hasAll([
+          'customerId', 'arenaId', 'courtId', 'ownerId',
+          'startDate', 'endDate', 'totalOccurrences', 'status'
+        ]) ||
+        // Owner/staff may upsert a minimal series doc when approving/rejecting
+        // legacy bookings that predate the series collection.
+        request.resource.data.ownerId == uid() ||
+        isArenaStaff(request.resource.data.arenaId) ||
+        isAdminTier()
+      );
+      // Status and confirmedCount are updated by owner approval and customer cancel.
+      // Financial fields (totalAmount, etc.) are never on the series doc.
+      allow update: if isAuth() && (
+        resource.data.ownerId == uid() ||
+        isArenaStaff(resource.data.arenaId) ||
+        isAdminTier() ||
+        // Customer may only cancel (set status to 'cancelled').
+        (resource.data.customerId == uid() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'cancelledAt', 'cancelledBy']))
+      );
+      allow delete: if isAdmin();
+    }
+
+    // ── Promotions ────────────────────────────────────────────────────────
+    match /promotions/{promoId} {
+      // All authenticated users may read promotions.
+      // The query in PromotionService always filters by status == 'active',
+      // so inactive/paused promos are never returned to customers in practice.
+      // Restricting by resource.data.status here would block entire streams
+      // when any doc in the result set is non-active.
+      allow read: if isAuth();
+
+      // Platform-scope promos: admin/superAdmin only.
+      // Arena-scope promos: owner of that arena only.
+      allow create: if isAuth() && (
+        (request.resource.data.scope == 'platform' && isAdminTier()) ||
+        (request.resource.data.scope == 'arena'
+          && ownsArena(request.resource.data.arenaId)
+          && request.resource.data.ownerId == uid()
+          && request.resource.data.keys().hasAll(['arenaId', 'ownerId', 'title', 'code', 'codeNormalized', 'discountType', 'discountValue']))
+      );
+
+      allow update: if isAuth() && (
+        // Admin can update platform promos.
+        (resource.data.scope == 'platform' && isAdminTier()) ||
+        // Owners can update their own arena promos.
+        (resource.data.scope == 'arena' && ownsArena(resource.data.arenaId)) ||
+        // Any authenticated user can increment usageCount (promo applied at booking).
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usageCount'])
+      );
+
+      allow delete: if isAuth() && (
+        (resource.data.scope == 'platform' && isAdminTier()) ||
+        (resource.data.scope == 'arena' && ownsArena(resource.data.arenaId))
+      );
     }
   }
 }

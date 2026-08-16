@@ -25,7 +25,12 @@ class _StaffDetailScreenState extends State<StaffDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _staff = Get.arguments as UserModel;
+    final args = Get.arguments;
+    if (args is! UserModel) {
+      Get.back();
+      return;
+    }
+    _staff = args;
     _selectedArenaIds = Set<String>.from(_staff.assignedArenas);
     if (!Get.isRegistered<OwnerController>()) {
       Get.put(OwnerController());

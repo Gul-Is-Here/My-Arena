@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -43,6 +45,8 @@ class _PosWalkInScreenState extends State<PosWalkInScreen> {
   int _duration = 1;
   List<BookingModel> _bookedSlots = [];
   Set<int> _blockedHours = {};
+  Set<int> _lockedHours = {};
+  StreamSubscription<Set<int>>? _slotLocksSub;
   bool _loadingSlots = false;
 
   // ── Customer ──────────────────────────────────────────────────────────
@@ -100,33 +104,45 @@ class _PosWalkInScreenState extends State<PosWalkInScreen> {
     _amountPaidCtrl.dispose();
     _discountCtrl.dispose();
     _refNoCtrl.dispose();
+    _slotLocksSub?.cancel();
     super.dispose();
   }
 
   List<CourtModel> get _activeCourts =>
       _arena.courts.where((c) => c.isActive).toList();
 
-  Future<void> _loadBookedSlots() async {
+  void _loadBookedSlots() {
     final court = _court;
     if (court == null) return;
     setState(() => _loadingSlots = true);
-    try {
-      final booked = await _bookingService.bookedSlots(court.id, _date);
-      final blocked = await _blockedService.blockedHours(_arena.id, court.id, _date);
+    _slotLocksSub?.cancel();
+    _slotLocksSub = _bookingService
+        .bookedHoursStream(court.id, _date)
+        .listen((hours) {
       if (!mounted) return;
+      final conflict = _selectedHours.any(hours.contains);
       setState(() {
-        _bookedSlots = booked;
-        _blockedHours = blocked;
+        _lockedHours = hours;
+        _loadingSlots = false;
+        if (conflict) _selectedHours.clear();
       });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _bookedSlots = [];
-        _blockedHours = {};
-      });
-    } finally {
+      if (conflict) {
+        Get.snackbar(
+          'Slot no longer available',
+          'Another booking just came in for this slot.',
+          snackPosition: SnackPosition.TOP,
+          duration: const Duration(seconds: 3),
+        );
+      }
+    }, onError: (_) {
       if (mounted) setState(() => _loadingSlots = false);
-    }
+    });
+
+    _blockedService
+        .blockedHours(_arena.id, court.id, _date)
+        .then((blocked) {
+      if (mounted) setState(() => _blockedHours = blocked);
+    }).catchError((_) {});
   }
 
   List<int> get _hourOptions {
@@ -143,6 +159,7 @@ class _PosWalkInScreenState extends State<PosWalkInScreen> {
         hour: hour,
         bookedSlots: _bookedSlots,
         blockedHours: _blockedHours,
+        lockedHours: _lockedHours,
       );
 
   int? get _startHour => _selectedHours.isEmpty ? null : _selectedHours.reduce((a, b) => a < b ? a : b);
@@ -970,17 +987,21 @@ class _AddOnsStep extends StatelessWidget {
     });
   }
 
-  Widget _qtyBtn(IconData icon, VoidCallback onTap) => GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: AppColors.elevated,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.border),
+  Widget _qtyBtn(IconData icon, VoidCallback onTap) => Material(
+        color: AppColors.elevated,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Icon(icon, size: 16, color: AppColors.textPrimary),
           ),
-          child: Icon(icon, size: 16, color: AppColors.textPrimary),
         ),
       );
 }

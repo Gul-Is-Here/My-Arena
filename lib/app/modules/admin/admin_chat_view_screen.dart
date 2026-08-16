@@ -17,7 +17,7 @@ class AdminChatViewScreen extends StatefulWidget {
 class _AdminChatViewScreenState extends State<AdminChatViewScreen> {
   final _textCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
-  late final String chatId = Get.arguments as String;
+  late final String chatId = (Get.arguments as String?) ?? '';
 
   @override
   void dispose() {

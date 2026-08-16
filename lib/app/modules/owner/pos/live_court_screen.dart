@@ -9,8 +9,10 @@ import '../../../controllers/owner_booking_controller.dart';
 import '../../../controllers/pos_controller.dart';
 import '../../../data/models/booking_model.dart';
 import '../../../data/models/court_model.dart';
+import '../../../data/models/extension_request_model.dart';
 import '../../../data/models/pos_transaction_model.dart';
 import '../../../routes/app_routes.dart';
+import '../../../services/extension_service.dart';
 import '../../../theme/app_colors.dart';
 import '../../../theme/app_text_styles.dart';
 
@@ -326,6 +328,14 @@ class _CourtCard extends StatelessWidget {
                     color: AppColors.accent,
                     onTap: () => _showSessionSheet(context, current, court),
                   ),
+                // Collect Balance — shown when there's an outstanding amount
+                if (current != null && current.remainingAmount > 0)
+                  _ActionChip(
+                    label: 'Collect',
+                    icon: Icons.payments_outlined,
+                    color: AppColors.warning,
+                    onTap: () => _showCollectSheet(context, current),
+                  ),
                 if (current != null && !current.checkedIn)
                   _ActionChip(
                     label: 'View',
@@ -359,6 +369,13 @@ class _CourtCard extends StatelessWidget {
     Get.bottomSheet(
       isScrollControlled: true,
       _SessionSheet(booking: booking, court: court),
+    );
+  }
+
+  void _showCollectSheet(BuildContext context, BookingModel booking) {
+    Get.bottomSheet(
+      isScrollControlled: true,
+      _CollectBalanceSheet(booking: booking),
     );
   }
 }
@@ -577,10 +594,15 @@ class _SessionSheetState extends State<_SessionSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final b = _booking;
-    final remaining = b.remainingAmount;
-    final needsPayment = remaining > 0;
+    return Obx(() {
+      final b = _booking;
+      final remaining = b.remainingAmount;
+      final needsPayment = remaining > 0;
+      return _buildSheet(context, b, remaining, needsPayment);
+    });
+  }
 
+  Widget _buildSheet(BuildContext context, BookingModel b, double remaining, bool needsPayment) {
     return Container(
       decoration: const BoxDecoration(
         color: AppColors.surface,
@@ -634,8 +656,12 @@ class _SessionSheetState extends State<_SessionSheet> {
             ),
             const Divider(height: 24, color: AppColors.border),
 
-            // Extend section
+            // Extend session (whole hours)
             _ExtendSection(booking: b),
+            const Divider(height: 24, color: AppColors.border),
+
+            // Pending minute-extension requests from the customer
+            _PendingExtensionPanel(booking: b),
             const Divider(height: 24, color: AppColors.border),
 
             // Checkout section
@@ -740,7 +766,9 @@ class _SessionSheetState extends State<_SessionSheet> {
           ));
         }
       }
-      await OwnerBookingController.to.checkoutSession(_booking.id, amountToCollect);
+      final b = _booking;
+      final newRemaining = (b.remainingAmount - amountToCollect).clamp(0.0, double.infinity);
+      await OwnerBookingController.to.checkoutSession(b.id, amountToCollect, newRemaining);
       Get.back();
       Get.snackbar('Session Complete', 'Booking closed successfully',
           backgroundColor: AppColors.success, colorText: Colors.white);
@@ -948,5 +976,418 @@ class _ExtendButton extends StatelessWidget {
     } finally {
       onEnd();
     }
+  }
+}
+
+// ── Owner: Pending extension requests panel ───────────────────────────────
+
+class _PendingExtensionPanel extends StatefulWidget {
+  final BookingModel booking;
+  const _PendingExtensionPanel({required this.booking});
+
+  @override
+  State<_PendingExtensionPanel> createState() => _PendingExtensionPanelState();
+}
+
+class _PendingExtensionPanelState extends State<_PendingExtensionPanel> {
+  final _svc = ExtensionService();
+  final _acting = <String, bool>{};
+
+  Future<void> _approve(ExtensionRequestModel req) async {
+    setState(() => _acting[req.id] = true);
+    try {
+      await _svc.approveRequest(req);
+      Get.snackbar(
+        'Extension Approved',
+        '+${req.extensionMinutes} min added to session',
+        backgroundColor: AppColors.success,
+        colorText: Colors.white,
+      );
+    } catch (e) {
+      Get.snackbar('Cannot Extend', e.toString(),
+          backgroundColor: AppColors.error, colorText: Colors.white);
+    } finally {
+      if (mounted) setState(() => _acting.remove(req.id));
+    }
+  }
+
+  Future<void> _reject(ExtensionRequestModel req) async {
+    setState(() => _acting[req.id] = true);
+    try {
+      await _svc.rejectRequest(req.id);
+    } catch (e) {
+      Get.snackbar('Error', e.toString(),
+          backgroundColor: AppColors.error, colorText: Colors.white);
+    } finally {
+      if (mounted) setState(() => _acting.remove(req.id));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<ExtensionRequestModel>>(
+      stream: _svc.bookingRequestsStream(widget.booking.id),
+      builder: (context, snap) {
+        final pending = (snap.data ?? [])
+            .where((r) => r.status == ExtensionRequestStatus.pending)
+            .toList();
+
+        if (pending.isEmpty) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Extension Requests',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
+              const SizedBox(height: 8),
+              Text('No pending requests from customer.',
+                  style: AppTextStyles.bodySmall
+                      .copyWith(color: AppColors.textSecondary)),
+            ],
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('Extension Requests',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '${pending.length}',
+                    style: AppTextStyles.caption.copyWith(
+                        color: AppColors.warning, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ...pending.map((req) => _ExtensionRequestTile(
+                  req: req,
+                  acting: _acting[req.id] ?? false,
+                  onApprove: () => _approve(req),
+                  onReject: () => _reject(req),
+                )),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// ── Collect Balance Bottom Sheet ──────────────────────────────────────────
+
+class _CollectBalanceSheet extends StatefulWidget {
+  final BookingModel booking;
+  const _CollectBalanceSheet({required this.booking});
+
+  @override
+  State<_CollectBalanceSheet> createState() => _CollectBalanceSheetState();
+}
+
+class _CollectBalanceSheetState extends State<_CollectBalanceSheet> {
+  PosPaymentMethod _method = PosPaymentMethod.cash;
+  final _refController = TextEditingController();
+  bool _submitting = false;
+
+  BookingModel get _booking {
+    final live = OwnerBookingController.to.bookings
+        .firstWhereOrNull((b) => b.id == widget.booking.id);
+    return live ?? widget.booking;
+  }
+
+  @override
+  void dispose() {
+    _refController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final b = _booking;
+      final remaining = b.remainingAmount;
+      return Container(
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: EdgeInsets.fromLTRB(
+            16, 16, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Header
+              Text('Collect Balance',
+                  style: AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              Text(
+                '${b.customerName.isNotEmpty ? b.customerName : 'Walk-in'} · ${b.courtName} · ${b.timeRange}',
+                style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 20),
+
+              // Summary
+              _SummaryRow('Total Amount', 'PKR ${_pkr.format(b.totalAmount)}'),
+              const SizedBox(height: 6),
+              _SummaryRow('Already Paid', 'PKR ${_pkr.format(b.amountPaid ?? 0)}'),
+              const SizedBox(height: 6),
+              _SummaryRow('Outstanding', 'PKR ${_pkr.format(remaining)}', highlight: true),
+              const Divider(height: 24, color: AppColors.border),
+
+              // Payment method
+              Text('Payment Method',
+                  style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  PosPaymentMethod.cash,
+                  PosPaymentMethod.card,
+                  PosPaymentMethod.jazzcash,
+                  PosPaymentMethod.easypaisa,
+                  PosPaymentMethod.bankTransfer,
+                ].map((m) {
+                  final sel = _method == m;
+                  return GestureDetector(
+                    onTap: () => setState(() => _method = m),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: sel
+                            ? AppColors.warning.withValues(alpha: 0.12)
+                            : AppColors.elevated,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                            color: sel ? AppColors.warning : AppColors.border),
+                      ),
+                      child: Text(m.label,
+                          style: AppTextStyles.caption.copyWith(
+                            color: sel ? AppColors.warning : AppColors.textPrimary,
+                            fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
+                          )),
+                    ),
+                  );
+                }).toList(),
+              ),
+
+              // Reference number (shown for non-cash methods)
+              if (_method != PosPaymentMethod.cash) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _refController,
+                  style: AppTextStyles.bodySmall,
+                  decoration: InputDecoration(
+                    hintText: 'Reference / transaction no. (optional)',
+                    hintStyle: AppTextStyles.caption.copyWith(
+                        color: AppColors.textDisabled),
+                    filled: true,
+                    fillColor: AppColors.elevated,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.warning),
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 20),
+
+              if (remaining <= 0)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
+                  ),
+                  child: Text('No outstanding balance — fully paid.',
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.success, fontWeight: FontWeight.w600)),
+                )
+              else
+                FilledButton(
+                  onPressed: _submitting ? null : () => _collect(remaining),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.warning,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 50),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: _submitting
+                      ? const SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white))
+                      : Text('Collect PKR ${_pkr.format(remaining)}'),
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      );
+    });
+  }
+
+  Future<void> _collect(double amount) async {
+    setState(() => _submitting = true);
+    try {
+      await PosController.to.collectBalance(
+        booking: _booking,
+        amount: amount,
+        method: _method,
+        refNo: _refController.text.trim().isEmpty ? null : _refController.text.trim(),
+      );
+      Get.back();
+      Get.snackbar(
+        'Payment Collected',
+        'PKR ${_pkr.format(amount)} collected via ${_method.label}',
+        backgroundColor: AppColors.success,
+        colorText: Colors.white,
+      );
+    } catch (e) {
+      Get.snackbar('Error', e.toString(),
+          backgroundColor: AppColors.error, colorText: Colors.white);
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+}
+
+class _ExtensionRequestTile extends StatelessWidget {
+  final ExtensionRequestModel req;
+  final bool acting;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+
+  const _ExtensionRequestTile({
+    required this.req,
+    required this.acting,
+    required this.onApprove,
+    required this.onReject,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.timer_outlined, color: AppColors.warning, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '+${req.extensionMinutes} min requested',
+                  style: AppTextStyles.bodySmall.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary),
+                ),
+                Text(
+                  req.customerName.isNotEmpty ? req.customerName : 'Walk-in',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          if (acting)
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: AppColors.primary),
+            )
+          else
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GestureDetector(
+                  onTap: onReject,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color: AppColors.error.withValues(alpha: 0.3)),
+                    ),
+                    child: Text('Reject',
+                        style: AppTextStyles.caption.copyWith(
+                            color: AppColors.error,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: onApprove,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color: AppColors.success.withValues(alpha: 0.3)),
+                    ),
+                    child: Text('Approve',
+                        style: AppTextStyles.caption.copyWith(
+                            color: AppColors.success,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
   }
 }

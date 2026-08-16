@@ -4,12 +4,15 @@ import 'package:get/get.dart';
 import '../../controllers/discovery_controller.dart';
 import '../../data/models/arena_model.dart';
 import '../../data/models/court_model.dart';
+import '../../data/models/promotion_model.dart';
 import '../../routes/app_routes.dart';
+import '../../services/promotion_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text_styles.dart';
 import '../../widgets/arena_image.dart';
 import 'arena_map_view_screen.dart';
 import 'home_tab.dart' show showDiscoveryFilterSheet;
+import '../../widgets/platform_promo_banner.dart';
 
 class ArenaListScreen extends StatelessWidget {
   const ArenaListScreen({super.key});
@@ -23,6 +26,7 @@ class ArenaListScreen extends StatelessWidget {
         child: Column(
           children: [
             _Header(discovery: discovery),
+            const PlatformPromoBanner(),
             Expanded(
               child: Obx(() {
                 if (discovery.isMapView.value) {
@@ -65,7 +69,7 @@ class _Header extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  '${discovery.searchRadius.value.toStringAsFixed(0)}km',
+                  discovery.cityName.value,
                   style: AppTextStyles.label.copyWith(color: Colors.white),
                 ),
               )),
@@ -106,12 +110,39 @@ class _SquareButton extends StatelessWidget {
 
 // ── List body ────────────────────────────────────────────────────────────────
 
-class _ListBody extends StatelessWidget {
+class _ListBody extends StatefulWidget {
   final DiscoveryController discovery;
   const _ListBody({required this.discovery});
 
   @override
+  State<_ListBody> createState() => _ListBodyState();
+}
+
+class _ListBodyState extends State<_ListBody> {
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    final pos = _scrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 200) {
+      widget.discovery.loadMore();
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final discovery = widget.discovery;
     final muted = Theme.of(context).textTheme.bodySmall?.color;
     return Column(
       children: [
@@ -128,7 +159,7 @@ class _ListBody extends StatelessWidget {
             children: [
               Expanded(
                 child: Obx(() => Text(
-                      '${discovery.nearby.length} arenas found nearby',
+                      '${discovery.nearby.length} arenas found',
                       style: AppTextStyles.bodySmall.copyWith(color: muted),
                     )),
               ),
@@ -144,20 +175,79 @@ class _ListBody extends StatelessWidget {
                 child: CircularProgressIndicator(color: AppColors.secondary),
               );
             }
-            final list = discovery.nearby;
-            if (list.isEmpty) {
+            final searching = discovery.searchQuery.value.trim().isNotEmpty;
+            if (searching) {
+              // Flat grid view for search results.
+              final list = discovery.nearby;
+              if (list.isEmpty) {
+                return _EmptyState(discovery: discovery);
+              }
+              final loadingMore = discovery.isLoadingMore.value;
+              final itemCount = list.length + (loadingMore ? 1 : 0);
+              return RefreshIndicator(
+                color: AppColors.secondary,
+                onRefresh: discovery.refresh,
+                child: GridView.builder(
+                  controller: _scrollController,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  gridDelegate:
+                      const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 14,
+                    mainAxisExtent: 258,
+                  ),
+                  itemCount: itemCount,
+                  itemBuilder: (_, i) {
+                    if (i >= list.length) {
+                      return const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: CircularProgressIndicator(
+                              color: AppColors.secondary),
+                        ),
+                      );
+                    }
+                    return _ArenaGridCard(arena: list[i]);
+                  },
+                ),
+              );
+            }
+
+            // Grouped Country → City → Arena view.
+            final groups = discovery.groupedArenas;
+            if (groups.isEmpty) {
               return _EmptyState(discovery: discovery);
             }
-            return GridView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 14,
-                mainAxisExtent: 258,
+
+            // Flatten groups into a linear item list for efficient ListView.
+            final items = <_ListItem>[];
+            for (final country in groups) {
+              items.add(_CountryHeaderItem(country));
+              for (final city in country.cities) {
+                items.add(_CityHeaderItem(city));
+                // Pair arenas in rows of 2.
+                for (var i = 0; i < city.arenas.length; i += 2) {
+                  final a = city.arenas[i];
+                  final b = i + 1 < city.arenas.length ? city.arenas[i + 1] : null;
+                  items.add(_ArenaRowItem(a, b));
+                }
+              }
+            }
+            final loadingMore = discovery.isLoadingMore.value;
+            if (loadingMore) items.add(_LoadingItem());
+
+            return RefreshIndicator(
+              color: AppColors.secondary,
+              onRefresh: discovery.refresh,
+              child: ListView.builder(
+                controller: _scrollController,
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.only(bottom: 24),
+                itemCount: items.length,
+                itemBuilder: (_, i) => items[i].build(context),
               ),
-              itemCount: list.length,
-              itemBuilder: (_, i) => _ArenaGridCard(arena: list[i]),
             );
           }),
         ),
@@ -435,12 +525,49 @@ class _SortButton extends StatelessWidget {
 
 // ── Arena grid card ───────────────────────────────────────────────────────────
 
-class _ArenaGridCard extends StatelessWidget {
+// ── Offer badge cache — avoids re-querying Firestore on every rebuild ──────────
+
+final _offerBadgeCache = <String, String?>{};
+
+class _ArenaGridCard extends StatefulWidget {
   final ArenaModel arena;
   const _ArenaGridCard({required this.arena});
 
   @override
+  State<_ArenaGridCard> createState() => _ArenaGridCardState();
+}
+
+class _ArenaGridCardState extends State<_ArenaGridCard> {
+  String? _offerLabel; // null = no offer; non-null = badge text e.g. "20% OFF"
+  final _promoSvc = PromotionService();
+
+  @override
+  void initState() {
+    super.initState();
+    final arenaId = widget.arena.id;
+    if (_offerBadgeCache.containsKey(arenaId)) {
+      _offerLabel = _offerBadgeCache[arenaId];
+    } else {
+      _promoSvc.fetchActiveForArena(arenaId).then((offers) {
+        if (!mounted) return;
+        String? label;
+        if (offers.isNotEmpty) {
+          // Prefer platform promo label, else first arena promo.
+          final best = offers.firstWhere(
+            (o) => o.isPlatform,
+            orElse: () => offers.first,
+          );
+          label = best.discountLabel;
+        }
+        _offerBadgeCache[arenaId] = label;
+        setState(() => _offerLabel = label);
+      }).catchError((_) {});
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final arena = widget.arena;
     final discovery = DiscoveryController.to;
     final dist = discovery.distanceOf(arena);
     final sport =
@@ -520,6 +647,30 @@ class _ArenaGridCard extends StatelessWidget {
                             fontWeight: FontWeight.w800,
                             letterSpacing: 0.8,
                           ),
+                        ),
+                      ),
+                    ),
+                  // Offer badge
+                  if (_offerLabel != null)
+                    Positioned(
+                      top: arena.isFeatured ? 38 : 10,
+                      right: 10,
+                      child: _pill(
+                        color: const Color(0xCC0B2A1A),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('🔥 ', style: TextStyle(fontSize: 10)),
+                            Text(
+                              _offerLabel!,
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.5,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -642,6 +793,126 @@ class _ArenaGridCard extends StatelessWidget {
   }
 }
 
+// ── Grouped list item types ───────────────────────────────────────────────────
+
+abstract class _ListItem {
+  Widget build(BuildContext context);
+}
+
+class _CountryHeaderItem extends _ListItem {
+  final ArenaCountry country;
+  _CountryHeaderItem(this.country);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+    final flag = country.countryCode.length == 2
+        ? ArenaLocation.flagEmoji(country.countryCode)
+        : '🌍';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 6),
+      child: Row(
+        children: [
+          Text(flag, style: const TextStyle(fontSize: 22)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              country.country.isNotEmpty ? country.country : 'Other',
+              style: AppTextStyles.titleLarge.copyWith(
+                color: onSurface,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.secondary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '${country.cities.fold<int>(0, (s, c) => s + c.arenas.length)} arenas',
+              style: AppTextStyles.caption.copyWith(color: AppColors.secondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CityHeaderItem extends _ListItem {
+  final ArenaCity city;
+  _CityHeaderItem(this.city);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.textTheme.bodySmall?.color;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+      child: Row(
+        children: [
+          Icon(Icons.location_city_outlined, size: 16, color: muted),
+          const SizedBox(width: 6),
+          Text(
+            city.city.isNotEmpty ? city.city : 'Other',
+            style: AppTextStyles.titleMedium.copyWith(color: muted),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Divider(
+              color: theme.dividerTheme.color ?? AppColors.border,
+              thickness: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ArenaRowItem extends _ListItem {
+  final ArenaModel first;
+  final ArenaModel? second;
+  _ArenaRowItem(this.first, this.second);
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 270, // 258 card + 12 bottom padding
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: _ArenaGridCard(arena: first)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: second != null
+                  ? _ArenaGridCard(arena: second!)
+                  : const SizedBox.shrink(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LoadingItem extends _ListItem {
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: CircularProgressIndicator(color: AppColors.secondary),
+      ),
+    );
+  }
+}
+
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 class _EmptyState extends StatelessWidget {
@@ -661,41 +932,22 @@ class _EmptyState extends StatelessWidget {
           children: [
             Icon(Icons.search_off, size: 64, color: muted),
             const SizedBox(height: 16),
-            Obx(() => Text(
-                  'No arenas within ${discovery.searchRadius.value.toStringAsFixed(0)} km',
-                  style: AppTextStyles.titleLarge.copyWith(color: onSurface),
-                  textAlign: TextAlign.center,
-                )),
+            Text(
+              'No arenas found',
+              style: AppTextStyles.titleLarge.copyWith(color: onSurface),
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 8),
             Text(
-              "We couldn't find any arenas matching your filters.",
+              "Try adjusting your filters or search term.",
               style: AppTextStyles.bodyMedium.copyWith(color: muted),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
-            Obx(() {
-              if (discovery.searchRadius.value < 50) {
-                return ElevatedButton.icon(
-                  icon: const Icon(Icons.expand_outlined),
-                  label: const Text('Expand search to 50 km'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: AppColors.onPrimary,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
-                  ),
-                  onPressed: discovery.expandTo50km,
-                );
-              }
-              return const SizedBox.shrink();
-            }),
-            const SizedBox(height: 12),
             TextButton(
               onPressed: discovery.clearFilters,
               child: Text(
-                'Clear filters & reset radius',
+                'Clear filters',
                 style:
                     AppTextStyles.label.copyWith(color: AppColors.secondary),
               ),

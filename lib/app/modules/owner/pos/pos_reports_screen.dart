@@ -8,6 +8,7 @@ import '../../../theme/app_colors.dart';
 import '../../../theme/app_text_styles.dart';
 
 final _pkr = NumberFormat('#,##0');
+final _timeFmt = DateFormat('h:mm a');
 
 enum _ReportRange { today, week, month, custom }
 
@@ -21,6 +22,7 @@ class PosReportsScreen extends StatefulWidget {
 class _PosReportsScreenState extends State<PosReportsScreen> {
   _ReportRange _range = _ReportRange.today;
   DateTimeRange? _custom;
+  LedgerSource? _sourceFilter; // null = All
 
   DateTimeRange get _effectiveRange {
     final now = DateTime.now();
@@ -88,18 +90,33 @@ class _PosReportsScreenState extends State<PosReportsScreen> {
               }
             },
           ),
+          _SourceFilter(
+            selected: _sourceFilter,
+            onSelected: (s) => setState(() => _sourceFilter = s),
+          ),
           Expanded(
             child: Obx(() {
               final txns = PosController.to.transactions;
               final range = _effectiveRange;
-              final filtered = txns.where((t) =>
+              var filtered = txns.where((t) =>
                   t.createdAt.isAfter(range.start) &&
-                  t.createdAt.isBefore(range.end.add(const Duration(days: 1)))).toList();
+                  t.createdAt.isBefore(
+                      range.end.add(const Duration(days: 1)))).toList();
+
+              if (_sourceFilter != null) {
+                filtered =
+                    filtered.where((t) => t.source == _sourceFilter).toList();
+              }
 
               return ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
                   _RevenueSummary(transactions: filtered),
+                  const SizedBox(height: 16),
+                  _SourceBreakdown(transactions: txns.where((t) =>
+                      t.createdAt.isAfter(range.start) &&
+                      t.createdAt.isBefore(
+                          range.end.add(const Duration(days: 1)))).toList()),
                   const SizedBox(height: 16),
                   _ByMethodChart(transactions: filtered),
                   const SizedBox(height: 16),
@@ -144,17 +161,83 @@ class _RangeSelector extends StatelessWidget {
               onTap: () => onRange(r),
               child: Container(
                 margin: const EdgeInsets.only(right: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
                   color: active ? AppColors.primary : AppColors.elevated,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                       color: active ? AppColors.primary : AppColors.border),
                 ),
-                child: Text(labels[r]!, style: AppTextStyles.bodySmall.copyWith(
-                  color: active ? AppColors.onPrimary : AppColors.textSecondary,
-                  fontWeight: active ? FontWeight.w700 : FontWeight.w400,
-                )),
+                child: Text(labels[r]!,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: active
+                          ? AppColors.onPrimary
+                          : AppColors.textSecondary,
+                      fontWeight:
+                          active ? FontWeight.w700 : FontWeight.w400,
+                    )),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Source filter ─────────────────────────────────────────────────────────
+
+class _SourceFilter extends StatelessWidget {
+  final LedgerSource? selected;
+  final ValueChanged<LedgerSource?> onSelected;
+  const _SourceFilter({required this.selected, required this.onSelected});
+
+  @override
+  Widget build(BuildContext context) {
+    final options = <LedgerSource?>[null, ...LedgerSource.values];
+    final labels = <LedgerSource?, String>{
+      null: 'All Sources',
+      LedgerSource.pos: 'POS Walk-in',
+      LedgerSource.online: 'Online Booking',
+      LedgerSource.adjustment: 'Adjustment',
+    };
+    final colors = <LedgerSource?, Color>{
+      null: AppColors.primary,
+      LedgerSource.pos: AppColors.accent,
+      LedgerSource.online: AppColors.secondary,
+      LedgerSource.adjustment: AppColors.warning,
+    };
+
+    return Container(
+      color: AppColors.surface,
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: options.map((s) {
+            final active = selected == s;
+            final color = colors[s]!;
+            return GestureDetector(
+              onTap: () => onSelected(s),
+              child: Container(
+                margin: const EdgeInsets.only(right: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: active
+                      ? color.withValues(alpha: 0.15)
+                      : AppColors.elevated,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                      color: active ? color : AppColors.border, width: 1.2),
+                ),
+                child: Text(labels[s]!,
+                    style: AppTextStyles.caption.copyWith(
+                      color: active ? color : AppColors.textSecondary,
+                      fontWeight:
+                          active ? FontWeight.w700 : FontWeight.w400,
+                    )),
               ),
             );
           }).toList(),
@@ -173,7 +256,8 @@ class _RevenueSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final totalPaid = transactions.fold(0.0, (s, t) => s + t.amountPaid);
-    final totalPending = transactions.fold(0.0, (s, t) => s + t.remainingAmount);
+    final totalPending =
+        transactions.fold(0.0, (s, t) => s + t.remainingAmount);
     final refunds = transactions
         .where((t) => t.type == PosTransactionType.refund)
         .fold(0.0, (s, t) => s + t.amountPaid);
@@ -188,35 +272,141 @@ class _RevenueSummary extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Revenue Summary', style: AppTextStyles.titleMedium.copyWith(
-            color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
+          Text('Revenue Summary',
+              style: AppTextStyles.titleMedium.copyWith(
+                  color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
           const SizedBox(height: 14),
-          _statRow('Total Collected', 'PKR ${_pkr.format(totalPaid)}', AppColors.primary),
-          _statRow('Pending Balance', 'PKR ${_pkr.format(totalPending)}', AppColors.warning),
-          _statRow('Refunds', 'PKR ${_pkr.format(refunds)}', AppColors.error),
+          _statRow('Total Collected', 'PKR ${_pkr.format(totalPaid)}',
+              AppColors.primary),
+          _statRow('Pending Balance', 'PKR ${_pkr.format(totalPending)}',
+              AppColors.warning),
+          _statRow(
+              'Refunds', 'PKR ${_pkr.format(refunds)}', AppColors.error),
           const Divider(height: 20, color: AppColors.border),
-          _statRow('Net Revenue', 'PKR ${_pkr.format(totalPaid - refunds)}',
-              AppColors.success, bold: true),
-          _statRow('Transactions', '${transactions.length}', AppColors.textSecondary),
+          _statRow(
+              'Net Revenue',
+              'PKR ${_pkr.format(totalPaid - refunds)}',
+              AppColors.success,
+              bold: true),
+          _statRow('Transactions', '${transactions.length}',
+              AppColors.textSecondary),
         ],
       ),
     );
   }
 
-  Widget _statRow(String label, String value, Color valueColor, {bool bold = false}) =>
+  Widget _statRow(String label, String value, Color valueColor,
+          {bool bold = false}) =>
       Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(
           children: [
-            Text(label, style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
+            Text(label,
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: AppColors.textSecondary)),
             const Spacer(),
-            Text(value, style: AppTextStyles.bodySmall.copyWith(
-              color: valueColor,
-              fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
-            )),
+            Text(value,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: valueColor,
+                  fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
+                )),
           ],
         ),
       );
+}
+
+// ── Source breakdown (always shows all sources regardless of filter) ───────
+
+class _SourceBreakdown extends StatelessWidget {
+  final List<PosTransactionModel> transactions;
+  const _SourceBreakdown({required this.transactions});
+
+  @override
+  Widget build(BuildContext context) {
+    if (transactions.isEmpty) return const SizedBox.shrink();
+
+    final totals = <LedgerSource, double>{};
+    final counts = <LedgerSource, int>{};
+    for (final t in transactions) {
+      totals[t.source] = (totals[t.source] ?? 0) + t.amountPaid;
+      counts[t.source] = (counts[t.source] ?? 0) + 1;
+    }
+
+    final grandTotal = totals.values.fold(0.0, (a, b) => a + b);
+    if (grandTotal == 0) return const SizedBox.shrink();
+
+    final colors = {
+      LedgerSource.pos: AppColors.accent,
+      LedgerSource.online: AppColors.secondary,
+      LedgerSource.adjustment: AppColors.warning,
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Revenue by Source',
+              style: AppTextStyles.titleMedium.copyWith(
+                  color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 14),
+          ...totals.entries.map((e) {
+            final pct = e.value / grandTotal;
+            final color = colors[e.key] ?? AppColors.primary;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(e.key.label,
+                          style: AppTextStyles.bodySmall
+                              .copyWith(color: AppColors.textPrimary)),
+                      const Spacer(),
+                      Text(
+                        'PKR ${_pkr.format(e.value)}  ·  ${counts[e.key]} txn',
+                        style: AppTextStyles.caption
+                            .copyWith(color: AppColors.textSecondary),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: pct,
+                      backgroundColor: AppColors.elevated,
+                      color: color,
+                      minHeight: 6,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text('${(pct * 100).toStringAsFixed(1)}% of revenue',
+                      style: AppTextStyles.caption
+                          .copyWith(color: AppColors.textDisabled, fontSize: 10)),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
 }
 
 // ── By method breakdown ───────────────────────────────────────────────────
@@ -229,7 +419,8 @@ class _ByMethodChart extends StatelessWidget {
   Widget build(BuildContext context) {
     final totals = <PosPaymentMethod, double>{};
     for (final t in transactions) {
-      totals[t.paymentMethod] = (totals[t.paymentMethod] ?? 0) + t.amountPaid;
+      totals[t.paymentMethod] =
+          (totals[t.paymentMethod] ?? 0) + t.amountPaid;
     }
 
     if (totals.isEmpty) return const SizedBox.shrink();
@@ -246,8 +437,9 @@ class _ByMethodChart extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Revenue by Method', style: AppTextStyles.titleMedium.copyWith(
-            color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
+          Text('Revenue by Method',
+              style: AppTextStyles.titleMedium.copyWith(
+                  color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
           const SizedBox(height: 14),
           ...totals.entries.map((e) {
             final pct = grandTotal > 0 ? e.value / grandTotal : 0.0;
@@ -267,7 +459,8 @@ class _MethodBar extends StatelessWidget {
   final String method;
   final double amount;
   final double percent;
-  const _MethodBar({required this.method, required this.amount, required this.percent});
+  const _MethodBar(
+      {required this.method, required this.amount, required this.percent});
 
   @override
   Widget build(BuildContext context) {
@@ -278,10 +471,14 @@ class _MethodBar extends StatelessWidget {
         children: [
           Row(
             children: [
-              Text(method, style: AppTextStyles.bodySmall.copyWith(color: AppColors.textPrimary)),
+              Text(method,
+                  style: AppTextStyles.bodySmall
+                      .copyWith(color: AppColors.textPrimary)),
               const Spacer(),
-              Text('PKR ${_pkr.format(amount)} (${(percent * 100).toStringAsFixed(1)}%)',
-                  style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+              Text(
+                  'PKR ${_pkr.format(amount)} (${(percent * 100).toStringAsFixed(1)}%)',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textSecondary)),
             ],
           ),
           const SizedBox(height: 4),
@@ -323,15 +520,19 @@ class _ExpensesSummary extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Total Expenses', style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.textSecondary)),
-                Text('PKR ${_pkr.format(total)}', style: AppTextStyles.titleMedium.copyWith(
-                  color: AppColors.error, fontWeight: FontWeight.w800)),
+                Text('Total Expenses',
+                    style: AppTextStyles.bodySmall
+                        .copyWith(color: AppColors.textSecondary)),
+                Text('PKR ${_pkr.format(total)}',
+                    style: AppTextStyles.titleMedium.copyWith(
+                        color: AppColors.error,
+                        fontWeight: FontWeight.w800)),
               ],
             ),
             const Spacer(),
-            Text('${expenses.length} records', style: AppTextStyles.caption.copyWith(
-              color: AppColors.textDisabled)),
+            Text('${expenses.length} records',
+                style: AppTextStyles.caption
+                    .copyWith(color: AppColors.textDisabled)),
           ],
         ),
       );
@@ -357,7 +558,8 @@ class _TransactionList extends StatelessWidget {
           border: Border.all(color: AppColors.border),
         ),
         child: Text('No transactions in this period',
-            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
+            style: AppTextStyles.bodySmall
+                .copyWith(color: AppColors.textSecondary)),
       );
     }
 
@@ -373,15 +575,17 @@ class _TransactionList extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(16),
             child: Text('Transactions (${transactions.length})',
-                style: AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.w700)),
+                style: AppTextStyles.titleMedium
+                    .copyWith(fontWeight: FontWeight.w700)),
           ),
           const Divider(height: 1, color: AppColors.border),
-          ...transactions.take(20).map((t) => _TxnRow(txn: t)),
-          if (transactions.length > 20)
+          ...transactions.take(30).map((t) => _TxnRow(txn: t)),
+          if (transactions.length > 30)
             Padding(
               padding: const EdgeInsets.all(12),
-              child: Text('+ ${transactions.length - 20} more',
-                  style: AppTextStyles.caption.copyWith(color: AppColors.textDisabled)),
+              child: Text('+ ${transactions.length - 30} more',
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textDisabled)),
             ),
         ],
       ),
@@ -395,6 +599,12 @@ class _TxnRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final sourceColor = switch (txn.source) {
+      LedgerSource.pos => AppColors.accent,
+      LedgerSource.online => AppColors.secondary,
+      LedgerSource.adjustment => AppColors.warning,
+    };
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: const BoxDecoration(
@@ -402,14 +612,45 @@ class _TxnRow extends StatelessWidget {
       ),
       child: Row(
         children: [
+          Container(
+            width: 3,
+            height: 40,
+            decoration: BoxDecoration(
+              color: sourceColor,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(txn.customerName.isNotEmpty ? txn.customerName : 'Walk-in',
-                    style: AppTextStyles.bodySmall.copyWith(color: AppColors.textPrimary)),
-                Text(txn.courtName ?? txn.arenaName,
-                    style: AppTextStyles.caption.copyWith(color: AppColors.textSecondary)),
+                Text(
+                  txn.customerName.isNotEmpty ? txn.customerName : 'Walk-in',
+                  style: AppTextStyles.bodySmall
+                      .copyWith(color: AppColors.textPrimary),
+                ),
+                Row(
+                  children: [
+                    Text(txn.courtName ?? txn.arenaName,
+                        style: AppTextStyles.caption
+                            .copyWith(color: AppColors.textSecondary)),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: sourceColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(txn.source.label,
+                          style: AppTextStyles.caption.copyWith(
+                              color: sourceColor,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -418,9 +659,18 @@ class _TxnRow extends StatelessWidget {
             children: [
               Text('PKR ${_pkr.format(txn.amountPaid)}',
                   style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.success, fontWeight: FontWeight.w700)),
-              Text(txn.paymentMethod.label,
-                  style: AppTextStyles.caption.copyWith(color: AppColors.textDisabled, fontSize: 11)),
+                      color: AppColors.success, fontWeight: FontWeight.w700)),
+              Text(
+                '${txn.paymentMethod.label} · ${_timeFmt.format(txn.createdAt)}',
+                style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textDisabled, fontSize: 10),
+              ),
+              if (txn.remainingAmount > 0)
+                Text('Due: PKR ${_pkr.format(txn.remainingAmount)}',
+                    style: AppTextStyles.caption.copyWith(
+                        color: AppColors.warning,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600)),
             ],
           ),
         ],

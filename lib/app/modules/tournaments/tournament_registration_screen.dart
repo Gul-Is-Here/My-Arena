@@ -34,7 +34,7 @@ class _TournamentRegistrationScreenState
   Uint8List? _paymentScreenshotBytes;
   bool _submitting = false;
 
-  late final String id = Get.arguments as String;
+  late final String id = (Get.arguments as String?) ?? '';
 
   @override
   void dispose() {

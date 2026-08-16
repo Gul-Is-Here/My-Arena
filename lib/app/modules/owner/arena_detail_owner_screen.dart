@@ -105,6 +105,8 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
                     _reviewsSection(arena),
                     const SizedBox(height: 22),
                     _boostBanner(arena),
+                    const SizedBox(height: 16),
+                    _promotionsBanner(arena),
                   ],
                 ),
               ),
@@ -998,6 +1000,58 @@ class ArenaDetailOwnerScreen extends StatelessWidget {
             ),
             child: Text('BOOST',
                 style: AppTextStyles.button.copyWith(fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _promotionsBanner(ArenaModel arena) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.local_offer_rounded, color: AppColors.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Promo Codes',
+                    style: AppTextStyles.titleMedium.copyWith(
+                        color: _onSurface, fontSize: 14.5, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 2),
+                Text('Create discounts for your customers',
+                    style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar, fontSize: 12)),
+              ],
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Get.toNamed(
+              AppRoutes.ownerPromotions,
+              arguments: {'arenaId': arena.id, 'arenaName': arena.name},
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              minimumSize: const Size(80, 40),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
+            child: const Text('MANAGE',
+                style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.5, fontSize: 12)),
           ),
         ],
       ),

@@ -28,7 +28,7 @@ class _CustomerTicketDetailScreenState
   void initState() {
     super.initState();
     _tabs = TabController(length: 2, vsync: this);
-    _ticketId = Get.arguments as String;
+    _ticketId = (Get.arguments as String?) ?? '';
     if (!Get.isRegistered<CustomerTicketController>()) {
       Get.put(CustomerTicketController());
     }

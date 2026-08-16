@@ -53,13 +53,7 @@ class DashboardTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!Get.isRegistered<OwnerController>()) {
-      Get.put(OwnerController());
-    }
     final owner = OwnerController.to;
-    if (!Get.isRegistered<OwnerBookingController>()) {
-      Get.put(OwnerBookingController(), permanent: true);
-    }
     final ownerBookings = OwnerBookingController.to;
 
     return LayoutBuilder(

@@ -28,7 +28,7 @@ class _AdminTicketDetailScreenState extends State<AdminTicketDetailScreen>
   void initState() {
     super.initState();
     _tabs = TabController(length: 2, vsync: this);
-    _ticketId = Get.arguments as String;
+    _ticketId = (Get.arguments as String?) ?? '';
     if (!Get.isRegistered<TicketController>()) {
       Get.put(TicketController(), permanent: true);
     }

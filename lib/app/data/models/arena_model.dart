@@ -49,25 +49,80 @@ extension ArenaStatusX on ArenaStatus {
 
 class ArenaLocation {
   final String address;
+  final String city;
+  final String country;
+  final String countryCode;    // ISO 3166-1 alpha-2, e.g. "PK"
+  final String normalizedCity; // lowercase, used as grouping key
   final double lat;
   final double lng;
 
   const ArenaLocation({
     required this.address,
+    this.city = '',
+    this.country = '',
+    this.countryCode = '',
+    this.normalizedCity = '',
     this.lat = 0,
     this.lng = 0,
   });
+
+  factory ArenaLocation.fromMap(Map<String, dynamic> m) {
+    final rawCity    = (m['city']    as String? ?? '').trim();
+    final rawAddress = (m['address'] as String? ?? '').trim();
+    // Lazy fallback: if city wasn't stored (old arenas), derive from address.
+    final effectiveCity = rawCity.isNotEmpty ? rawCity : _cityFromAddress(rawAddress);
+    return ArenaLocation(
+      address:        rawAddress,
+      city:           effectiveCity,
+      country:        (m['country']        as String? ?? '').trim(),
+      countryCode:    (m['countryCode']    as String? ?? '').trim(),
+      normalizedCity: (m['normalizedCity'] as String? ?? effectiveCity.toLowerCase()).trim(),
+      lat:            (m['lat'] ?? 0).toDouble(),
+      lng:            (m['lng'] ?? 0).toDouble(),
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'address':        address,
+    'city':           city,
+    'country':        country,
+    'countryCode':    countryCode,
+    'normalizedCity': normalizedCity,
+    'lat':            lat,
+    'lng':            lng,
+  };
 
   /// Returns the address if it's a proper name; otherwise falls back to a
   /// coordinate-derived label so cards never show raw numbers.
   String get displayAddress {
     final a = address.trim();
-    if (a.isEmpty) return 'Location pinned';
-    // Looks like raw coordinates (e.g. "33.68, 73.04" or "33.6844° N")
+    if (a.isEmpty) return city.isNotEmpty ? city : 'Location pinned';
     final looksLikeCoords = RegExp(r'^-?\d+\.?\d*[°,\s]').hasMatch(a) &&
         !RegExp(r'[a-zA-Z]{3,}').hasMatch(a);
-    if (looksLikeCoords) return 'Location pinned';
+    if (looksLikeCoords) return city.isNotEmpty ? city : 'Location pinned';
     return a;
+  }
+
+  /// Derive a best-effort city from a free-text address string.
+  /// e.g. "DHA Phase 5, Lahore, Pakistan" → "Lahore"
+  static String _cityFromAddress(String address) {
+    if (address.isEmpty) return '';
+    final parts = address
+        .split(',')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (parts.length >= 3) return parts[parts.length - 2]; // second-to-last
+    if (parts.length == 2) return parts[0];                // first part
+    return parts.isNotEmpty ? parts.first : '';
+  }
+
+  /// Returns a Unicode flag emoji from a 2-letter ISO country code.
+  static String flagEmoji(String code) {
+    if (code.length != 2) return '🏳️';
+    final a = code.toUpperCase().codeUnitAt(0) - 65 + 0x1F1E6;
+    final b = code.toUpperCase().codeUnitAt(1) - 65 + 0x1F1E6;
+    return String.fromCharCode(a) + String.fromCharCode(b);
   }
 }
 
@@ -124,11 +179,7 @@ class ArenaModel {
         'name': name,
         'description': description,
         'images': images,
-        'location': {
-          'address': location.address,
-          'lat': location.lat,
-          'lng': location.lng,
-        },
+        'location': location.toMap(),
         'status': status.name,
         'isActive': isActive,
         'isFeatured': isFeatured,
@@ -153,11 +204,7 @@ class ArenaModel {
       name: m['name'] ?? '',
       description: m['description'] ?? '',
       images: List<String>.from(m['images'] ?? []),
-      location: ArenaLocation(
-        address: loc['address'] ?? '',
-        lat: (loc['lat'] ?? 0).toDouble(),
-        lng: (loc['lng'] ?? 0).toDouble(),
-      ),
+      location: ArenaLocation.fromMap(loc),
       status: ArenaStatusX.fromString(m['status']),
       isActive: (m['isActive'] as bool?) ?? true,
       isFeatured: (m['isFeatured'] as bool?) ?? false,

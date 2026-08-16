@@ -1,8 +1,8 @@
-import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../controllers/booking_controller.dart';
 import '../../controllers/chat_controller.dart';
@@ -10,6 +10,7 @@ import '../../data/models/arena_model.dart';
 import '../../data/models/booking_model.dart';
 import '../../data/models/court_model.dart';
 import '../../routes/app_routes.dart';
+import '../../services/booking_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text_styles.dart';
 import 'rate_booking_sheet.dart';
@@ -72,12 +73,20 @@ class _MyBookingsTabState extends State<MyBookingsTab> {
                 Expanded(
                   child: Obx(() {
                     c.bookings.length; // reactive trigger
-                    final items = _itemsForTab(c);
-                    if (items.isEmpty) return _buildEmpty();
+                    final entries = _entriesForTab(c);
+                    if (entries.isEmpty) return _buildEmpty();
                     return ListView.builder(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                      itemCount: items.length,
-                      itemBuilder: (_, i) => _BookingCard(booking: items[i]),
+                      itemCount: entries.length,
+                      itemBuilder: (_, i) {
+                        final entry = entries[i];
+                        if (entry is _SeriesEntry) {
+                          return _RecurringSeriesCard(
+                            occurrences: entry.occurrences,
+                          );
+                        }
+                        return _BookingCard(booking: entry as BookingModel);
+                      },
                     );
                   }),
                 ),
@@ -151,35 +160,60 @@ class _MyBookingsTabState extends State<MyBookingsTab> {
         ),
       );
 
-  List<BookingModel> _itemsForTab(BookingController c) {
+  /// Groups recurring bookings under a single [_SeriesEntry]; individual
+  /// bookings are returned as plain [BookingModel] entries.
+  List<Object> _entriesForTab(BookingController c) {
+    List<BookingModel> raw;
     switch (_tabIndex) {
       case 0:
-        return c.bookings
+        raw = c.bookings
             .where((b) =>
                 b.status == BookingStatus.pendingDeposit ||
                 b.status == BookingStatus.depositSubmitted)
             .toList()
           ..sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
       case 1:
-        return c.bookings
+        raw = c.bookings
             .where((b) => b.status == BookingStatus.confirmed && !b.checkedIn)
             .toList()
           ..sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
       case 2:
-        return c.bookings
+        raw = c.bookings
             .where((b) => b.isActive)
             .toList()
           ..sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
       case 3:
-        return c.bookings
+        raw = c.bookings
             .where((b) => b.status == BookingStatus.completed)
             .toList()
           ..sort((a, b) => b.startDateTime.compareTo(a.startDateTime));
       case 4:
-        return c.cancelled;
+        raw = c.cancelled;
       default:
         return [];
     }
+    return _groupBySeriesOrIndividual(raw);
+  }
+
+  static List<Object> _groupBySeriesOrIndividual(List<BookingModel> raw) {
+    final result = <Object>[];
+    final seen = <String>{};
+    for (final b in raw) {
+      if (!b.isRecurring) {
+        result.add(b);
+        continue;
+      }
+      final gid = b.recurringGroupId!;
+      if (seen.contains(gid)) continue; // already added as series entry
+      seen.add(gid);
+      // Collect ALL occurrences for this series from the same raw list.
+      final occurrences = raw
+          .where((x) => x.recurringGroupId == gid)
+          .toList()
+        ..sort((a, z) => a.startDateTime.compareTo(z.startDateTime));
+      result.add(_SeriesEntry(occurrences));
+    }
+    return result;
   }
 
   Widget _buildEmpty() {
@@ -325,8 +359,8 @@ class _BookingCard extends StatelessWidget {
                 bottom: BorderSide(color: _outline.withValues(alpha: 0.3)),
               ),
             ),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: ColoredBox(
+              color: _surfaceLow.withValues(alpha: 0.08),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -773,4 +807,636 @@ class BookingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => _BookingCard(booking: booking);
+}
+
+// ── Series grouping helpers ────────────────────────────────────────────────
+class _SeriesEntry {
+  final List<BookingModel> occurrences;
+  const _SeriesEntry(this.occurrences);
+}
+
+// ── Recurring series card ─────────────────────────────────────────────────
+/// Shows a single grouped card for all occurrences in a recurring series.
+/// Tapping "Sessions" expands a bottom sheet with individual occurrence cards.
+class _RecurringSeriesCard extends StatelessWidget {
+  final List<BookingModel> occurrences;
+  const _RecurringSeriesCard({required this.occurrences});
+
+  static const _seriesColor = Color(0xFF7C83FD);
+  static const _months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  BookingModel get _first => occurrences.first;
+
+  String _fmtDate(DateTime d) =>
+      '${d.day} ${_months[d.month - 1]}';
+
+  String _seriesStatusLabel() {
+    final confirmed = occurrences.where((b) => b.status == BookingStatus.confirmed).length;
+    final total = occurrences.length;
+    if (confirmed == total) return 'All $total Confirmed';
+    if (confirmed == 0) {
+      final submitted = occurrences.where((b) => b.status == BookingStatus.depositSubmitted).length;
+      if (submitted > 0) return 'Awaiting Approval';
+      return 'Pending';
+    }
+    return '$confirmed/$total Confirmed';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final last = occurrences.last;
+    final total = occurrences.length;
+    final startTime = _first.startTime;
+    final endTime = _first.endTime;
+
+    return GestureDetector(
+      onTap: () => _showSeriesSheet(context),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              _surfaceLow.withValues(alpha: 0.85),
+              _bg.withValues(alpha: 0.95),
+            ],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 20,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border(
+                top: const BorderSide(color: _seriesColor, width: 2),
+                left: BorderSide(color: _outline.withValues(alpha: 0.3)),
+                right: BorderSide(color: _outline.withValues(alpha: 0.3)),
+                bottom: BorderSide(color: _outline.withValues(alpha: 0.3)),
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Row 1: icon + arena/court + series badge
+                  Row(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: _seriesColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: _seriesColor.withValues(alpha: 0.3)),
+                        ),
+                        child: const Icon(Icons.repeat, color: _seriesColor, size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _first.arenaName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.titleMedium.copyWith(
+                                fontSize: 15, color: _onSurface,
+                              ),
+                            ),
+                            Text(
+                              _first.courtName,
+                              style: AppTextStyles.caption.copyWith(
+                                fontSize: 11, color: _onSurfaceVar, letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: _seriesColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: _seriesColor.withValues(alpha: 0.4)),
+                        ),
+                        child: Text(
+                          'Recurring',
+                          style: AppTextStyles.caption.copyWith(
+                            fontSize: 10, color: _seriesColor, letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Divider(color: _outline.withValues(alpha: 0.25), height: 1),
+                  const SizedBox(height: 12),
+                  // Frequency + time
+                  Row(
+                    children: [
+                      const Icon(Icons.calendar_today_outlined, size: 13, color: _onSurfaceVar),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Weekly · $startTime – $endTime',
+                        style: AppTextStyles.bodySmall.copyWith(fontSize: 13, color: _onSurface),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(Icons.date_range_outlined, size: 13, color: _onSurfaceVar),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${_fmtDate(_first.date)} – ${_fmtDate(last.date)} · $total Sessions',
+                        style: AppTextStyles.bodySmall.copyWith(fontSize: 13, color: _onSurface),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Status summary row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        _seriesStatusLabel(),
+                        style: AppTextStyles.bodySmall.copyWith(
+                          fontSize: 12, color: _seriesColor, fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () => _showSeriesSheet(context),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: _seriesColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: _seriesColor.withValues(alpha: 0.3)),
+                          ),
+                          child: Row(
+                            children: [
+                              Text(
+                                'Sessions',
+                                style: AppTextStyles.caption.copyWith(
+                                  fontSize: 11, color: _seriesColor,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              const Icon(Icons.expand_more, size: 14, color: _seriesColor),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showSeriesSheet(BuildContext context) {
+    final c = Get.find<BookingController>();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.65,
+        minChildSize: 0.4,
+        maxChildSize: 0.92,
+        expand: false,
+        builder: (_, sc) => Column(
+          children: [
+            // Handle
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: _outline.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            // Header
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.repeat, color: _seriesColor, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Recurring Booking · ${occurrences.length} Sessions',
+                      style: AppTextStyles.titleMedium.copyWith(
+                        fontSize: 15, color: _onSurface,
+                      ),
+                    ),
+                  ),
+                  // Cancel series button (only if any occurrence is cancellable)
+                  if (occurrences.any((b) => b.canCancel))
+                    TextButton(
+                      onPressed: () => _confirmCancelSeries(context, c),
+                      child: Text(
+                        'Cancel Series',
+                        style: AppTextStyles.caption.copyWith(
+                          fontSize: 11, color: _red,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Divider(color: _outline.withValues(alpha: 0.3), height: 1),
+            // Occurrence list
+            Expanded(
+              child: ListView.separated(
+                controller: sc,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                itemCount: occurrences.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (_, i) => _OccurrenceTile(
+                  occurrence: occurrences[i],
+                  week: i + 1,
+                  total: occurrences.length,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmCancelSeries(BuildContext context, BookingController c) {
+    Get.dialog(
+      AlertDialog(
+        backgroundColor: _surface,
+        title: Text('Cancel Entire Series?',
+            style: AppTextStyles.titleMedium.copyWith(color: _onSurface)),
+        content: Text(
+          'This will cancel all upcoming sessions in this recurring booking. Completed sessions are not affected.',
+          style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar),
+        ),
+        actions: [
+          TextButton(
+            onPressed: Get.back,
+            child: Text('Keep', style: TextStyle(color: _onSurfaceVar)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Get.back();
+              try {
+                await c.cancelRecurringSeries(_first.recurringGroupId!);
+                Get.back(); // close bottom sheet
+                Get.snackbar('Series Cancelled', 'All upcoming sessions have been cancelled.',
+                    snackPosition: SnackPosition.BOTTOM);
+              } catch (e) {
+                Get.snackbar('Error', 'Could not cancel series. Try again.',
+                    snackPosition: SnackPosition.BOTTOM);
+              }
+            },
+            child: const Text('Cancel Series', style: TextStyle(color: _red)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Single occurrence tile inside the series bottom sheet ─────────────────
+class _OccurrenceTile extends StatelessWidget {
+  final BookingModel occurrence;
+  final int week;
+  final int total;
+  const _OccurrenceTile({
+    required this.occurrence,
+    required this.week,
+    required this.total,
+  });
+
+  static const _months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  Color get _statusColor {
+    switch (occurrence.status) {
+      case BookingStatus.confirmed:
+      case BookingStatus.completed:
+        return _green;
+      case BookingStatus.rejected:
+      case BookingStatus.cancelled:
+        return _red;
+      default:
+        return _amber;
+    }
+  }
+
+  Color get _paymentColor {
+    switch (occurrence.effectivePaymentStatus) {
+      case PaymentStatus.fullyPaid:
+        return _green;
+      case PaymentStatus.depositAccepted:
+        return _amber;
+      case PaymentStatus.depositSubmitted:
+        return const Color(0xFF7C83FD);
+      default:
+        return _onSurfaceVar;
+    }
+  }
+
+  String get _paymentLabel {
+    switch (occurrence.effectivePaymentStatus) {
+      case PaymentStatus.fullyPaid:
+        return 'Fully Paid';
+      case PaymentStatus.depositAccepted:
+        return 'Deposit Accepted';
+      case PaymentStatus.depositSubmitted:
+        return 'Deposit Submitted';
+      case PaymentStatus.refunded:
+        return 'Refunded';
+      default:
+        return 'Unpaid';
+    }
+  }
+
+  bool get _needsPayment =>
+      occurrence.status == BookingStatus.pendingDeposit;
+
+  @override
+  Widget build(BuildContext context) {
+    final d = occurrence.date;
+    final dateLabel = '${d.day} ${_months[d.month - 1]}';
+    final statusColor = _statusColor;
+    final payColor = _paymentColor;
+
+    return GestureDetector(
+      onTap: _needsPayment
+          ? () => _showPaySheet(context)
+          : () => Get.toNamed(AppRoutes.bookingDetail, arguments: occurrence),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: _surfaceLow.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: _needsPayment
+                ? _amber.withValues(alpha: 0.6)
+                : statusColor.withValues(alpha: 0.3),
+            width: _needsPayment ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                // Week pill
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+                  ),
+                  child: Center(
+                    child: Text(
+                      'W$week',
+                      style: AppTextStyles.caption.copyWith(
+                        fontSize: 11, color: statusColor, fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Date + status
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        dateLabel,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          fontSize: 13, color: _onSurface, fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text(
+                        _needsPayment ? 'Payment Required' : occurrence.status.label,
+                        style: AppTextStyles.caption.copyWith(
+                          fontSize: 11,
+                          color: _needsPayment ? _amber : statusColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_needsPayment)
+                  GestureDetector(
+                    onTap: () => _showPaySheet(context),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _amber.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: _amber.withValues(alpha: 0.5)),
+                      ),
+                      child: Text(
+                        'Pay Now',
+                        style: AppTextStyles.caption.copyWith(
+                          fontSize: 11, color: _amber, fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  )
+                else ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: payColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: payColor.withValues(alpha: 0.3)),
+                    ),
+                    child: Text(
+                      _paymentLabel,
+                      style: AppTextStyles.caption.copyWith(fontSize: 9, color: payColor),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(Icons.chevron_right, size: 16, color: _onSurfaceVar),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPaySheet(BuildContext context) {
+    final accountCtrl = TextEditingController();
+    XFile? picked;
+    bool uploading = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => Padding(
+          padding: EdgeInsets.only(
+            left: 20, right: 20, top: 20,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36, height: 4,
+                  decoration: BoxDecoration(
+                    color: _outline.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text('Submit Week $week Payment',
+                  style: AppTextStyles.titleMedium.copyWith(color: _onSurface)),
+              const SizedBox(height: 4),
+              Text(
+                'PKR ${occurrence.totalAmount.toStringAsFixed(0)} · '
+                '${occurrence.date.day} ${_months[occurrence.date.month - 1]}',
+                style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar),
+              ),
+              const SizedBox(height: 20),
+              // Screenshot picker
+              GestureDetector(
+                onTap: () async {
+                  final img = await ImagePicker().pickImage(source: ImageSource.gallery);
+                  if (img != null) setState(() => picked = img);
+                },
+                child: Container(
+                  height: 130,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: _surfaceLow,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: picked != null
+                          ? _green.withValues(alpha: 0.5)
+                          : _outline.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: picked != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.network(picked!.path, fit: BoxFit.cover),
+                        )
+                      : Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.upload_rounded, color: _onSurfaceVar, size: 28),
+                            const SizedBox(height: 6),
+                            Text('Tap to upload payment screenshot',
+                                style: AppTextStyles.caption.copyWith(color: _onSurfaceVar)),
+                          ],
+                        ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              // Account used
+              TextField(
+                controller: accountCtrl,
+                style: TextStyle(color: _onSurface, fontSize: 14),
+                decoration: InputDecoration(
+                  labelText: 'Account / Number Used',
+                  labelStyle: TextStyle(color: _onSurfaceVar, fontSize: 13),
+                  filled: true,
+                  fillColor: _surfaceLow,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: _outline.withValues(alpha: 0.4)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: _outline.withValues(alpha: 0.3)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: (picked == null || uploading)
+                      ? null
+                      : () async {
+                          if (accountCtrl.text.trim().isEmpty) {
+                            Get.snackbar('Required', 'Enter the account/number you paid from.',
+                                snackPosition: SnackPosition.BOTTOM);
+                            return;
+                          }
+                          setState(() => uploading = true);
+                          try {
+                            final svc = BookingService();
+                            await svc.submitDeposit(
+                              occurrence.id,
+                              screenshot: picked!,
+                              accountUsed: accountCtrl.text.trim(),
+                            );
+                            Navigator.pop(ctx);
+                            Get.snackbar(
+                              'Payment Submitted',
+                              'Week $week payment sent. Awaiting owner confirmation.',
+                              snackPosition: SnackPosition.BOTTOM,
+                            );
+                          } catch (e) {
+                            setState(() => uploading = false);
+                            Get.snackbar('Error', 'Upload failed. Try again.',
+                                snackPosition: SnackPosition.BOTTOM);
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _amber,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: uploading
+                      ? const SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white))
+                      : Text('Submit Payment',
+                          style: AppTextStyles.label.copyWith(color: Colors.white)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

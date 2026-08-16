@@ -33,7 +33,12 @@ class _AdminCustomerDetailScreenState
   @override
   void initState() {
     super.initState();
-    _user = Get.arguments as UserModel;
+    final args = Get.arguments;
+    if (args is! UserModel) {
+      Get.back();
+      return;
+    }
+    _user = args;
     _sub = _db
         .collection('bookings')
         .where('customerId', isEqualTo: _user.uid)

@@ -263,16 +263,21 @@ class _StatsGrid extends StatelessWidget {
           pos.courtStatus(c.id) == CourtLiveStatus.occupied).length;
 
       final stats = [
-        _StatData('Today Revenue', 'PKR ${_pkr.format(pos.todayRevenue.value)}', AppColors.primary, Icons.attach_money),
-        _StatData('Paid', 'PKR ${_pkr.format(pos.todayPaid.value)}', AppColors.success, Icons.check_circle_outline),
+        // Row 1 — collection breakdown (the three numbers the user asked for)
+        _StatData('Total Collected', 'PKR ${_pkr.format(pos.todayPaid.value)}', AppColors.primary, Icons.account_balance_wallet_outlined),
+        _StatData('Online Collected', 'PKR ${_pkr.format(pos.todayOnlineCollected.value)}', AppColors.secondary, Icons.wifi_outlined),
+        _StatData('Counter Collected', 'PKR ${_pkr.format(pos.todayCounterCollected.value)}', AppColors.accent, Icons.point_of_sale_outlined),
+        // Row 2 — outstanding + net
         _StatData('Outstanding', 'PKR ${_pkr.format(pos.todayRemaining.value)}', AppColors.warning, Icons.pending_outlined),
-        _StatData('Net Revenue', 'PKR ${_pkr.format(pos.todayNet.value)}', AppColors.secondary, Icons.trending_up),
+        _StatData('Net Revenue', 'PKR ${_pkr.format(pos.todayNet.value)}', AppColors.success, Icons.trending_up),
+        _StatData('Expenses', 'PKR ${_pkr.format(pos.todayExpenses.value)}', AppColors.error, Icons.receipt_outlined),
+        // Row 3 — bookings + courts
         _StatData('Today Bookings', '${todayBookings.length}', AppColors.textPrimary, Icons.calendar_today_outlined),
         _StatData('Walk-in', '$walkIns', AppColors.accent, Icons.directions_walk),
-        _StatData('Online', '$online', AppColors.secondary, Icons.wifi_outlined),
-        _StatData('Expenses', 'PKR ${_pkr.format(pos.todayExpenses.value)}', AppColors.error, Icons.receipt_outlined),
-        _StatData('Available Courts', '$availableCourts', AppColors.success, Icons.stadium_outlined),
+        _StatData('Online', '$online', AppColors.secondary, Icons.smartphone_outlined),
+        _StatData('Available', '$availableCourts', AppColors.success, Icons.stadium_outlined),
         _StatData('Occupied', '$occupiedCourts', AppColors.warning, Icons.sports_outlined),
+        _StatData('Bookings Value', 'PKR ${_pkr.format(pos.todayRevenue.value)}', AppColors.textSecondary, Icons.attach_money),
       ];
 
       return Column(

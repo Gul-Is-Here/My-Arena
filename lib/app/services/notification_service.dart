@@ -32,10 +32,11 @@ class NotificationService {
   // auth flow routes the user to their dashboard.
   static Map<String, String?>? _pendingDeepLink;
 
-  // Guard so _fcm.onTokenRefresh is subscribed only once per app lifetime,
-  // regardless of how many times _saveToken is called (init + authStateChanges
-  // both fire immediately for an already-signed-in user).
+  // Guard so _fcm.onTokenRefresh is subscribed only once per app lifetime.
   static bool _tokenRefreshSubscribed = false;
+
+  // Current device's FCM token — kept so we can remove it on logout.
+  static String? _currentToken;
 
   static Future<void> init() async {
     if (!kIsWeb) {
@@ -92,10 +93,6 @@ class NotificationService {
     });
 
     // App launched (cold start) by tapping a notification.
-    // Store the payload — don't navigate yet. At this point runApp() hasn't
-    // been called, so there is no navigator and no GetX controllers. Navigation
-    // is deferred to processPendingDeepLink(), called from goToRoleDashboard()
-    // after auth resolves and the dashboard route is on screen.
     final initialMsg = await _fcm.getInitialMessage();
     if (initialMsg != null) {
       debugPrint('FCM getInitialMessage (stored): data=${initialMsg.data}');
@@ -105,8 +102,11 @@ class NotificationService {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) await _saveToken(uid);
 
+    // Re-register token when auth state changes (login → new user, logout handled separately).
     FirebaseAuth.instance.authStateChanges().listen((user) async {
-      if (user != null) await _saveToken(user.uid);
+      if (user != null) {
+        await _saveToken(user.uid);
+      }
     });
   }
 
@@ -117,13 +117,31 @@ class NotificationService {
   }
 
   /// Call this after the user is authenticated and their dashboard is rendered.
-  /// Processes any notification that launched the app from a terminated state.
   static void processPendingDeepLink() {
     final data = _pendingDeepLink;
     if (data == null) return;
     _pendingDeepLink = null;
     debugPrint('NotificationService: processing pending deep-link: $data');
     _navigate(data);
+  }
+
+  /// Must be called during sign-out BEFORE the Firebase Auth session is cleared.
+  /// Removes this device's FCM token from the user's Firestore document so
+  /// the logged-out user stops receiving pushes on this device.
+  static Future<void> onSignOut(String uid) async {
+    final token = _currentToken;
+    if (token == null || token.isEmpty) return;
+    try {
+      await _firestore.collection('users').doc(uid).update({
+        'fcmTokens.$token': FieldValue.delete(),
+        // Also clear legacy single-token field if it matches.
+        'fcmToken': FieldValue.delete(),
+      });
+      debugPrint('NotificationService: removed token on sign-out for uid=$uid');
+    } catch (e) {
+      debugPrint('NotificationService: onSignOut cleanup failed: $e');
+    }
+    _currentToken = null;
   }
 
   static void _navigate(Map<String, String?> data) {
@@ -135,17 +153,21 @@ class NotificationService {
   }
 
   static Future<void> _navigateAsync(String type, String relatedId) async {
+    // Determine recipient role from the currently signed-in user, not from
+    // any stale payload. This means deep-links always open the correct screen
+    // for whoever is currently logged in.
+    final user = Get.isRegistered<AuthController>()
+        ? AuthController.to.currentUser.value
+        : null;
+    final isOwnerSide = user?.role == UserRole.owner || user?.isArenaStaff == true;
+
     switch (type) {
       case 'booking':
       case 'booking_reminder':
-        final user = Get.isRegistered<AuthController>()
-            ? AuthController.to.currentUser.value
-            : null;
-        if (user?.role == UserRole.owner || user?.isArenaStaff == true) {
+      case 'extension_request':
+        if (isOwnerSide) {
           Get.toNamed(AppRoutes.bookingDetailOwner, arguments: relatedId);
         } else {
-          // Try in-memory cache first; fall back to a Firestore fetch so
-          // deep-links work even on cold start before bookings are loaded.
           BookingModel? booking;
           if (Get.isRegistered<BookingController>()) {
             booking = Get.find<BookingController>()
@@ -168,15 +190,12 @@ class NotificationService {
         }
         break;
       case 'chat':
-        // relatedId is the chatId
         Get.toNamed(AppRoutes.chatRoom, arguments: relatedId);
         break;
       case 'support':
-        // relatedId is the ticketId; open the ticket detail
-        final user = Get.isRegistered<AuthController>()
-            ? AuthController.to.currentUser.value
-            : null;
-        if (user?.role == UserRole.owner || user?.isArenaStaff == true) {
+        if (user?.role == UserRole.admin || user?.role == UserRole.superAdmin) {
+          Get.toNamed(AppRoutes.notifications);
+        } else if (isOwnerSide) {
           Get.toNamed(AppRoutes.ownerTickets);
         } else {
           Get.toNamed(AppRoutes.customerTicketDetail, arguments: relatedId);
@@ -186,7 +205,6 @@ class NotificationService {
         Get.toNamed(AppRoutes.tournamentDetail, arguments: relatedId);
         break;
       default:
-        // Unknown type — open the notification inbox as a fallback.
         Get.toNamed(AppRoutes.notifications);
         break;
     }
@@ -194,8 +212,6 @@ class NotificationService {
 
   static Future<void> _saveToken(String uid) async {
     // On iOS, the APNS token may not be ready at app start.
-    // If it isn't, skip getting the FCM token now — onTokenRefresh fires
-    // once the device finishes APNS registration.
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
       try {
         final apns = await _fcm.getAPNSToken();
@@ -217,9 +233,6 @@ class NotificationService {
     _subscribeToTokenRefresh();
   }
 
-  // Subscribe to FCM token rotations exactly once per app lifetime.
-  // Always reads the live UID from FirebaseAuth so the correct user's
-  // document is updated even after a logout/login cycle.
   static void _subscribeToTokenRefresh() {
     if (_tokenRefreshSubscribed) return;
     _tokenRefreshSubscribed = true;
@@ -229,10 +242,19 @@ class NotificationService {
     });
   }
 
+  // Store the token in a per-device map: fcmTokens.{token} = true.
+  // This supports multiple devices for one user and makes stale-token
+  // removal by the Cloud Function possible (it deletes the specific key).
+  // The legacy `fcmToken` single-field is also updated so old Function code
+  // continues to work until fully migrated.
   static Future<void> _persistToken(String uid, String token) async {
-    await _firestore
-        .collection('users')
-        .doc(uid)
-        .set({'fcmToken': token}, SetOptions(merge: true));
+    _currentToken = token;
+    await _firestore.collection('users').doc(uid).set(
+      {
+        'fcmTokens': {token: true},
+        'fcmToken': token, // legacy field kept for backwards compat
+      },
+      SetOptions(merge: true),
+    );
   }
 }

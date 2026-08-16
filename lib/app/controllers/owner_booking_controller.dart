@@ -27,8 +27,24 @@ class OwnerBookingController extends GetxController {
 
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  List<BookingModel> get pendingApproval => bookings
-      .where((b) => b.status == BookingStatus.depositSubmitted)
+  /// Bookings awaiting owner approval. Recurring series are de-duplicated —
+  /// only the first occurrence (week 1) represents the entire series in the
+  /// approval list. Individual occurrences are accessible via [seriesFor].
+  List<BookingModel> get pendingApproval {
+    final pending = bookings
+        .where((b) => b.status == BookingStatus.depositSubmitted)
+        .toList()
+      ..sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
+    final seenGroups = <String>{};
+    return pending.where((b) {
+      if (b.recurringGroupId == null) return true;
+      return seenGroups.add(b.recurringGroupId!);
+    }).toList();
+  }
+
+  /// All occurrences in a recurring series, sorted by date.
+  List<BookingModel> seriesFor(String recurringGroupId) => bookings
+      .where((b) => b.recurringGroupId == recurringGroupId)
       .toList()
     ..sort((a, b) => a.startDateTime.compareTo(b.startDateTime));
 
@@ -138,6 +154,32 @@ class OwnerBookingController extends GetxController {
     await _service.rejectBooking(id);
   }
 
+  /// Approve all pending occurrences in a recurring series.
+  Future<void> approveSeries(String recurringGroupId) async {
+    await _service.approveRecurringSeries(recurringGroupId, _uid);
+    final series = seriesFor(recurringGroupId)
+        .where((b) => b.status == BookingStatus.depositSubmitted)
+        .toList();
+    if (series.isEmpty) return;
+    if (!Get.isRegistered<ChatController>()) {
+      Get.put(ChatController(), permanent: true);
+    }
+    try {
+      await ChatController.to.sendRecurringConfirmedMessage(
+        series.first,
+        series.length,
+        series.first.recurringTotal ?? series.length,
+      );
+    } catch (e) {
+      debugPrint('recurring confirm chat message failed: $e');
+    }
+  }
+
+  /// Reject all pending occurrences in a recurring series.
+  Future<void> rejectSeries(String recurringGroupId) async {
+    await _service.rejectRecurringSeries(recurringGroupId, _uid);
+  }
+
   Future<void> sendRefund(String id) async {
     final picked = await _picker.pickImage(source: ImageSource.gallery);
     if (picked == null) return;
@@ -166,6 +208,8 @@ class OwnerBookingController extends GetxController {
   }
 
   /// Returns null on success, error string on failure.
+  /// Client-side pre-check avoids a round-trip on obvious conflicts;
+  /// the service runs an atomic transaction as the authoritative check.
   Future<String?> extendSession(BookingModel booking, int extraHours) async {
     final sameCourt = bookings.where((b) =>
         b.courtId == booking.courtId &&
@@ -181,12 +225,17 @@ class OwnerBookingController extends GetxController {
         b.startHour >= currentEnd && b.startHour < newEnd);
     if (conflict) return 'Next slot is already booked — cannot extend';
 
-    await _service.extendSession(booking.id, extraHours);
+    // Service runs a transaction: writes slot locks + updates totalAmount + remainingAmount
+    await _service.extendSession(booking, extraHours);
     return null;
   }
 
-  Future<void> checkoutSession(String bookingId, double amountCollected) =>
-      _service.checkoutSession(bookingId, amountCollected);
+  Future<void> checkoutSession(
+    String bookingId,
+    double amountCollected,
+    double newRemainingAmount,
+  ) =>
+      _service.checkoutSession(bookingId, amountCollected, newRemainingAmount);
 
   Future<void> markNoShow(String bookingId) => _service.markNoShow(bookingId);
 

@@ -9,8 +9,10 @@ import 'package:share_plus/share_plus.dart';
 import '../../controllers/booking_controller.dart';
 import '../../data/models/arena_model.dart';
 import '../../data/models/booking_model.dart';
+import '../../data/models/extension_request_model.dart';
 import '../../services/arena_service.dart';
 import '../../services/booking_service.dart';
+import '../../services/extension_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/slot_picker_widgets.dart';
 import 'my_bookings_tab.dart' show openBookingChatAndGo;
@@ -33,15 +35,26 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
   ];
 
-  late final BookingModel _initialBooking;
+  BookingModel? _initialBooking;
   ArenaModel? _arena;
   bool _loadingArena = true;
 
   @override
   void initState() {
     super.initState();
-    _initialBooking = Get.arguments as BookingModel;
-    ArenaService().fetchArena(_initialBooking.arenaId).then((a) {
+    final args = Get.arguments;
+    if (args is BookingModel) {
+      _initialBooking = args;
+    } else if (args is String && Get.isRegistered<BookingController>()) {
+      _initialBooking = Get.find<BookingController>()
+          .bookings
+          .firstWhereOrNull((b) => b.id == args);
+    }
+    if (_initialBooking == null) {
+      Get.back();
+      return;
+    }
+    ArenaService().fetchArena(_initialBooking!.arenaId).then((a) {
       if (!mounted) return;
       setState(() {
         _arena = a;
@@ -56,10 +69,10 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
     if (Get.isRegistered<BookingController>()) {
       final live = Get.find<BookingController>()
           .bookings
-          .firstWhereOrNull((b) => b.id == _initialBooking.id);
+          .firstWhereOrNull((b) => b.id == _initialBooking!.id);
       if (live != null) return live;
     }
-    return _initialBooking;
+    return _initialBooking!;
   }
 
   Color _statusColor(BookingStatus s) {
@@ -144,14 +157,7 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                 children: [
                   _HeroCard(booking: b, statusColor: sColor, statusIcon: _activeStatusIcon(b)),
                   const SizedBox(height: 14),
-                  if (b.checkedIn)
-                    _CheckedInSection(booking: b)
-                  else if (b.status == BookingStatus.confirmed && !sessionExpired)
-                    _QrSection(booking: b)
-                  else if (b.status == BookingStatus.confirmed && sessionExpired)
-                    const _SessionExpiredSection()
-                  else
-                    _QrPendingSection(),
+                  _midSection(b, sessionExpired),
                   const SizedBox(height: 14),
                   IntrinsicHeight(
                     child: Row(
@@ -296,6 +302,65 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
         ),
       ),
     );
+  }
+
+  /// Single authoritative decision point for the QR/status section.
+  Widget _midSection(BookingModel b, bool sessionExpired) {
+    // ── Terminal states: never show QR ──────────────────────────────────────
+    if (b.status == BookingStatus.completed) {
+      return _StatusInfoSection(
+        icon: Icons.done_all,
+        color: SlotPickerColors.green,
+        title: 'Booking Completed',
+        message: 'Your session is done. We hope you had a great time!',
+      );
+    }
+    if (b.status == BookingStatus.cancelled) {
+      return _StatusInfoSection(
+        icon: Icons.cancel_outlined,
+        color: _red,
+        title: 'Booking Cancelled',
+        message: 'This booking has been cancelled.',
+      );
+    }
+    if (b.status == BookingStatus.rejected) {
+      return _StatusInfoSection(
+        icon: Icons.block,
+        color: _red,
+        title: 'Booking Rejected',
+        message: 'The owner declined this booking.',
+      );
+    }
+    if (b.status == BookingStatus.refundPending ||
+        b.status == BookingStatus.refundSent ||
+        b.status == BookingStatus.refundConfirmed) {
+      return _StatusInfoSection(
+        icon: Icons.currency_exchange,
+        color: SlotPickerColors.pending,
+        title: 'Refund In Progress',
+        message: 'Your refund is being processed.',
+      );
+    }
+
+    // ── Active states ────────────────────────────────────────────────────────
+    if (b.checkedIn) {
+      return Column(
+        children: [
+          _CheckedInSection(booking: b),
+          if (b.status == BookingStatus.ongoing) ...[
+            const SizedBox(height: 14),
+            _CustomerExtensionSection(booking: b),
+          ],
+        ],
+      );
+    }
+    if (b.status == BookingStatus.confirmed) {
+      if (sessionExpired) return const _SessionExpiredSection();
+      return _QrSection(booking: b);
+    }
+
+    // ── Pending / anything else: waiting for confirmation ────────────────────
+    return const _QrPendingSection();
   }
 
   void _showRescheduleSheet(BuildContext context, BookingModel b) {
@@ -756,6 +821,55 @@ class _CheckedInSection extends StatelessWidget {
   }
 }
 
+/// Generic terminal-state section — completed, cancelled, rejected, refund.
+class _StatusInfoSection extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String message;
+
+  const _StatusInfoSection({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 44),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: color,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: SlotPickerColors.muted, fontSize: 12.5),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _QrPendingSection extends StatelessWidget {
   const _QrPendingSection();
 
@@ -1056,6 +1170,51 @@ class _TotalPaidTile extends StatelessWidget {
               ),
             ],
           ),
+          if (booking.promoDiscount > 0) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Subtotal',
+                  style: const TextStyle(
+                      color: SlotPickerColors.muted, fontSize: 12.5),
+                ),
+                Text(
+                  'PKR ${(booking.totalAmount + booking.promoDiscount).toStringAsFixed(0)}',
+                  style: const TextStyle(
+                      color: SlotPickerColors.muted, fontSize: 12.5),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.local_offer,
+                        size: 12, color: SlotPickerColors.green),
+                    const SizedBox(width: 4),
+                    Text(
+                      booking.appliedPromoCode != null
+                          ? '${booking.appliedPromoScope == 'platform' ? 'Platform Offer' : 'Arena Special'} (${booking.appliedPromoCode})'
+                          : 'Promo discount',
+                      style: const TextStyle(
+                          color: SlotPickerColors.green, fontSize: 12.5),
+                    ),
+                  ],
+                ),
+                Text(
+                  '− PKR ${booking.promoDiscount.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                      color: SlotPickerColors.green,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ],
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 10),
             child: Divider(
@@ -1222,6 +1381,256 @@ class _ReschedulePendingBanner extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── Customer: request a minute-level session extension ───────────────────
+
+class _CustomerExtensionSection extends StatefulWidget {
+  final BookingModel booking;
+  const _CustomerExtensionSection({required this.booking});
+
+  @override
+  State<_CustomerExtensionSection> createState() =>
+      _CustomerExtensionSectionState();
+}
+
+class _CustomerExtensionSectionState
+    extends State<_CustomerExtensionSection> {
+  final _svc = ExtensionService();
+  bool _submitting = false;
+
+  Future<void> _request(int minutes) async {
+    setState(() => _submitting = true);
+    try {
+      await _svc.createRequest(widget.booking, minutes);
+    } catch (e) {
+      Get.snackbar('Error', e.toString(),
+          snackPosition: SnackPosition.BOTTOM,
+          margin: const EdgeInsets.all(16));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  Future<void> _cancel(String requestId) async {
+    try {
+      await _svc.cancelRequest(requestId);
+    } catch (e) {
+      Get.snackbar('Error', e.toString(),
+          snackPosition: SnackPosition.BOTTOM,
+          margin: const EdgeInsets.all(16));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<ExtensionRequestModel>>(
+      stream: _svc.bookingRequestsStream(widget.booking.id),
+      builder: (context, snap) {
+        final requests = snap.data ?? [];
+        final pending =
+            requests.firstWhereOrNull(
+                (r) => r.status == ExtensionRequestStatus.pending);
+        final latest =
+            requests.isNotEmpty ? requests.first : null;
+        final justApproved = latest?.status == ExtensionRequestStatus.approved;
+        final justRejected = latest?.status == ExtensionRequestStatus.rejected;
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: SlotPickerColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: const [
+                  Icon(Icons.timer_outlined,
+                      color: SlotPickerColors.green, size: 16),
+                  SizedBox(width: 6),
+                  Text(
+                    'EXTEND SESSION',
+                    style: TextStyle(
+                      color: SlotPickerColors.muted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              if (pending != null) ...[
+                // Pending state
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color:
+                        SlotPickerColors.pending.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color: SlotPickerColors.pending
+                            .withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.hourglass_top_rounded,
+                          color: SlotPickerColors.pending, size: 18),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '+${pending.extensionMinutes} min — Waiting for owner',
+                              style: const TextStyle(
+                                  color: SlotPickerColors.onBg,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13),
+                            ),
+                            const Text(
+                              'The owner will approve or reject your request.',
+                              style: TextStyle(
+                                  color: SlotPickerColors.muted,
+                                  fontSize: 11.5),
+                            ),
+                          ],
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () => _cancel(pending.id),
+                        child: const Padding(
+                          padding: EdgeInsets.all(4),
+                          child: Icon(Icons.close,
+                              color: SlotPickerColors.muted, size: 18),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else if (justApproved) ...[
+                // Approved state
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: SlotPickerColors.green.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color: SlotPickerColors.green
+                            .withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle_outline,
+                          color: SlotPickerColors.green, size: 18),
+                      const SizedBox(width: 10),
+                      Text(
+                        '+${latest!.extensionMinutes} min approved ✓',
+                        style: const TextStyle(
+                            color: SlotPickerColors.green,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _extensionButtons(),
+              ] else if (justRejected) ...[
+                // Rejected state
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.07),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color: AppColors.error.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.cancel_outlined,
+                          color: AppColors.error, size: 18),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'Extension not available — next slot is booked.',
+                          style: TextStyle(
+                              color: AppColors.error,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else
+                _extensionButtons(),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _extensionButtons() {
+    return Row(
+      children: [10, 20, 30].map((mins) {
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(
+                right: mins < 30 ? 8 : 0),
+            child: GestureDetector(
+              onTap: _submitting ? null : () => _request(mins),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: _submitting
+                      ? SlotPickerColors.surface2
+                      : SlotPickerColors.green
+                          .withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: _submitting
+                          ? Colors.white.withValues(alpha: 0.06)
+                          : SlotPickerColors.green
+                              .withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      '+$mins min',
+                      style: TextStyle(
+                        color: _submitting
+                            ? SlotPickerColors.muted
+                            : SlotPickerColors.green,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Text(
+                      'Request',
+                      style: TextStyle(
+                        color: _submitting
+                            ? SlotPickerColors.muted
+                            : SlotPickerColors.muted,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 }

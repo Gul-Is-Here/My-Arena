@@ -1,5 +1,19 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+enum LedgerSource { pos, online, adjustment }
+
+extension LedgerSourceX on LedgerSource {
+  String get key => name;
+  String get label => switch (this) {
+        LedgerSource.pos => 'POS Walk-in',
+        LedgerSource.online => 'Online Booking',
+        LedgerSource.adjustment => 'Adjustment',
+      };
+  static LedgerSource fromKey(String? k) =>
+      LedgerSource.values.firstWhere((s) => s.name == k,
+          orElse: () => LedgerSource.pos);
+}
+
 enum PosPaymentMethod { cash, card, jazzcash, easypaisa, bankTransfer, other }
 
 extension PosPaymentMethodX on PosPaymentMethod {
@@ -61,6 +75,8 @@ class PosTransactionModel {
   final DateTime createdAt;
   final String? shiftId;
   final String notes;
+  final LedgerSource source;
+  final String? idempotencyKey;
 
   const PosTransactionModel({
     required this.id,
@@ -84,6 +100,8 @@ class PosTransactionModel {
     required this.createdAt,
     this.shiftId,
     this.notes = '',
+    this.source = LedgerSource.pos,
+    this.idempotencyKey,
   });
 
   Map<String, dynamic> toMap() => {
@@ -108,6 +126,8 @@ class PosTransactionModel {
         'createdAt': Timestamp.fromDate(createdAt),
         if (shiftId != null) 'shiftId': shiftId,
         if (notes.isNotEmpty) 'notes': notes,
+        'source': source.key,
+        if (idempotencyKey != null) 'idempotencyKey': idempotencyKey,
       };
 
   factory PosTransactionModel.fromMap(Map<String, dynamic> m) =>
@@ -135,5 +155,7 @@ class PosTransactionModel {
             : DateTime.now(),
         shiftId: m['shiftId'] as String?,
         notes: m['notes'] ?? '',
+        source: LedgerSourceX.fromKey(m['source']),
+        idempotencyKey: m['idempotencyKey'] as String?,
       );
 }

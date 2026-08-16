@@ -1,5 +1,53 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// Explicit payment state, stored separately from booking lifecycle state.
+/// This allows "confirmed but deposit still owed" and "confirmed, fully paid"
+/// to be distinguished without overloading BookingStatus.
+enum PaymentStatus {
+  unpaid,
+  depositSubmitted, // bank transfer screenshot uploaded, pending owner review
+  depositAccepted,  // owner approved; remaining amount still owed
+  fullyPaid,        // remaining collected at POS checkout
+  refunded,
+  failed,
+}
+
+extension PaymentStatusX on PaymentStatus {
+  String get key {
+    switch (this) {
+      case PaymentStatus.unpaid:
+        return 'unpaid';
+      case PaymentStatus.depositSubmitted:
+        return 'deposit_submitted';
+      case PaymentStatus.depositAccepted:
+        return 'deposit_accepted';
+      case PaymentStatus.fullyPaid:
+        return 'fully_paid';
+      case PaymentStatus.refunded:
+        return 'refunded';
+      case PaymentStatus.failed:
+        return 'failed';
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case PaymentStatus.unpaid:
+        return 'Unpaid';
+      case PaymentStatus.depositSubmitted:
+        return 'Deposit Submitted';
+      case PaymentStatus.depositAccepted:
+        return 'Deposit Accepted';
+      case PaymentStatus.fullyPaid:
+        return 'Fully Paid';
+      case PaymentStatus.refunded:
+        return 'Refunded';
+      case PaymentStatus.failed:
+        return 'Payment Failed';
+    }
+  }
+}
+
 /// Mirrors Firestore bookings/{bookingId} from scope.md.
 enum BookingStatus {
   pendingDeposit,
@@ -194,6 +242,29 @@ class BookingModel {
   /// Total cost of POS add-ons (stored to avoid re-fetching product prices).
   final double posAddOnsTotal;
 
+  // ── Minute-level extension (owner-approved sub-hour extension) ────────
+  /// Total extra minutes granted beyond the original `totalHours` end time.
+  /// Updated atomically when the owner approves an ExtensionRequest.
+  final int extensionMinutes;
+
+  // ── Promotions / coupons ─────────────────────────────────────────────
+  /// ID of the PromotionModel applied to this booking (null if none).
+  final String? appliedPromoId;
+
+  /// Normalized promo code the customer entered (e.g. "ARENA10").
+  final String? appliedPromoCode;
+
+  /// Discount amount in PKR granted by the promotion.
+  final double promoDiscount;
+
+  /// Scope of the applied promo: 'platform' or 'arena'. Used to show "Platform Offer" vs "Arena Special".
+  final String? appliedPromoScope;
+
+  // ── Payment status ────────────────────────────────────────────────────
+  /// Explicit payment state stored in Firestore. When absent in old documents
+  /// it is derived from [status] and [amountPaid] via [derivedPaymentStatus].
+  final PaymentStatus? paymentStatus;
+
   // ── Group booking ─────────────────────────────────────────────────────
   final bool isGroupBooking;
   /// Total number of players sharing the slot.
@@ -228,6 +299,7 @@ class BookingModel {
     this.recurringGroupId,
     this.recurringWeek,
     this.recurringTotal,
+    this.extensionMinutes = 0,
     this.isGroupBooking = false,
     this.groupSize = 1,
     this.joinCode,
@@ -237,25 +309,75 @@ class BookingModel {
     this.posDiscount = 0,
     this.posAddOnIds = const [],
     this.posAddOnsTotal = 0,
+    this.appliedPromoId,
+    this.appliedPromoCode,
+    this.promoDiscount = 0,
+    this.appliedPromoScope,
+    this.paymentStatus,
   });
 
+  /// Resolved payment status: explicit stored value wins; falls back to
+  /// deriving from booking lifecycle state for backward-compat with old docs.
+  PaymentStatus get effectivePaymentStatus {
+    if (paymentStatus != null) return paymentStatus!;
+    return derivedPaymentStatus;
+  }
+
+  PaymentStatus get derivedPaymentStatus {
+    if (amountPaid != null && amountPaid! >= totalAmount - 1) {
+      return PaymentStatus.fullyPaid;
+    }
+    if (status == BookingStatus.refundPending ||
+        status == BookingStatus.refundSent ||
+        status == BookingStatus.refundConfirmed) {
+      return PaymentStatus.refunded;
+    }
+    if (status == BookingStatus.confirmed ||
+        status == BookingStatus.ongoing ||
+        status == BookingStatus.completed) {
+      return PaymentStatus.depositAccepted;
+    }
+    if (status == BookingStatus.depositSubmitted) {
+      return PaymentStatus.depositSubmitted;
+    }
+    return PaymentStatus.unpaid;
+  }
+
   double get totalAmount =>
-      (totalAmountStored ?? pricePerHour * totalHours) + posAddOnsTotal - posDiscount;
+      (totalAmountStored ?? pricePerHour * totalHours) +
+      posAddOnsTotal -
+      posDiscount -
+      promoDiscount +
+      (pricePerHour * extensionMinutes / 60);
   double get depositAmount =>
       totalAmount * BookingSettings.depositPercent / 100;
-  // POS bookings store the actual amount paid; online bookings use deposit model.
-  double get remainingAmount =>
-      isPosBooking ? totalAmount - (amountPaid ?? 0) : totalAmount - depositAmount;
+
+  // When amountPaid is set (checkout recorded it), use the actual paid value for
+  // both POS and online bookings. Fall back to the deposit formula for online
+  // bookings that haven't had a checkout yet (amountPaid is still null).
+  double get remainingAmount {
+    if (amountPaid != null) {
+      return (totalAmount - amountPaid!).clamp(0.0, double.infinity);
+    }
+    if (!isPosBooking) return totalAmount - depositAmount;
+    return totalAmount;
+  }
 
   DateTime get startDateTime =>
       DateTime(date.year, date.month, date.day, startHour);
   DateTime get endDateTime =>
-      startDateTime.add(Duration(hours: totalHours));
+      startDateTime.add(Duration(hours: totalHours, minutes: extensionMinutes));
 
   int get endHour => (startHour + totalHours) % 24;
 
-  String get timeRange =>
-      '${_fmtHour(startHour)} – ${_fmtHour(startHour + totalHours)}';
+  String get timeRange {
+    final base = '${_fmtHour(startHour)} – ${_fmtHour(startHour + totalHours)}';
+    if (extensionMinutes <= 0) return base;
+    final extEnd = startDateTime.add(Duration(hours: totalHours, minutes: extensionMinutes));
+    final extHour = extEnd.hour.toString().padLeft(2, '0');
+    final extMin = extEnd.minute.toString().padLeft(2, '0');
+    return '${_fmtHour(startHour)} – $extHour:$extMin';
+  }
 
   static String _fmtHour(int h) =>
       '${(h % 24).toString().padLeft(2, '0')}:00';
@@ -314,6 +436,7 @@ class BookingModel {
         if (recurringGroupId != null) 'recurringGroupId': recurringGroupId,
         if (recurringWeek != null) 'recurringWeek': recurringWeek,
         if (recurringTotal != null) 'recurringTotal': recurringTotal,
+        if (extensionMinutes > 0) 'extensionMinutes': extensionMinutes,
         if (isGroupBooking) 'isGroupBooking': true,
         if (isGroupBooking) 'groupSize': groupSize,
         if (joinCode != null) 'joinCode': joinCode,
@@ -323,6 +446,11 @@ class BookingModel {
         if (posDiscount > 0) 'posDiscount': posDiscount,
         if (posAddOnIds.isNotEmpty) 'posAddOnIds': posAddOnIds,
         if (posAddOnsTotal > 0) 'posAddOnsTotal': posAddOnsTotal,
+        if (appliedPromoId != null) 'appliedPromoId': appliedPromoId,
+        if (appliedPromoCode != null) 'appliedPromoCode': appliedPromoCode,
+        if (promoDiscount > 0) 'promoDiscount': promoDiscount,
+        if (appliedPromoScope != null) 'appliedPromoScope': appliedPromoScope,
+        if (paymentStatus != null) 'paymentStatus': paymentStatus!.key,
       };
 
   factory BookingModel.fromMap(Map<String, dynamic> m) => BookingModel(
@@ -374,6 +502,17 @@ class BookingModel {
         posDiscount: (m['posDiscount'] as num?)?.toDouble() ?? 0,
         posAddOnIds: List<String>.from(m['posAddOnIds'] as List? ?? []),
         posAddOnsTotal: (m['posAddOnsTotal'] as num?)?.toDouble() ?? 0,
+        extensionMinutes: (m['extensionMinutes'] as int?) ?? 0,
+        appliedPromoId: m['appliedPromoId'] as String?,
+        appliedPromoCode: m['appliedPromoCode'] as String?,
+        promoDiscount: (m['promoDiscount'] as num?)?.toDouble() ?? 0,
+        appliedPromoScope: m['appliedPromoScope'] as String?,
+        paymentStatus: m['paymentStatus'] != null
+            ? PaymentStatus.values.firstWhere(
+                (s) => s.key == m['paymentStatus'],
+                orElse: () => PaymentStatus.unpaid,
+              )
+            : null,
       );
 
   bool get isRecurring => recurringGroupId != null;
@@ -394,6 +533,11 @@ class BookingModel {
     double? posDiscount,
     List<String>? posAddOnIds,
     double? posAddOnsTotal,
+    int? extensionMinutes,
+    String? appliedPromoId,
+    String? appliedPromoCode,
+    double? promoDiscount,
+    PaymentStatus? paymentStatus,
   }) =>
       BookingModel(
         id: id,
@@ -430,6 +574,11 @@ class BookingModel {
         posDiscount: posDiscount ?? this.posDiscount,
         posAddOnIds: posAddOnIds ?? this.posAddOnIds,
         posAddOnsTotal: posAddOnsTotal ?? this.posAddOnsTotal,
+        extensionMinutes: extensionMinutes ?? this.extensionMinutes,
         totalAmountStored: totalAmountStored,
+        appliedPromoId: appliedPromoId ?? this.appliedPromoId,
+        appliedPromoCode: appliedPromoCode ?? this.appliedPromoCode,
+        promoDiscount: promoDiscount ?? this.promoDiscount,
+        paymentStatus: paymentStatus ?? this.paymentStatus,
       );
 }
