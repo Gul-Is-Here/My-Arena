@@ -6,6 +6,7 @@ import '../../data/models/arena_model.dart';
 import '../../data/models/court_model.dart';
 import '../../routes/app_routes.dart';
 import '../../widgets/arena_image.dart';
+import '../../theme/app_colors.dart';
 import '../../widgets/slot_picker_widgets.dart';
 
 /// Calendar strip + duration picker + hourly slot grid. Args are set on
@@ -117,10 +118,10 @@ class BookingSlotScreen extends StatelessWidget {
                           label: Text(ct.name),
                           selected: sel,
                           backgroundColor: SlotPickerColors.surface,
-                          selectedColor: SlotPickerColors.green,
+                          selectedColor: SlotPickerColors.greenCta,
                           labelStyle: TextStyle(
                             color: sel
-                                ? const Color(0xFF0A1628)
+                                ? AppColors.onPrimary
                                 : SlotPickerColors.onBg,
                             fontWeight: FontWeight.w600,
                           ),
@@ -176,7 +177,7 @@ class BookingSlotScreen extends StatelessWidget {
                           padding: EdgeInsets.symmetric(vertical: 40),
                           child: Center(
                             child: CircularProgressIndicator(
-                              color: SlotPickerColors.green,
+                              color: SlotPickerColors.greenCta,
                             ),
                           ),
                         )
@@ -197,9 +198,10 @@ class BookingSlotScreen extends StatelessWidget {
                                   : null,
                               child: SlotTile(
                                 hour: h,
-                                pricePerHour: court.pricePerHour,
+                                pricePerHour: court.priceAt(h),
                                 status: status,
                                 isSelected: sel,
+                                isPeak: court.isPeak(h),
                                 onTap: () => c.selectSlot(h),
                               ),
                             );
@@ -247,7 +249,7 @@ class BookingSlotScreen extends StatelessWidget {
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
-                          color: SlotPickerColors.green,
+                          color: SlotPickerColors.greenCta,
                         ),
                       ),
                     ],
@@ -257,7 +259,19 @@ class BookingSlotScreen extends StatelessWidget {
                 GestureDetector(
                   onTap: n == 0
                       ? null
-                      : () {
+                      : () async {
+                          final error = await c.validateSlots();
+                          if (error != null) {
+                            Get.snackbar(
+                              'Slot Unavailable',
+                              error,
+                              snackPosition: SnackPosition.TOP,
+                              duration: const Duration(seconds: 4),
+                              backgroundColor: AppColors.error.withValues(alpha: 0.9),
+                              colorText: Colors.white,
+                            );
+                            return;
+                          }
                           c.buildDraft();
                           Get.toNamed(AppRoutes.bookingSummary);
                         },
@@ -284,7 +298,7 @@ class BookingSlotScreen extends StatelessWidget {
                             letterSpacing: 0.3,
                             color: n == 0
                                 ? SlotPickerColors.muted
-                                : const Color(0xFF0A1628),
+                                : AppColors.onPrimary,
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -293,7 +307,7 @@ class BookingSlotScreen extends StatelessWidget {
                           size: 16,
                           color: n == 0
                               ? SlotPickerColors.muted
-                              : const Color(0xFF0A1628),
+                              : AppColors.onPrimary,
                         ),
                       ],
                     ),
@@ -322,33 +336,33 @@ Future<void> _onBookedSlotTap(
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      backgroundColor: const Color(0xFF1D2026),
+      backgroundColor: AppColors.elevated,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: const Text(
         'Slot Taken',
-        style: TextStyle(color: Color(0xFFE1E2EB), fontWeight: FontWeight.w800),
+        style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800),
       ),
       content: Text(
         'Join the waitlist for ${fmtHour12(hour)}?\nWe\'ll notify you if it opens up.',
-        style: const TextStyle(color: Color(0xFFB9CACB), fontSize: 14),
+        style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx, false),
           child: const Text('Cancel',
-              style: TextStyle(color: Color(0xFFB9CACB))),
+              style: TextStyle(color: AppColors.textSecondary)),
         ),
         TextButton(
           onPressed: () => Navigator.pop(ctx, true),
           child: const Text('Join Waitlist',
               style: TextStyle(
-                  color: Color(0xFF00DBE9), fontWeight: FontWeight.w700)),
+                  color: AppColors.primary, fontWeight: FontWeight.w700)),
         ),
       ],
     ),
   );
   if (confirmed != true) return;
-  await c.joinWaitlist(
+  final error = await c.joinWaitlist(
     arenaId: arena.id,
     arenaName: arena.name,
     courtId: court.id,
@@ -356,13 +370,23 @@ Future<void> _onBookedSlotTap(
     hour: hour,
   );
   if (context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("You're on the waitlist! We'll notify you if the slot opens."),
-        backgroundColor: Color(0xFF1D2026),
-        duration: Duration(seconds: 3),
-      ),
-    );
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error),
+          backgroundColor: AppColors.error,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("You're on the waitlist! We'll notify you if the slot opens."),
+          backgroundColor: AppColors.elevated,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
   }
 }
 
@@ -441,7 +465,7 @@ class _SummaryCard extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
-                      color: SlotPickerColors.green,
+                      color: SlotPickerColors.greenCta,
                     ),
                   ),
                 ],
@@ -450,7 +474,7 @@ class _SummaryCard extends StatelessWidget {
           ),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 14),
-            child: Divider(height: 1, color: Color(0xFF1E3252)),
+            child: Divider(height: 1, color: AppColors.border),
           ),
           Row(
             children: [

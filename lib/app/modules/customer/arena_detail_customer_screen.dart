@@ -2,15 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../controllers/booking_controller.dart';
+import '../../controllers/chat_controller.dart';
 import '../../controllers/discovery_controller.dart';
 import '../../controllers/favorites_controller.dart';
 import '../../data/models/arena_model.dart';
 import '../../data/models/court_model.dart';
+import '../../data/models/promotion_model.dart';
 import '../../data/models/review_model.dart';
 import '../../routes/app_routes.dart';
 import '../../services/arena_service.dart';
+import '../../services/promotion_service.dart';
+import '../../theme/app_colors.dart';
 import '../../widgets/arena_image.dart';
 
 class ArenaDetailCustomerScreen extends StatefulWidget {
@@ -22,26 +27,57 @@ class ArenaDetailCustomerScreen extends StatefulWidget {
 }
 
 class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
-  static const _bg = Color(0xFF0B1120);
-  static const _surface = Color(0xFF112240);
-  static const _surface2 = Color(0xFF0D1B35);
-  static const _green = Color(0xFF4ADE80);
-  static const _greenCta = Color(0xFF39FF14);
-  static const _onBg = Color(0xFFFFFFFF);
-  static const _muted = Color(0xFF8899AA);
+  static const _bg = AppColors.background;
+  static const _surface = AppColors.surface;
+  static const _surface2 = AppColors.elevated;
+  static const _green = AppColors.primary;
+  static const _greenCta = AppColors.primary;
+  static const _onBg = AppColors.textPrimary;
+  static const _muted = AppColors.textSecondary;
 
   int _pageIndex = 0;
   bool _expandDesc = false;
-  CourtModel? _selectedCourt;
+
+  /// Isolated so selecting a court only rebuilds the widgets listening to
+  /// this notifier, instead of the whole screen via setState.
+  final ValueNotifier<CourtModel?> _selectedCourt = ValueNotifier(null);
 
   final ArenaService _svc = ArenaService();
+  final PromotionService _promoSvc = PromotionService();
+
+  late final String _arenaId = (Get.arguments as String?) ?? '';
+  late final Stream<ArenaModel?> _arenaStream = _svc.streamArena(_arenaId);
+  late final Stream<List<CourtModel>> _courtsStream = _svc.courts(_arenaId);
+
+  List<PromotionModel> _offers = [];
+  bool _offersLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOffers();
+  }
+
+  Future<void> _loadOffers() async {
+    if (_arenaId.isEmpty) return;
+    try {
+      final offers = await _promoSvc.fetchActiveForArena(_arenaId);
+      if (mounted) setState(() { _offers = offers; _offersLoaded = true; });
+    } catch (_) {
+      if (mounted) setState(() => _offersLoaded = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _selectedCourt.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final String arenaId = Get.arguments as String;
-
     return StreamBuilder<ArenaModel?>(
-      stream: _svc.streamArena(arenaId),
+      stream: _arenaStream,
       builder: (context, arenaSnap) {
         if (arenaSnap.connectionState == ConnectionState.waiting) {
           return const Scaffold(
@@ -61,22 +97,22 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
         }
 
         return StreamBuilder<List<CourtModel>>(
-          stream: _svc.courts(arenaId),
+          stream: _courtsStream,
           builder: (context, courtsSnap) {
             final courts = courtsSnap.data ?? [];
 
             // Keep selected court in sync with live data
-            if (_selectedCourt != null && courts.isNotEmpty) {
-              final idx = courts.indexWhere((c) => c.id == _selectedCourt!.id);
+            final selected = _selectedCourt.value;
+            if (selected != null && courts.isNotEmpty) {
+              final idx = courts.indexWhere((c) => c.id == selected.id);
               if (idx == -1) {
                 WidgetsBinding.instance.addPostFrameCallback(
-                  (_) => setState(() => _selectedCourt = null),
+                  (_) => _selectedCourt.value = null,
                 );
-              } else if (courts[idx].pricePerHour !=
-                  _selectedCourt!.pricePerHour) {
+              } else if (courts[idx].pricePerHour != selected.pricePerHour) {
                 final fresh = courts[idx];
                 WidgetsBinding.instance.addPostFrameCallback(
-                  (_) => setState(() => _selectedCourt = fresh),
+                  (_) => _selectedCourt.value = fresh,
                 );
               }
             }
@@ -114,6 +150,8 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
                 children: [
                   _buildHeader(arena, courts),
                   _buildLocationHours(arena, firstCourt),
+                  if (_offersLoaded && _offers.isNotEmpty)
+                    _buildAvailableOffers(_offers),
                   if (sports.isNotEmpty) _buildSportChips(sports),
                   if (amenities.isNotEmpty) _buildFacilities(amenities),
                   if (arena.description.isNotEmpty) _buildAbout(arena),
@@ -151,20 +189,38 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
           const SizedBox(height: 10),
           Row(
             children: [
-              const Icon(Icons.star, color: _green, size: 18),
-              const SizedBox(width: 6),
-              Text(
-                arena.rating.toStringAsFixed(1),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: _green,
+              if (arena.reviewCount == 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _surface2,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    'New',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: _muted,
+                    ),
+                  ),
+                )
+              else ...[
+                const Icon(Icons.star, color: _greenCta, size: 18),
+                const SizedBox(width: 6),
+                Text(
+                  arena.rating.toStringAsFixed(1),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: _greenCta,
+                  ),
                 ),
-              ),
-              Text(
-                ' · ${arena.reviewCount} review${arena.reviewCount == 1 ? '' : 's'}',
-                style: const TextStyle(fontSize: 14, color: _muted),
-              ),
+                Text(
+                  ' · ${arena.reviewCount} review${arena.reviewCount == 1 ? '' : 's'}',
+                  style: const TextStyle(fontSize: 14, color: _muted),
+                ),
+              ],
               const Spacer(),
               if (courts.isNotEmpty) ...[
                 Container(
@@ -199,7 +255,7 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
                       margin: const EdgeInsets.only(left: 4),
                       decoration: BoxDecoration(
                         color: i == _pageIndex
-                            ? _green
+                            ? _greenCta
                             : _muted.withValues(alpha: 0.4),
                         borderRadius: BorderRadius.circular(3),
                       ),
@@ -260,6 +316,52 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
     );
   }
 
+  // ── Available Offers ──────────────────────────────────────────────
+
+  Widget _buildAvailableOffers(List<PromotionModel> offers) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.local_offer_rounded,
+                  color: _greenCta, size: 18),
+              const SizedBox(width: 8),
+              const Text(
+                'Available Offers',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: _onBg,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _greenCta.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${offers.length}',
+                  style: const TextStyle(
+                    color: _greenCta,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ...offers.map((o) => _OfferCard(offer: o)),
+        ],
+      ),
+    );
+  }
+
   // ── Sport chips ───────────────────────────────────────────────────
 
   Widget _buildSportChips(List<CourtType> sports) {
@@ -276,7 +378,7 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
               border: Border.all(
-                color: active ? _green : _muted.withValues(alpha: 0.35),
+                color: active ? _greenCta : _muted.withValues(alpha: 0.35),
                 width: active ? 1.5 : 1,
               ),
               borderRadius: BorderRadius.circular(20),
@@ -287,7 +389,7 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.0,
-                color: active ? _green : _onBg,
+                color: active ? _greenCta : _onBg,
               ),
             ),
           );
@@ -352,7 +454,7 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
                 : TextOverflow.ellipsis,
             style: const TextStyle(
               fontSize: 15,
-              color: Color(0xFFCDD5E0),
+              color: AppColors.textSecondary,
               height: 1.65,
             ),
           ),
@@ -404,14 +506,19 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
                 ),
               ),
               const Spacer(),
-              if (_selectedCourt != null)
-                Text(
-                  'Tap again to deselect',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: _muted.withValues(alpha: 0.7),
-                  ),
-                ),
+              ValueListenableBuilder<CourtModel?>(
+                valueListenable: _selectedCourt,
+                builder: (context, selected, _) {
+                  if (selected == null) return const SizedBox.shrink();
+                  return Text(
+                    'Tap again to deselect',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: _muted.withValues(alpha: 0.7),
+                    ),
+                  );
+                },
+              ),
             ],
           ),
           const SizedBox(height: 4),
@@ -437,16 +544,25 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
               ),
             )
           else
-            ...courts.map(
-              (court) => _CourtCard(
-                court: court,
-                isSelected: _selectedCourt?.id == court.id,
-                onTap: () => setState(() {
-                  _selectedCourt = _selectedCourt?.id == court.id
-                      ? null
-                      : court;
-                }),
-              ),
+            ValueListenableBuilder<CourtModel?>(
+              valueListenable: _selectedCourt,
+              builder: (context, selected, _) {
+                return Column(
+                  children: courts
+                      .map(
+                        (court) => _CourtCard(
+                          court: court,
+                          isSelected: selected?.id == court.id,
+                          onTap: () {
+                            _selectedCourt.value = selected?.id == court.id
+                                ? null
+                                : court;
+                          },
+                        ),
+                      )
+                      .toList(),
+                );
+              },
             ),
         ],
       ),
@@ -535,7 +651,7 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
                           children: [
                             Icon(
                               Icons.assistant_navigation,
-                              color: Color(0xFF002022),
+                              color: AppColors.onPrimary,
                               size: 16,
                             ),
                             SizedBox(width: 6),
@@ -544,7 +660,7 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
-                                color: Color(0xFF002022),
+                                color: AppColors.onPrimary,
                               ),
                             ),
                           ],
@@ -600,33 +716,52 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
                 children: [
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        arena.rating.toStringAsFixed(1),
-                        style: const TextStyle(
-                          fontSize: 52,
-                          fontWeight: FontWeight.w800,
-                          color: _onBg,
-                          height: 1,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: List.generate(5, (i) {
-                          final filled = i < arena.rating.floor();
-                          final half = !filled && i < arena.rating;
-                          return Icon(
-                            half
-                                ? Icons.star_half
-                                : (filled ? Icons.star : Icons.star_border),
-                            color: filled || half
-                                ? _green
-                                : _muted.withValues(alpha: 0.35),
-                            size: 18,
-                          );
-                        }),
-                      ),
-                    ],
+                    children: reviews.isEmpty
+                        ? [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: _surface2,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Text(
+                                'New',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: _muted,
+                                ),
+                              ),
+                            ),
+                          ]
+                        : [
+                            Text(
+                              arena.rating.toStringAsFixed(1),
+                              style: const TextStyle(
+                                fontSize: 52,
+                                fontWeight: FontWeight.w800,
+                                color: _onBg,
+                                height: 1,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: List.generate(5, (i) {
+                                final filled = i < arena.rating.floor();
+                                final half = !filled && i < arena.rating;
+                                return Icon(
+                                  half
+                                      ? Icons.star_half
+                                      : (filled ? Icons.star : Icons.star_border),
+                                  color: filled || half
+                                      ? _greenCta
+                                      : _muted.withValues(alpha: 0.35),
+                                  size: 18,
+                                );
+                              }),
+                            ),
+                          ],
                   ),
                   const SizedBox(width: 24),
                   Expanded(
@@ -661,7 +796,7 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
                                       child: Container(
                                         height: 4,
                                         decoration: BoxDecoration(
-                                          color: _green,
+                                          color: _greenCta,
                                           borderRadius:
                                               BorderRadius.circular(2),
                                         ),
@@ -721,9 +856,6 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
   // ── Bottom bar ────────────────────────────────────────────────────
 
   Widget _buildBottomBar(ArenaModel arena, List<CourtModel> courts) {
-    final court = _selectedCourt;
-    final hasSelection = court != null;
-
     return SafeArea(
       top: false,
       child: SizedBox(
@@ -731,101 +863,127 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
         child: Container(
           color: _bg,
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    hasSelection
-                        ? RichText(
-                            text: TextSpan(
-                              children: [
-                                TextSpan(
-                                  text:
-                                      'PKR ${court.pricePerHour.toStringAsFixed(0)}',
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w800,
-                                    color: _green,
-                                  ),
+          child: ValueListenableBuilder<CourtModel?>(
+            valueListenable: _selectedCourt,
+            builder: (context, court, _) {
+              final hasSelection = court != null;
+              return Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        hasSelection
+                            ? RichText(
+                                text: TextSpan(
+                                  children: [
+                                    TextSpan(
+                                      text:
+                                          'PKR ${court.pricePerHour.toStringAsFixed(0)}',
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w800,
+                                        color: _greenCta,
+                                      ),
+                                    ),
+                                    const TextSpan(
+                                      text: ' / hr',
+                                      style:
+                                          TextStyle(fontSize: 13, color: _muted),
+                                    ),
+                                  ],
                                 ),
-                                const TextSpan(
-                                  text: ' / hr',
-                                  style: TextStyle(fontSize: 13, color: _muted),
-                                ),
-                              ],
-                            ),
-                          )
-                        : Text(
-                            courts.isEmpty ? 'No courts' : 'Select a court',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: _muted,
-                            ),
-                          ),
-                    const SizedBox(height: 4),
-                    hasSelection
-                        ? Row(
-                            children: [
-                              Container(
-                                width: 6,
-                                height: 6,
-                                decoration: const BoxDecoration(
-                                  color: _green,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 5),
-                              Text(
-                                court.name.toUpperCase(),
+                              )
+                            : Text(
+                                courts.isEmpty ? 'No courts' : 'Select a court',
                                 style: const TextStyle(
-                                  fontSize: 10,
-                                  color: _green,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 0.5,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: _muted,
                                 ),
                               ),
-                            ],
-                          )
-                        : Text(
-                            '${courts.length} courts available',
-                            style: const TextStyle(fontSize: 11, color: _muted),
-                          ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: GestureDetector(
-                  onTap: hasSelection
-                      ? () => _startBooking(arena, court)
-                      : null,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    decoration: BoxDecoration(
-                      color: hasSelection ? _greenCta : _surface,
-                      borderRadius: BorderRadius.circular(12),
-                      border: hasSelection
-                          ? null
-                          : Border.all(color: _muted.withValues(alpha: 0.3)),
+                        const SizedBox(height: 4),
+                        hasSelection
+                            ? Row(
+                                children: [
+                                  Container(
+                                    width: 6,
+                                    height: 6,
+                                    decoration: const BoxDecoration(
+                                      color: _greenCta,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    court.name.toUpperCase(),
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      color: _greenCta,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Text(
+                                '${courts.length} courts available',
+                                style:
+                                    const TextStyle(fontSize: 11, color: _muted),
+                              ),
+                      ],
                     ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      hasSelection ? 'Check Availability' : 'Select a Court',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        color: hasSelection ? const Color(0xFF0A1628) : _muted,
+                  ),
+                  const SizedBox(width: 12),
+                  // Single conversation with the arena owner, independent
+                  // of bookings — the chat's banner handles booking context.
+                  GestureDetector(
+                    onTap: () => _openArenaChat(arena),
+                    child: Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: _green.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: _green.withValues(alpha: 0.30)),
+                      ),
+                      child: const Icon(Icons.chat_bubble_outline,
+                          color: _green, size: 22),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: hasSelection
+                          ? () => _startBooking(arena, court)
+                          : null,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        decoration: BoxDecoration(
+                          color: hasSelection ? _greenCta : _surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: hasSelection
+                              ? null
+                              : Border.all(color: _muted.withValues(alpha: 0.3)),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          hasSelection ? 'Check Availability' : 'Select a Court',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: hasSelection ? AppColors.onPrimary : _muted,
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ),
-            ],
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -833,6 +991,23 @@ class _ArenaDetailCustomerScreenState extends State<ArenaDetailCustomerScreen> {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────
+
+  Future<void> _openArenaChat(ArenaModel arena) async {
+    if (!Get.isRegistered<ChatController>()) {
+      Get.put(ChatController(), permanent: true);
+    }
+    try {
+      final chatId = await ChatController.to.openArenaChat(
+        arenaId: arena.id,
+        arenaName: arena.name,
+        ownerId: arena.ownerId,
+      );
+      Get.toNamed(AppRoutes.chatRoom, arguments: chatId);
+    } catch (e) {
+      Get.snackbar('Chat unavailable', 'Could not open the conversation.',
+          snackPosition: SnackPosition.BOTTOM);
+    }
+  }
 
   void _startBooking(ArenaModel arena, CourtModel court) {
     if (!Get.isRegistered<BookingController>()) {
@@ -877,10 +1052,10 @@ class _CourtCard extends StatelessWidget {
     required this.onTap,
   });
 
-  static const _surface = Color(0xFF112240);
-  static const _green = Color(0xFF4ADE80);
-  static const _muted = Color(0xFF8899AA);
-  static const _onBg = Color(0xFFFFFFFF);
+  static const _surface = AppColors.surface;
+  static const _green = AppColors.primary;
+  static const _muted = AppColors.textSecondary;
+  static const _onBg = AppColors.textPrimary;
 
   @override
   Widget build(BuildContext context) {
@@ -927,7 +1102,7 @@ class _CourtCard extends StatelessWidget {
                         ],
                       )
                     : null,
-                color: isSelected ? null : const Color(0xFF0D1B35),
+                color: isSelected ? null : AppColors.surface,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
@@ -995,7 +1170,7 @@ class _CourtCard extends StatelessWidget {
                     ),
                     child: const Icon(
                       Icons.check,
-                      color: Color(0xFF0A1628),
+                      color: AppColors.onPrimary,
                       size: 12,
                     ),
                   ),
@@ -1043,7 +1218,7 @@ class _HeroSection extends StatelessWidget {
     required this.onPageChanged,
   });
 
-  static const _bg = Color(0xFF0B1120);
+  static const _bg = AppColors.background;
 
   @override
   Widget build(BuildContext context) {
@@ -1092,7 +1267,18 @@ class _HeroSection extends StatelessWidget {
             right: 16,
             child: Row(
               children: [
-                _GlassBtn(icon: Icons.share_outlined, onTap: () {}),
+                _GlassBtn(
+                  icon: Icons.share_outlined,
+                  onTap: () {
+                    final minPrice = arena.minPrice > 0
+                        ? 'from PKR ${arena.minPrice.toStringAsFixed(0)}/hr'
+                        : '';
+                    SharePlus.instance.share(ShareParams(
+                      text:
+                          '⚽ ${arena.name}\n📍 ${arena.location.address}\n$minPrice\n\nBook your slot on MyArena!',
+                    ));
+                  },
+                ),
                 const SizedBox(width: 8),
                 Obx(() {
                   if (!Get.isRegistered<FavoritesController>()) {
@@ -1102,7 +1288,7 @@ class _HeroSection extends StatelessWidget {
                   final fav = fc.isFav(arenaId);
                   return _GlassBtn(
                     icon: fav ? Icons.favorite : Icons.favorite_border,
-                    iconColor: fav ? const Color(0xFFFF6B6B) : Colors.white,
+                    iconColor: fav ? AppColors.error : Colors.white,
                     onTap: () => fc.toggle(arenaId),
                   );
                 }),
@@ -1129,7 +1315,7 @@ class _GlassBtn extends StatelessWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: const Color(0xFF1A2840).withValues(alpha: 0.88),
+          color: AppColors.elevated.withValues(alpha: 0.88),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Icon(icon, color: iconColor ?? Colors.white, size: 20),
@@ -1146,8 +1332,8 @@ class _AmenityTile extends StatelessWidget {
   final CourtAmenity amenity;
   const _AmenityTile({required this.amenity});
 
-  static const _surface = Color(0xFF112240);
-  static const _green = Color(0xFF4ADE80);
+  static const _surface = AppColors.surface;
+  static const _green = AppColors.primary;
 
   @override
   Widget build(BuildContext context) {
@@ -1211,9 +1397,10 @@ class _ReviewCard extends StatelessWidget {
   final ReviewModel review;
   const _ReviewCard({required this.review});
 
-  static const _surface = Color(0xFF112240);
-  static const _green = Color(0xFF4ADE80);
-  static const _muted = Color(0xFF8899AA);
+  static const _surface = AppColors.surface;
+  static const _green = AppColors.primary;
+  static const _rating = AppColors.primary;
+  static const _muted = AppColors.textSecondary;
 
   String get _initials {
     final parts = review.customerName.trim().split(' ');
@@ -1249,7 +1436,7 @@ class _ReviewCard extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E3E5A),
+                  color: AppColors.elevated,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 alignment: Alignment.center,
@@ -1296,7 +1483,7 @@ class _ReviewCard extends StatelessWidget {
                   i < review.rating.floor()
                       ? Icons.star
                       : (i < review.rating ? Icons.star_half : Icons.star_border),
-                  color: i < review.rating ? _green : _muted.withValues(alpha: 0.3),
+                  color: i < review.rating ? _rating : _muted.withValues(alpha: 0.3),
                   size: 14,
                 )),
               ),
@@ -1308,13 +1495,138 @@ class _ReviewCard extends StatelessWidget {
               review.comment,
               style: const TextStyle(
                 fontSize: 14,
-                color: Color(0xFFCDD5E0),
+                color: AppColors.textSecondary,
                 height: 1.55,
               ),
             ),
           ],
         ],
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Offer card — shown in the "Available Offers" section on arena detail
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _OfferCard extends StatelessWidget {
+  final PromotionModel offer;
+  const _OfferCard({required this.offer});
+
+  static const _green = AppColors.primary;
+  static const _surface = AppColors.surface;
+  static const _muted = AppColors.textSecondary;
+  static const _onBg = AppColors.textPrimary;
+
+  @override
+  Widget build(BuildContext context) {
+    final isPlatform = offer.isPlatform;
+    final accentColor = isPlatform ? const Color(0xFF6C63FF) : _green;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: accentColor.withValues(alpha: 0.25),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Left accent stripe
+          Container(
+            width: 5,
+            height: 90,
+            decoration: BoxDecoration(
+              color: accentColor,
+              borderRadius: const BorderRadius.horizontal(
+                  left: Radius.circular(16)),
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      // Source badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: accentColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          offer.sourceLabel.toUpperCase(),
+                          style: TextStyle(
+                            color: accentColor,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      // Discount label
+                      Text(
+                        offer.discountLabel,
+                        style: TextStyle(
+                          color: accentColor,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    offer.title,
+                    style: const TextStyle(
+                      color: _onBg,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  _meta(offer),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _meta(PromotionModel o) {
+    final parts = <String>[];
+    if (o.minBookingAmount != null) {
+      parts.add('Min Rs. ${o.minBookingAmount!.toStringAsFixed(0)}');
+    }
+    if (o.maxDiscountAmount != null &&
+        o.discountType == DiscountType.percentage) {
+      parts.add('Up to Rs. ${o.maxDiscountAmount!.toStringAsFixed(0)} off');
+    }
+    if (o.expiresAt != null) {
+      final diff = o.expiresAt!.difference(DateTime.now());
+      if (diff.inDays <= 7 && diff.inDays >= 0) {
+        parts.add('Expires in ${diff.inDays + 1} day${diff.inDays == 0 ? '' : 's'}');
+      }
+    }
+    if (o.maxUses != null) {
+      final remaining = (o.maxUses! - o.usageCount).clamp(0, o.maxUses!);
+      if (remaining <= 10) parts.add('$remaining left');
+    }
+
+    if (parts.isEmpty) return const SizedBox.shrink();
+    return Text(
+      parts.join(' · '),
+      style: const TextStyle(color: _muted, fontSize: 11),
     );
   }
 }

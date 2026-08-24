@@ -1,7 +1,6 @@
-import 'dart:io';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../data/models/tournament_model.dart';
 
@@ -53,12 +52,12 @@ class TournamentService {
 
   // ── Tournament writes ────────────────────────────────────────────────
 
-  Future<String> createTournament(TournamentModel t, {File? banner}) async {
+  Future<String> createTournament(TournamentModel t, {XFile? banner}) async {
     final ref = _col.doc();
     String bannerUrl = '';
     if (banner != null) {
       final sRef = _storage.ref('tournaments/${ref.id}/banner.jpg');
-      await sRef.putFile(banner);
+      await sRef.putData(await banner.readAsBytes());
       bannerUrl = await sRef.getDownloadURL();
     }
     await ref.set({...t.toMap(), 'id': ref.id, 'bannerImage': bannerUrl});
@@ -98,13 +97,13 @@ class TournamentService {
           .toList());
 
   Future<String> createRegistration(RegistrationModel reg,
-      {File? paymentScreenshot}) async {
+      {XFile? paymentScreenshot}) async {
     final ref = _regs.doc();
     String screenshotUrl = '';
     if (paymentScreenshot != null) {
       final sRef = _storage.ref(
           'registrations/${ref.id}/payment_${DateTime.now().millisecondsSinceEpoch}.jpg');
-      await sRef.putFile(paymentScreenshot);
+      await sRef.putData(await paymentScreenshot.readAsBytes());
       screenshotUrl = await sRef.getDownloadURL();
     }
     await ref.set({

@@ -4,15 +4,16 @@ import 'package:get/get.dart';
 import '../../controllers/chat_controller.dart';
 import '../../data/models/chat_model.dart';
 import '../../routes/app_routes.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_text_styles.dart';
 
-const _bg = Color(0xFF10131A);
-const _surface = Color(0xFF1D2026);
-const _surfaceLow = Color(0xFF191C22);
-const _outline = Color(0xFF3B494B);
-const _cyan = Color(0xFF00DBE9);
-const _greenFixed = Color(0xFF79FF5B);
-const _onSurface = Color(0xFFE1E2EB);
-const _onSurfaceVar = Color(0xFFB9CACB);
+const _bg = AppColors.background;
+const _surface = AppColors.surface;
+const _surfaceLow = AppColors.elevated;
+const _outline = AppColors.border;
+const _greenFixed = AppColors.success;
+const _onSurface = AppColors.textPrimary;
+const _onSurfaceVar = AppColors.textSecondary;
 
 /// Chats tab — Booking chats | Support. Shared by customer and owner.
 class MyChatsScreen extends StatefulWidget {
@@ -47,30 +48,35 @@ class _MyChatsScreenState extends State<MyChatsScreen>
 
     return Scaffold(
       backgroundColor: _bg,
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: _cyan,
-        foregroundColor: const Color(0xFF00232A),
-        icon: const Icon(Icons.support_agent),
-        label: const Text('Contact Support',
-            style: TextStyle(fontWeight: FontWeight.w700)),
-        onPressed: () async {
-          final chatId = await c.getOrCreateSupportChat();
-          Get.toNamed(AppRoutes.chatRoom, arguments: chatId);
-        },
+      // The dashboard shells use extendBody with a floating glass nav pill,
+      // so the FAB needs extra lift to clear it.
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 84),
+        child: FloatingActionButton.extended(
+          heroTag: 'my_chats_fab',
+          backgroundColor: AppColors.primary,
+          foregroundColor: AppColors.onPrimary,
+          icon: const Icon(Icons.support_agent),
+          label: Text('Contact Support',
+              style: AppTextStyles.label.copyWith(color: AppColors.onPrimary)),
+          onPressed: () async {
+            final chatId = await c.getOrCreateSupportChat();
+            Get.toNamed(AppRoutes.chatRoom, arguments: chatId);
+          },
+        ),
       ),
       body: SafeArea(
         child: Column(
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
                   'Chats',
-                  style: TextStyle(
+                  style: AppTextStyles.headlineLarge.copyWith(
                     color: _onSurface,
                     fontSize: 26,
-                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
@@ -82,13 +88,12 @@ class _MyChatsScreenState extends State<MyChatsScreen>
               ),
               child: TabBar(
                 controller: _tabController,
-                indicatorColor: _cyan,
+                indicatorColor: AppColors.primary,
                 indicatorWeight: 2,
-                labelColor: _cyan,
+                labelColor: AppColors.primary,
                 unselectedLabelColor: _onSurfaceVar,
-                labelStyle: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w700),
-                unselectedLabelStyle: const TextStyle(
+                labelStyle: AppTextStyles.label.copyWith(fontSize: 14),
+                unselectedLabelStyle: AppTextStyles.label.copyWith(
                     fontSize: 14, fontWeight: FontWeight.w600),
                 tabs: const [
                   Tab(text: 'Booking Chats'),
@@ -147,14 +152,13 @@ class _ChatList extends StatelessWidget {
                   size: 28, color: _onSurfaceVar),
             ),
             const SizedBox(height: 16),
-            const Text('No chats yet',
-                style: TextStyle(
-                    color: _onSurface,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700)),
+            Text('No chats yet',
+                style: AppTextStyles.titleMedium.copyWith(
+                    color: _onSurface, fontSize: 16)),
             const SizedBox(height: 6),
-            const Text('Conversations appear here',
-                style: TextStyle(color: _onSurfaceVar, fontSize: 13)),
+            Text('Conversations appear here',
+                style: AppTextStyles.bodySmall.copyWith(
+                    color: _onSurfaceVar, fontSize: 13)),
           ],
         ),
       );
@@ -167,11 +171,70 @@ class _ChatList extends StatelessWidget {
   }
 }
 
+class _BookingStatusChip extends StatelessWidget {
+  final String status;
+  final String label;
+
+  const _BookingStatusChip({required this.status, required this.label});
+
+  Color get _color {
+    switch (status) {
+      case 'confirmed':
+      case 'completed':
+        return AppColors.success;
+      case 'rejected':
+      case 'cancelled':
+        return AppColors.error;
+      case 'refund_pending':
+      case 'refund_sent':
+      case 'refund_confirmed':
+        return AppColors.warning;
+      case 'deposit_submitted':
+        return AppColors.secondary;
+      default:
+        return AppColors.warning;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: _color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+            color: _color,
+          ),
+        ),
+      );
+}
+
 class _ChatCard extends StatelessWidget {
   final ChatModel chat;
   final String Function(DateTime) timeAgo;
 
   const _ChatCard({required this.chat, required this.timeAgo});
+
+  // For booking chats: owners see the customer's name; customers see the
+  // arena name. Support chats always show their stored title.
+  String get _displayTitle {
+    if (chat.type != ChatType.booking) return chat.title;
+    final myUid = Get.isRegistered<ChatController>()
+        ? ChatController.to.myUid
+        : '';
+    final isOwnerSide = myUid.isNotEmpty && myUid != chat.customerId;
+    if (isOwnerSide) {
+      return chat.customerName?.isNotEmpty == true
+          ? chat.customerName!
+          : chat.title;
+    }
+    return chat.title; // customer sees arena name (stored in title)
+  }
 
   bool get _isConfirmed =>
       chat.lastMessage.toLowerCase().contains('confirmed');
@@ -210,7 +273,7 @@ class _ChatCard extends StatelessWidget {
               color: _surfaceLow,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: unread ? _cyan.withValues(alpha: 0.35) : _outline,
+                color: unread ? AppColors.primary.withValues(alpha: 0.35) : _outline,
               ),
             ),
             child: Row(
@@ -231,7 +294,7 @@ class _ChatCard extends StatelessWidget {
                         chat.type == ChatType.booking
                             ? Icons.stadium_outlined
                             : Icons.support_agent,
-                        color: _cyan,
+                        color: AppColors.primary,
                       ),
                     ),
                     if (unread)
@@ -241,7 +304,7 @@ class _ChatCard extends StatelessWidget {
                         child: Container(
                           padding: const EdgeInsets.all(4),
                           decoration: const BoxDecoration(
-                            color: _cyan,
+                            color: AppColors.error,
                             shape: BoxShape.circle,
                           ),
                           constraints:
@@ -249,8 +312,8 @@ class _ChatCard extends StatelessWidget {
                           child: Text(
                             '${chat.unreadCount}',
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Color(0xFF00232A),
+                            style: AppTextStyles.caption.copyWith(
+                              color: Colors.white,
                               fontSize: 10,
                               fontWeight: FontWeight.w800,
                             ),
@@ -268,21 +331,20 @@ class _ChatCard extends StatelessWidget {
                         children: [
                           Expanded(
                             child: Text(
-                              chat.title,
+                              _displayTitle,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: AppTextStyles.titleMedium.copyWith(
                                 color: _onSurface,
                                 fontSize: 16,
-                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
                           const SizedBox(width: 8),
                           Text(
                             timeAgo(chat.lastMessageAt),
-                            style:
-                                const TextStyle(color: _onSurfaceVar, fontSize: 12),
+                            style: AppTextStyles.caption.copyWith(
+                                color: _onSurfaceVar, fontSize: 12),
                           ),
                         ],
                       ),
@@ -292,14 +354,20 @@ class _ChatCard extends StatelessWidget {
                           chat.subtitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style:
-                              const TextStyle(color: _onSurfaceVar, fontSize: 13),
+                          style: AppTextStyles.bodySmall.copyWith(
+                              color: _onSurfaceVar, fontSize: 13),
                         ),
                       ],
                       const SizedBox(height: 6),
                       Row(
                         children: [
-                          if (_messageIcon != null) ...[
+                          if (chat.type == ChatType.booking &&
+                              chat.bookingSnapshot != null) ...[
+                            _BookingStatusChip(
+                                status: chat.bookingSnapshot!.status,
+                                label: chat.bookingSnapshot!.statusLabel),
+                            const SizedBox(width: 6),
+                          ] else if (_messageIcon != null) ...[
                             Icon(_messageIcon, size: 15, color: _messageColor),
                             const SizedBox(width: 4),
                           ],
@@ -308,7 +376,7 @@ class _ChatCard extends StatelessWidget {
                               chat.lastMessage,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
+                              style: AppTextStyles.bodySmall.copyWith(
                                 color: _messageColor,
                                 fontSize: 13,
                                 fontWeight:

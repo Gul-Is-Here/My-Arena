@@ -15,13 +15,34 @@ class ProfileSetupScreen extends StatefulWidget {
   State<ProfileSetupScreen> createState() => _ProfileSetupScreenState();
 }
 
-class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
+class _ProfileSetupScreenState extends State<ProfileSetupScreen>
+    with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final auth = AuthController.to;
-  late final _nameCtrl =
-      TextEditingController(text: auth.currentUser.value?.name ?? '');
-  late final _phoneCtrl =
-      TextEditingController(text: auth.currentUser.value?.phone ?? '');
+
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _phoneCtrl;
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl =
+        TextEditingController(text: auth.currentUser.value?.name ?? '');
+    _phoneCtrl =
+        TextEditingController(text: auth.currentUser.value?.phone ?? '');
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 600));
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _nameCtrl.dispose();
+    _phoneCtrl.dispose();
+    super.dispose();
+  }
 
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
@@ -34,86 +55,97 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Set Up Profile')),
+      backgroundColor: AppColors.background,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
+        child: FadeTransition(
+          opacity: _ctrl,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 28),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 16),
-                // Avatar picker (image upload wired in backend phase)
-                Stack(
-                  children: [
-                    CircleAvatar(
-                      radius: 56,
-                      backgroundColor:
-                          AppColors.primary.withValues(alpha: 0.15),
-                      child: const Icon(
-                        Icons.person,
-                        size: 56,
-                        color: AppColors.primary,
+                const SizedBox(height: 32),
+
+                // Progress indicator
+                Row(
+                  children: List.generate(3, (i) => Expanded(
+                    child: Container(
+                      height: 3,
+                      margin: EdgeInsets.only(right: i < 2 ? 6 : 0),
+                      decoration: BoxDecoration(
+                        color: i == 0
+                            ? AppColors.primary
+                            : AppColors.border,
+                        borderRadius: BorderRadius.circular(2),
                       ),
                     ),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: GestureDetector(
-                        onTap: () => Get.snackbar(
-                          'Coming soon',
-                          'Avatar upload will be added with Firebase Storage',
-                          snackPosition: SnackPosition.BOTTOM,
-                          margin: const EdgeInsets.all(16),
-                        ),
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: const BoxDecoration(
-                            gradient: AppColors.primaryGradient,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.camera_alt,
-                            size: 18,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Add a profile photo',
-                  style:
-                      AppTextStyles.bodySmall.copyWith(color: AppColors.textGrey),
+                  )),
                 ),
                 const SizedBox(height: 32),
-                AppTextField(
-                  label: 'Full Name',
-                  hint: 'Ahmed Khan',
-                  controller: _nameCtrl,
-                  prefixIcon: Icons.person_outline,
-                  validator: Validators.name,
-                ),
-                const SizedBox(height: 16),
-                AppTextField(
-                  label: 'Phone Number',
-                  hint: '03XX-XXXXXXX',
-                  controller: _phoneCtrl,
-                  keyboardType: TextInputType.phone,
-                  prefixIcon: Icons.phone_outlined,
-                  validator: Validators.phone,
-                  textInputAction: TextInputAction.done,
+
+                // Header
+                Text('Almost there!',
+                    style: AppTextStyles.headlineLarge),
+                const SizedBox(height: 8),
+                Text(
+                  'Set up your profile so others can recognise you.',
+                  style: AppTextStyles.bodyLarge
+                      .copyWith(color: AppColors.textSecondary),
                 ),
                 const SizedBox(height: 40),
-                Obx(
-                  () => AppButton(
-                    label: 'Finish',
-                    isLoading: auth.isLoading.value,
-                    onPressed: _submit,
+
+                const SizedBox(height: 8),
+
+                // Form
+                Form(
+                  key: _formKey,
+                  child: Column(
+                    children: [
+                      AppTextField(
+                        label: 'Full Name',
+                        hint: 'Ahmed Khan',
+                        controller: _nameCtrl,
+                        prefixIcon: Icons.person_outline,
+                        validator: Validators.name,
+                      ),
+                      const SizedBox(height: 16),
+                      AppTextField(
+                        label: 'Phone Number',
+                        hint: '03XX-XXXXXXX',
+                        controller: _phoneCtrl,
+                        keyboardType: TextInputType.phone,
+                        prefixIcon: Icons.phone_outlined,
+                        validator: Validators.phone,
+                        textInputAction: TextInputAction.done,
+                      ),
+                    ],
                   ),
                 ),
+                const SizedBox(height: 40),
+
+                Obx(() => AppButton(
+                      label: 'Complete Setup',
+                      isLoading: auth.isLoading.value,
+                      onPressed: _submit,
+                    )),
+                const SizedBox(height: 16),
+
+                Center(
+                  child: TextButton(
+                    onPressed: () {
+                      auth.completeProfile(
+                        name: auth.currentUser.value?.name ?? '',
+                        phone: '',
+                      );
+                    },
+                    child: Text(
+                      'Skip for now',
+                      style: AppTextStyles.bodySmall
+                          .copyWith(color: AppColors.textDisabled),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
               ],
             ),
           ),

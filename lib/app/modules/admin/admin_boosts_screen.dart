@@ -39,7 +39,7 @@ class AdminBoostsScreen extends StatelessWidget {
               _list(admin.pendingBoosts, admin, pending: true),
               _list(admin.activeBoosts, admin, pending: false),
               _list(
-                admin.boosts.where((b) => b.status == 'rejected').toList(),
+                admin.boosts.where((b) => b.status == BoostStatus.rejected).toList(),
                 admin,
                 pending: false,
               ),
@@ -96,7 +96,7 @@ class AdminBoostsScreen extends StatelessWidget {
                         ],
                       ),
                     ),
-                    StatusBadge(status: b.status),
+                    StatusBadge(status: b.status.key),
                   ],
                 ),
                 if (pending) ...[
@@ -106,7 +106,7 @@ class AdminBoostsScreen extends StatelessWidget {
                       Expanded(
                         child: OutlinedButton(
                           onPressed: () =>
-                              admin.setBoostStatus(b.id, 'rejected'),
+                              admin.setBoostStatus(b.id, BoostStatus.rejected),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppColors.error,
                             side: const BorderSide(color: AppColors.error),
@@ -117,11 +117,10 @@ class AdminBoostsScreen extends StatelessWidget {
                       const SizedBox(width: 12),
                       Expanded(
                         child: FilledButton(
-                          onPressed: () =>
-                              admin.setBoostStatus(b.id, 'approved'),
+                          onPressed: () => _approveWithVerification(b, admin),
                           style: FilledButton.styleFrom(
                               backgroundColor: AppColors.success),
-                          child: const Text('Approve'),
+                          child: const Text('Verify & Approve'),
                         ),
                       ),
                     ],
@@ -132,6 +131,100 @@ class AdminBoostsScreen extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  void _approveWithVerification(BoostRequestModel b, AdminController admin) {
+    bool verified = false;
+    Get.dialog(
+      StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: Text('Verify Payment — ${b.arenaName}',
+              style: AppTextStyles.titleMedium),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _row('Amount', 'PKR ${b.price.toStringAsFixed(0)}'),
+                _row('Duration', b.duration.label),
+                _row('Account',
+                    b.accountUsed.isEmpty ? 'JazzCash' : b.accountUsed),
+                const SizedBox(height: 12),
+                if (b.paymentScreenshot.isNotEmpty)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.network(
+                      b.paymentScreenshot,
+                      height: 180,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Container(
+                        height: 100,
+                        decoration: BoxDecoration(
+                          color: AppColors.elevated,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Center(
+                          child: Icon(Icons.broken_image,
+                              color: AppColors.error),
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  Container(
+                    height: 80,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: AppColors.elevated,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.error.withValues(alpha: 0.4)),
+                    ),
+                    child: const Center(
+                      child: Text('No payment screenshot uploaded',
+                          style: TextStyle(color: AppColors.error)),
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Checkbox(
+                      value: verified,
+                      activeColor: AppColors.success,
+                      onChanged: (v) => setS(() => verified = v ?? false),
+                    ),
+                    const Expanded(
+                      child: Text(
+                        'I have verified the payment screenshot and confirm it is authentic.',
+                        style: TextStyle(color: AppColors.textPrimary, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Get.back(),
+              child: Text('Cancel',
+                  style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary)),
+            ),
+            FilledButton(
+              onPressed: verified
+                  ? () {
+                      Get.back();
+                      admin.setBoostStatus(b.id, BoostStatus.approved);
+                    }
+                  : null,
+              style: FilledButton.styleFrom(backgroundColor: AppColors.success),
+              child: const Text('Approve'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -152,7 +245,7 @@ class AdminBoostsScreen extends StatelessWidget {
                 Expanded(
                     child: Text('Payment details',
                         style: AppTextStyles.titleLarge)),
-                StatusBadge(status: b.status),
+                StatusBadge(status: b.status.key),
               ],
             ),
             const SizedBox(height: 16),
@@ -166,26 +259,58 @@ class AdminBoostsScreen extends StatelessWidget {
             _row('Requested',
                 '${b.createdAt.day}/${b.createdAt.month}/${b.createdAt.year}'),
             const SizedBox(height: 14),
-            // Screenshot stub — real image from Storage in backend phase.
-            Container(
-              height: 140,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.08),
+            if (b.paymentScreenshot.isNotEmpty)
+              ClipRRect(
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                    color: AppColors.primary.withValues(alpha: 0.3)),
+                child: Image.network(
+                  b.paymentScreenshot,
+                  height: 200,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (_, child, progress) => progress == null
+                      ? child
+                      : const SizedBox(
+                          height: 200,
+                          child: Center(child: CircularProgressIndicator())),
+                  errorBuilder: (_, _, _) => Container(
+                    height: 140,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.broken_image, color: AppColors.error, size: 36),
+                        SizedBox(height: 8),
+                        Text('Could not load screenshot',
+                            style: TextStyle(color: AppColors.textGrey)),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else
+              Container(
+                height: 140,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.3)),
+                ),
+                child: const Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.receipt_long, color: AppColors.primary, size: 36),
+                    SizedBox(height: 8),
+                    Text('No screenshot uploaded',
+                        style: TextStyle(color: AppColors.primary)),
+                  ],
+                ),
               ),
-              child: const Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.receipt_long, color: AppColors.primary, size: 36),
-                  SizedBox(height: 8),
-                  Text('Payment screenshot',
-                      style: TextStyle(color: AppColors.primary)),
-                ],
-              ),
-            ),
             const SizedBox(height: 12),
           ],
         ),

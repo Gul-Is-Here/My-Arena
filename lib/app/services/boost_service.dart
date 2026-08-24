@@ -1,6 +1,5 @@
-import 'dart:io';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
@@ -13,11 +12,12 @@ class BoostService {
   CollectionReference<Map<String, dynamic>> get _col =>
       _db.collection('boostRequests');
 
-  Future<String> createRequest(BoostRequestModel req, File screenshot) async {
+  Future<String> createRequest(BoostRequestModel req, XFile screenshot) async {
     final ref = _col.doc();
+    final ownerId = FirebaseAuth.instance.currentUser?.uid ?? ref.id;
     final storageRef = _storage.ref(
-        'boostRequests/${ref.id}/payment_${DateTime.now().millisecondsSinceEpoch}.jpg');
-    await storageRef.putFile(screenshot);
+        'boostRequests/$ownerId/payment_${ref.id}_${DateTime.now().millisecondsSinceEpoch}.jpg');
+    await storageRef.putData(await screenshot.readAsBytes());
     final url = await storageRef.getDownloadURL();
 
     await ref.set({

@@ -16,14 +16,21 @@ class FavoritesController extends GetxController {
   bool isFav(String arenaId) => _ids.contains(arenaId);
 
   StreamSubscription<Set<String>>? _sub;
+  StreamSubscription? _authSub;
 
   @override
   void onInit() {
     super.onInit();
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null) {
-      _sub = _svc.favoritesStream(uid).listen((set) => _ids.assignAll(set));
-    }
+    // Use authStateChanges() so the Firestore stream only starts after the
+    // SDK has a valid auth token — avoids PERMISSION_DENIED on first login.
+    _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+      _sub?.cancel();
+      if (user != null) {
+        _sub = _svc.favoritesStream(user.uid).listen((set) => _ids.assignAll(set));
+      } else {
+        _ids.clear();
+      }
+    });
   }
 
   Future<void> toggle(String arenaId) async {
@@ -38,6 +45,7 @@ class FavoritesController extends GetxController {
 
   @override
   void onClose() {
+    _authSub?.cancel();
     _sub?.cancel();
     super.onClose();
   }

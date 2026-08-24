@@ -1,3 +1,7 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide User;
 import 'package:firebase_auth/firebase_auth.dart' as fb show User;
 import 'package:flutter/material.dart';
@@ -5,8 +9,10 @@ import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 
 import '../data/models/user_model.dart';
+import '../modules/auth/auth_fx.dart';
 import '../routes/app_routes.dart';
 import '../services/auth_service.dart';
+import '../services/notification_service.dart';
 import '../services/otp_service.dart';
 import '../theme/app_colors.dart';
 
@@ -27,6 +33,8 @@ class AuthController extends GetxController {
   final RxBool isLoading = false.obs;
   final RxString error = ''.obs;
   final Rx<UserModel?> currentUser = Rxn<UserModel>();
+
+  StreamSubscription? _profileSub;
 
   /// Role picked during signup ("Customer hun ya Owner?")
   final Rx<UserRole> selectedRole = UserRole.customer.obs;
@@ -71,7 +79,7 @@ class AuthController extends GetxController {
     final fbUser = _service.firebaseUser;
     if (fbUser == null) {
       Get.offAllNamed(
-        hasSeenOnboarding ? AppRoutes.login : AppRoutes.onboarding,
+        hasSeenOnboarding ? AppRoutes.roleSelect : AppRoutes.onboarding,
       );
       return;
     }
@@ -83,24 +91,56 @@ class AuthController extends GetxController {
       if (profile != null) _saveSession(profile);
     } catch (_) {}
     if (currentUser.value == null) {
-      Get.offAllNamed(AppRoutes.login);
+      Get.offAllNamed(AppRoutes.roleSelect);
       return;
     }
+    // If user has multiple roles, let them pick which workspace to enter.
+    if (currentUser.value!.hasMultipleRoles) {
+      Get.offAllNamed(AppRoutes.workspaceSelector);
+      return;
+    }
+    // Start real-time watch for already-signed-in users.
+    _watchProfile(fbUser.uid);
     goToRoleDashboard();
   }
 
   void goToRoleDashboard() {
-    switch (currentUser.value?.role) {
-      case UserRole.owner:
-        Get.offAllNamed(AppRoutes.ownerDashboard);
-      case UserRole.staff:
-        Get.offAllNamed(AppRoutes.staffDashboard);
-      case UserRole.admin:
-        Get.offAllNamed(AppRoutes.adminDashboard);
-      case UserRole.customer:
-      case null:
-        Get.offAllNamed(AppRoutes.customerDashboard);
+    final user = currentUser.value;
+    final role = user?.role;
+    // Pending owners get a holding screen until admin approves.
+    if (role == UserRole.owner &&
+        user?.accountStatus == AccountStatus.pending) {
+      Get.offAllNamed(AppRoutes.ownerPendingApproval);
+      return;
     }
+    String route;
+    if (role == UserRole.owner) {
+      route = AppRoutes.ownerDashboard;
+    } else if (role == UserRole.staff) {
+      // Arena staff (owner-assigned) vs admin support staff
+      route = (user?.isArenaStaff == true)
+          ? AppRoutes.arenaStaffDashboard
+          : AppRoutes.staffDashboard;
+    } else if (role?.isAdminTier == true) {
+      route = AppRoutes.adminDashboard;
+    } else {
+      route = AppRoutes.customerDashboard;
+    }
+    Get.offAllNamed(route);
+    // Process any notification that cold-started the app. Deferred to a
+    // post-frame callback so the dashboard route is fully mounted before
+    // we push another route on top of it.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationService.processPendingDeepLink();
+    });
+  }
+
+  /// Switch the active role for multi-role accounts and navigate to dashboard.
+  void switchRole(UserRole role) {
+    final user = currentUser.value;
+    if (user == null) return;
+    _saveSession(user.copyWith(role: role));
+    goToRoleDashboard();
   }
 
   // ---------------------------------------------------------------------
@@ -249,7 +289,7 @@ class AuthController extends GetxController {
         otp: otp,
         newPassword: newPassword,
       );
-      Get.offAllNamed(AppRoutes.login);
+      Get.offAllNamed(AppRoutes.roleSelect);
       _snack('Password updated', 'Sign in with your new password');
     });
   }
@@ -257,7 +297,7 @@ class AuthController extends GetxController {
   // ---------------------------------------------------------------------
 
   /// Shared post-auth step: load (or create) the Firestore profile,
-  /// enforce isActive, persist the session and route to the dashboard.
+  /// enforce isActive, check portal mismatch, persist the session and route.
   /// Pass [isNew] = true to force routing to profile setup (e.g. after
   /// email-OTP signup where the server already created the Firestore doc).
   Future<void> _completeSignIn(fb.User fbUser,
@@ -267,10 +307,6 @@ class AuthController extends GetxController {
 
     if (profile == null) {
       if (!isNew) {
-        // Sign-in flow: no Firestore doc exists — this is a first-time social
-        // or phone login. Use the role the user selected, but never default
-        // to customer silently for an account that may have been set as admin
-        // via Firestore console without going through sign-up.
         profile = await _service.createUserDoc(UserModel(
           uid: fbUser.uid,
           name: fbUser.displayName ?? fallbackName,
@@ -279,23 +315,81 @@ class AuthController extends GetxController {
           role: selectedRole.value,
         ));
       } else {
-        // Email signup path — server already created the Firestore doc before
-        // we call _completeSignIn; if we still get null something is wrong.
         throw Exception('Profile not found. Please try signing up again.');
       }
     }
 
-    if (!profile.isActive) {
+    final blockedStatuses = {
+      AccountStatus.suspended,
+      AccountStatus.inactive,
+      AccountStatus.archived,
+    };
+    if (blockedStatuses.contains(profile.accountStatus)) {
       await _service.signOut();
-      throw Exception('This account has been deactivated. Contact support.');
+      throw Exception(
+          'This account has been ${profile.accountStatus.name}. Contact support.');
     }
     await _service.touchLastLogin(fbUser.uid);
-    _saveSession(profile);
-    if (firstTime) {
-      Get.offAllNamed(AppRoutes.profileSetup);
-    } else {
-      goToRoleDashboard();
+    if (profile.role.isAdminTier) {
+      unawaited(_service.markAdminInvitationLoggedIn(fbUser.uid));
     }
+    _saveSession(profile);
+    _watchProfile(fbUser.uid);
+
+    if (firstTime) {
+      if (profile.role == UserRole.customer) {
+        Get.offAllNamed(AppRoutes.profileSetup);
+      } else {
+        goToRoleDashboard();
+      }
+      return;
+    }
+    if (profile.hasMultipleRoles) {
+      Get.offAllNamed(AppRoutes.workspaceSelector);
+      return;
+    }
+
+    // Admin-tier accounts always auto-route — no portal check needed.
+    if (profile.role.isAdminTier) {
+      goToRoleDashboard();
+      return;
+    }
+
+    // Check whether the user signed in through the correct portal.
+    if (_isPortalMismatch(profile.role)) {
+      isLoading.value = false; // stop spinner before showing sheet
+      await PortalMismatchSheet.show(
+        actualRole: profile.role,
+        onSwitch: () {
+          Get.back(); // close sheet
+          goToRoleDashboard();
+        },
+        onCancel: () {
+          Get.back(); // close sheet
+          signOut();
+        },
+      );
+      return;
+    }
+
+    goToRoleDashboard();
+  }
+
+  /// Returns true when the portal the user chose doesn't match their actual role.
+  /// Customer portal expects [UserRole.customer].
+  /// Owner portal expects [UserRole.owner] or [UserRole.staff].
+  bool _isPortalMismatch(UserRole actualRole) {
+    final portal = selectedRole.value;
+    if (portal == UserRole.customer) {
+      // Customer portal: only customer accounts fit here.
+      return actualRole != UserRole.customer;
+    }
+    if (portal == UserRole.owner) {
+      // Owner portal: owner and staff are both valid.
+      return actualRole != UserRole.owner && actualRole != UserRole.staff;
+    }
+    // Admin entry (no portal selected) — never mismatch.
+    return false;
   }
 
   /// Force-refreshes the current user's profile from Firestore and re-routes.
@@ -325,15 +419,107 @@ class AuthController extends GetxController {
         });
         _saveSession(user.copyWith(name: name, phone: phone));
       }
-      goToRoleDashboard();
+      // Customers get the photo upload step; other roles go straight to dashboard.
+      if (currentUser.value?.role == UserRole.customer) {
+        Get.offAllNamed(AppRoutes.profilePhotoUpload);
+      } else {
+        goToRoleDashboard();
+      }
     });
   }
 
+  final RxDouble photoUploadProgress = 0.0.obs;
+
+  Future<void> uploadProfilePhoto(XFile file) async {
+    await _run(() async {
+      final user = currentUser.value;
+      if (user == null) return;
+      photoUploadProgress.value = 0;
+      final url = await _service.uploadProfilePhoto(
+        user.uid,
+        file,
+        onProgress: (p) => photoUploadProgress.value = p,
+      );
+      _saveSession(user.copyWith(avatar: url));
+    });
+  }
+
+  Future<void> updateProfile({required String name, required String phone}) async {
+    final user = currentUser.value;
+    if (user == null) return;
+    await _service.updateUserDoc(user.uid, {'name': name, 'phone': phone});
+    _saveSession(user.copyWith(name: name, phone: phone));
+  }
+
+  /// Permanently deletes the account: calls the Cloud Function which
+  /// handles Auth + Firestore + Storage cleanup, then clears local state.
+  Future<void> deleteAccount() async {
+    await _run(() async {
+      final fbUser = _service.firebaseUser;
+      if (fbUser == null) throw Exception('Not signed in.');
+      final idToken = await fbUser.getIdToken();
+      await _otp.deleteAccount(idToken!);
+      _box.remove(_sessionKey);
+      currentUser.value = null;
+      Get.offAllNamed(AppRoutes.roleSelect);
+    });
+  }
+
+  /// Subscribes to the user's Firestore doc for real-time status changes.
+  /// If the admin suspends/deactivates the account, the stream fires and the
+  /// user is force-signed-out immediately — no restart required.
+  void _watchProfile(String uid) {
+    _profileSub?.cancel();
+    _profileSub = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .snapshots()
+        .listen((snap) {
+      if (!snap.exists) return;
+      final updated = UserModel.fromMap({...snap.data()!, 'uid': snap.id});
+      // Keep local session in sync with Firestore.
+      _saveSession(updated);
+      // If admin toggled the account to a blocked state, force sign-out.
+      const blocked = {
+        AccountStatus.suspended,
+        AccountStatus.inactive,
+        AccountStatus.archived,
+      };
+      if (blocked.contains(updated.accountStatus)) {
+        _profileSub?.cancel();
+        _service.signOut();
+        _box.remove(_sessionKey);
+        currentUser.value = null;
+        Get.offAllNamed(
+          AppRoutes.accountSuspended,
+          arguments: updated.accountStatus,
+        );
+      }
+      // Pending owner whose admin approved — auto-route to dashboard.
+      if (updated.role == UserRole.owner &&
+          updated.accountStatus == AccountStatus.active &&
+          Get.currentRoute == AppRoutes.ownerPendingApproval) {
+        goToRoleDashboard();
+      }
+    }, onError: (e) => debugPrint('profile stream error: $e'));
+  }
+
   Future<void> signOut() async {
+    _profileSub?.cancel();
+    // Remove this device's FCM token before signing out so the logged-out
+    // user stops receiving pushes on this device.
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) await NotificationService.onSignOut(uid);
     await _service.signOut();
     _box.remove(_sessionKey);
     currentUser.value = null;
-    Get.offAllNamed(AppRoutes.login);
+    Get.offAllNamed(AppRoutes.roleSelect);
+  }
+
+  @override
+  void onClose() {
+    _profileSub?.cancel();
+    super.onClose();
   }
 
   // ---------------------------------------------------------------------

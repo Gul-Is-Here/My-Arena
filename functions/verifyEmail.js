@@ -1,6 +1,7 @@
 const admin = require("firebase-admin");
 const crypto = require("crypto");
 const { getEmailConfig } = require("./emailConfig");
+const { buildEmail } = require("./emailTemplates");
 
 const OTP_COLLECTION = "email_verification_otps";
 const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -54,25 +55,21 @@ const verifyEmail = async (req, res) => {
         createdAt: Date.now(),
       });
 
+      const emailRole = role === "owner" ? "owner" : "customer";
       const { transporter, WEBMAIL_CONFIG } = getEmailConfig();
       await transporter.sendMail({
         from: `"${WEBMAIL_CONFIG.fromName}" <${WEBMAIL_CONFIG.email}>`,
         to: email,
-        subject: "Verify Your Email Address",
-        html: `
-          <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:30px;border:1px solid #eee;border-radius:12px;">
-            <h2 style="color:#333333;">Welcome to Arena Booking and Management!</h2>
-            <p style="color:#666;">Please verify your email address to complete registration.</p>
-            <div style="background:#f99a03;border-radius:10px;padding:24px;text-align:center;margin:24px 0;">
-              <p style="color:#fff;font-size:13px;margin:0 0 8px;">Your verification code</p>
-              <h3 style="color:#fff;font-size:26px;letter-spacing:8px;margin:0;">${code}</h3>
-              <p style="color:rgba(255,255,255,0.85);font-size:12px;margin:8px 0 0;">Valid for 10 minutes</p>
-            </div>
-            <p style="color:#666;font-size:13px;">Enter this code in the app to verify your email.</p>
-            <hr style="border:none;border-top:1px solid #eee;margin:20px 0;"/>
-            <p style="color:#aaa;font-size:11px;">If you didn't request this, please ignore this email.</p>
-          </div>
-        `,
+        subject: "Verify your email — MyArena",
+        html: buildEmail({
+          role: emailRole,
+          headline: `Welcome to MyArena, ${name}!`,
+          bodyHtml: `
+            <p style="margin:0 0 12px;">Thanks for signing up. Enter the code below in the app to verify your email address and complete your registration.</p>
+          `,
+          code: { value: code, label: "Verification code", expiry: "10 minutes" },
+          securityNote: "If you didn't create a MyArena account, you can safely ignore this email.",
+        }),
       });
 
       return res.status(200).json({
@@ -220,20 +217,19 @@ const verifyEmail = async (req, res) => {
 
       await otpDoc.ref.update({ code, expiresAt, attempts: 0 });
 
+      const resendRole = (otpDoc.data()?.role === "owner") ? "owner" : "customer";
       const { transporter, WEBMAIL_CONFIG } = getEmailConfig();
       await transporter.sendMail({
         from: `"${WEBMAIL_CONFIG.fromName}" <${WEBMAIL_CONFIG.email}>`,
         to: email,
-        subject: "New Verification Code",
-        html: `
-          <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:30px;border:1px solid #eee;border-radius:12px;">
-            <h2 style="color:#333333;">New Verification Code</h2>
-            <div style="background:#f99a03;border-radius:10px;padding:24px;text-align:center;margin:24px 0;">
-              <h1 style="color:#fff;font-size:42px;letter-spacing:10px;margin:0;">${code}</h1>
-              <p style="color:rgba(255,255,255,0.85);font-size:12px;margin:8px 0 0;">Valid for 10 minutes</p>
-            </div>
-          </div>
-        `,
+        subject: "New verification code — MyArena",
+        html: buildEmail({
+          role: resendRole,
+          headline: "New verification code",
+          bodyHtml: `<p style="margin:0 0 4px;">Here's your new verification code. The previous one is no longer valid.</p>`,
+          code: { value: code, label: "New verification code", expiry: "10 minutes" },
+          securityNote: "If you didn't request this, you can safely ignore this email.",
+        }),
       });
 
       return res.status(200).json({

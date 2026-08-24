@@ -17,7 +17,16 @@ class AdminChatViewScreen extends StatefulWidget {
 class _AdminChatViewScreenState extends State<AdminChatViewScreen> {
   final _textCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
-  late final String chatId = Get.arguments as String;
+  late final String chatId = (Get.arguments as String?) ?? '';
+
+  @override
+  void initState() {
+    super.initState();
+    // Mark unread count as zero when opened (covers notification-tap entry).
+    if (chatId.isNotEmpty && Get.isRegistered<AdminChatController>()) {
+      AdminChatController.to.markRead(chatId);
+    }
+  }
 
   @override
   void dispose() {

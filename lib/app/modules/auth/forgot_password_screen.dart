@@ -15,10 +15,28 @@ class ForgotPasswordScreen extends StatefulWidget {
   State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
 }
 
-class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
+class _ForgotPasswordScreenState extends State<ForgotPasswordScreen>
+    with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _emailCtrl = TextEditingController();
   final auth = AuthController.to;
+
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 500));
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _emailCtrl.dispose();
+    super.dispose();
+  }
 
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
@@ -28,42 +46,87 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Reset Password')),
+      backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
+        child: FadeTransition(
+          opacity: _ctrl,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 28),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 16),
-                Text('Forgot your password?',
-                    style: AppTextStyles.headlineLarge),
-                const SizedBox(height: 8),
-                Text(
-                  "Enter your email and we'll send you a 6-digit reset code.",
-                  style: AppTextStyles.bodyMedium
-                      .copyWith(color: AppColors.textGrey),
-                ),
-                const SizedBox(height: 32),
-                AppTextField(
-                  label: 'Email',
-                  hint: 'you@example.com',
-                  controller: _emailCtrl,
-                  keyboardType: TextInputType.emailAddress,
-                  prefixIcon: Icons.email_outlined,
-                  validator: Validators.email,
-                  textInputAction: TextInputAction.done,
-                ),
-                const SizedBox(height: 32),
-                Obx(
-                  () => AppButton(
-                    label: 'Send Reset Code',
-                    isLoading: auth.isLoading.value,
-                    onPressed: _submit,
+                GestureDetector(
+                  onTap: () => Get.back(),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: const Icon(Icons.arrow_back_ios_new_rounded,
+                        size: 16, color: AppColors.textSecondary),
                   ),
                 ),
+                const SizedBox(height: 40),
+
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(Icons.lock_reset_outlined,
+                      size: 36, color: AppColors.accent),
+                ),
+                const SizedBox(height: 24),
+
+                Text('Reset your\npassword',
+                    style: AppTextStyles.headlineLarge),
+                const SizedBox(height: 10),
+                Text(
+                  'Enter the email address linked to your account. We\'ll send a 6-digit reset code.',
+                  style: AppTextStyles.bodyLarge
+                      .copyWith(color: AppColors.textSecondary, height: 1.6),
+                ),
+                const SizedBox(height: 40),
+
+                Form(
+                  key: _formKey,
+                  child: AppTextField(
+                    label: 'Email Address',
+                    hint: 'you@example.com',
+                    controller: _emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    prefixIcon: Icons.email_outlined,
+                    validator: Validators.email,
+                    textInputAction: TextInputAction.done,
+                  ),
+                ),
+                const SizedBox(height: 32),
+
+                Obx(() => AppButton(
+                      label: 'Send Reset Code',
+                      isLoading: auth.isLoading.value,
+                      onPressed: _submit,
+                    )),
+
+                const Spacer(),
+
+                Center(
+                  child: TextButton(
+                    onPressed: () => Get.back(),
+                    child: Text(
+                      'Back to Sign In',
+                      style: AppTextStyles.bodyMedium
+                          .copyWith(color: AppColors.textSecondary),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
               ],
             ),
           ),

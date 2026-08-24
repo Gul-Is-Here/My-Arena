@@ -11,6 +11,12 @@ abstract class AppRoutes {
   static const String forgotPassword = '/forgot-password';
   static const String resetPasswordOtp = '/reset-password-otp';
   static const String profileSetup = '/profile-setup';
+  static const String roleSelect = '/role-select';
+  static const String workspaceSelector = '/workspace-select';
+
+  // Shared
+  static const String notifications = '/notifications';
+  static const String editProfile = '/edit-profile';
 
   // Role dashboards
   static const String customerDashboard = '/customer';
@@ -29,8 +35,11 @@ abstract class AppRoutes {
   // Phase 2 — Customer module
   static const String arenaList = '/customer/arena-list';
   static const String arenaDetailCustomer = '/customer/arena-detail';
+  static const String arenaMapView = '/customer/arena-map';
 
   // Phase 3 — Booking
+  static const String availabilityAlerts = '/booking/alerts';
+  static const String joinGroupBooking = '/booking/join-group';
   static const String bookingSlot = '/booking/slot';
   static const String bookingSummary = '/booking/summary';
   static const String depositPayment = '/booking/deposit';
@@ -39,10 +48,13 @@ abstract class AppRoutes {
   static const String bookingDetail = '/booking/detail';
 
   // Phase 3 — Owner booking management
+  static const String ownerEarnings = '/owner/earnings';
+  static const String ownerTickets = '/owner/tickets';
   static const String ownerBookings = '/owner/bookings';
   static const String manualBooking = '/owner/manual-booking';
   static const String bookingDetailOwner = '/owner/booking-detail';
   static const String ownerQrScanner = '/owner/qr-scanner';
+  static const String ownerSchedule = '/owner/schedule';
 
   // Phase 4 — Chat
   static const String myChats = '/chat/my-chats';
@@ -74,4 +86,63 @@ abstract class AppRoutes {
   static const String createTournament = '/tournaments/create';
   static const String tournamentManage = '/tournaments/manage';
   static const String adminTournaments = '/admin/tournaments';
+  static const String helpSupport = '/help-support';
+
+  // Admin: Booking management
+  static const String adminBookings = '/admin/bookings';
+  static const String adminBookingDetail = '/admin/booking-detail';
+
+  // Admin: Customer management
+  static const String adminCustomers = '/admin/customers';
+  static const String adminCustomerDetail = '/admin/customer-detail';
+
+  // Admin: Finance
+  static const String adminFinance = '/admin/finance';
+
+  // Profile photo upload (customer post-registration)
+  static const String profilePhotoUpload = '/profile-photo-upload';
+
+  // Owner account activation (admin-invited owners)
+  static const String activateOwner = '/activate-owner';
+  static const String activateAdmin = '/activate-admin';
+  static const String adminPermissions = '/admin/permissions';
+  static const String adminScope = '/admin/scope';
+
+  // Staff account activation (owner-invited staff)
+  static const String activateStaff = '/activate-staff';
+
+  // Owner: staff management
+  static const String myTeam = '/owner/my-team';
+  static const String staffDetail = '/owner/staff-detail';
+
+  // Arena-assigned staff dashboard
+  static const String arenaStaffDashboard = '/arena-staff';
+
+  // Access control
+  static const String unauthorized = '/unauthorized';
+  static const String accountSuspended = '/account-suspended';
+  static const String ownerPendingApproval = '/owner/pending-approval';
+
+  // Customer support tickets
+  static const String customerTickets = '/customer/tickets';
+  static const String customerTicketDetail = '/customer/ticket-detail';
+  static const String submitTicket = '/customer/submit-ticket';
+
+  // Owner: Promotions
+  static const String ownerPromotions = '/owner/promotions';
+
+  // Admin: Platform Promotions
+  static const String adminPromotions = '/admin/promotions';
+
+  // Phase 6 — POS (Owner)
+  static const String posDashboard = '/owner/pos';
+  static const String posLiveCourts = '/owner/pos/courts';
+  static const String posWalkIn = '/owner/pos/walk-in';
+  static const String posReceipt = '/owner/pos/receipt';
+  static const String posTransactions = '/owner/pos/transactions';
+  static const String posExpenses = '/owner/pos/expenses';
+  static const String posShift = '/owner/pos/shift';
+  static const String posReports = '/owner/pos/reports';
+  static const String posProducts = '/owner/pos/products';
+  static const String posBookingSale = '/owner/pos/booking-sale';
 }

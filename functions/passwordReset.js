@@ -1,5 +1,6 @@
 const admin = require("firebase-admin");
 const { getEmailConfig } = require("./emailConfig");
+const { buildEmail } = require("./emailTemplates");
 
 const OTP_COLLECTION = "password_reset_otps";
 const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -44,23 +45,36 @@ const passwordReset = async (req, res) => {
         createdAt: Date.now(),
       });
 
+      // Detect role to apply correct portal theme
+      let resetRole = "customer";
+      try {
+        const userRecord = await admin.auth().getUserByEmail(email);
+        const userSnap = await admin.firestore().collection("users").doc(userRecord.uid).get();
+        const userRole = userSnap.data()?.role ?? "customer";
+        if (userRole === "owner" || userRole === "staff") resetRole = "owner";
+        else if (userRole === "admin" || userRole === "superAdmin") resetRole = "admin";
+      } catch (_) { /* user may not have a Firestore doc yet — default to customer */ }
+
       const { transporter, WEBMAIL_CONFIG } = getEmailConfig();
       await transporter.sendMail({
         from: `"${WEBMAIL_CONFIG.fromName}" <${WEBMAIL_CONFIG.email}>`,
         to: email,
-        subject: "Reset Your MyArena Password",
-        html: `
-          <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:30px;border:1px solid #eee;border-radius:12px;">
-            <h2 style="color:#333333;">Password Reset</h2>
-            <p style="color:#666;">Use the code below to reset your MyArena password.</p>
-            <div style="background:#f99a03;border-radius:10px;padding:24px;text-align:center;margin:24px 0;">
-              <p style="color:#fff;font-size:13px;margin:0 0 8px;">Your reset code</p>
-              <h3 style="color:#fff;font-size:26px;letter-spacing:8px;margin:0;">${code}</h3>
-              <p style="color:rgba(255,255,255,0.85);font-size:12px;margin:8px 0 0;">Valid for 10 minutes</p>
-            </div>
-            <p style="color:#666;font-size:13px;">If you didn't request this, ignore this email.</p>
-          </div>
-        `,
+        subject: "Reset your MyArena password",
+        html: buildEmail({
+          role: resetRole,
+          headline: "Reset your password",
+          bodyHtml: `
+            <p style="margin:0 0 12px;">We received a request to reset your MyArena password. Enter the code below in the app to continue.</p>
+            <p style="margin:0;">If this wasn't you, your account is still safe — just ignore this email.</p>
+          `,
+          code: { value: code, label: "Password reset code", expiry: "10 minutes" },
+          footerNote: `
+            🔒 <strong>Security tip:</strong> MyArena will never ask for your password over email or phone.
+            If you're ever unsure, contact us at
+            <a href="mailto:support@myarena.app" style="color:#374151;">support@myarena.app</a>.
+          `,
+          securityNote: "Didn't request a password reset? No action is needed — your account hasn't been changed.",
+        }),
       });
 
       return res.status(200).json({

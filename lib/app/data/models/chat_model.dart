@@ -3,6 +3,63 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// Mirrors Firestore chats/{chatId} and its messages subcollection.
 enum ChatType { booking, ownerSupport, customerSupport }
 
+/// Structured booking context stored on the chat document.
+/// Written at chat creation; status field mirrored live by Cloud Function.
+class BookingSnapshot {
+  final String arenaName;
+  final String courtName;
+  final DateTime date;
+  final String timeRange;
+  final double totalAmount;
+  final double depositAmount;
+  final String status; // Firestore key: e.g. 'confirmed', 'pending_deposit'
+
+  const BookingSnapshot({
+    required this.arenaName,
+    required this.courtName,
+    required this.date,
+    required this.timeRange,
+    required this.totalAmount,
+    required this.depositAmount,
+    required this.status,
+  });
+
+  factory BookingSnapshot.fromMap(Map<String, dynamic> m) => BookingSnapshot(
+        arenaName: m['arenaName'] ?? '',
+        courtName: m['courtName'] ?? '',
+        date: (m['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
+        timeRange: m['timeRange'] ?? '',
+        totalAmount: (m['totalAmount'] as num?)?.toDouble() ?? 0,
+        depositAmount: (m['depositAmount'] as num?)?.toDouble() ?? 0,
+        status: m['status'] ?? 'pending_deposit',
+      );
+
+  Map<String, dynamic> toMap() => {
+        'arenaName': arenaName,
+        'courtName': courtName,
+        'date': Timestamp.fromDate(date),
+        'timeRange': timeRange,
+        'totalAmount': totalAmount,
+        'depositAmount': depositAmount,
+        'status': status,
+      };
+
+  String get statusLabel {
+    switch (status) {
+      case 'pending_deposit':   return 'Pending';
+      case 'deposit_submitted': return 'Submitted';
+      case 'confirmed':         return 'Confirmed';
+      case 'rejected':          return 'Rejected';
+      case 'completed':         return 'Completed';
+      case 'cancelled':         return 'Cancelled';
+      case 'refund_pending':    return 'Refund Pending';
+      case 'refund_sent':       return 'Refund Sent';
+      case 'refund_confirmed':  return 'Refunded';
+      default:                  return 'Pending';
+    }
+  }
+}
+
 extension ChatTypeX on ChatType {
   String get label {
     switch (this) {
@@ -16,7 +73,72 @@ extension ChatTypeX on ChatType {
   }
 }
 
-enum MessageType { text, image, document }
+enum MessageType { text, image, document, system }
+
+/// Ticket context a message was sent under in a support chat.
+class TicketRef {
+  final String ticketId;
+  final String ticketNumber;
+  final String subject;
+  final String status;
+
+  const TicketRef({
+    required this.ticketId,
+    required this.ticketNumber,
+    required this.subject,
+    required this.status,
+  });
+
+  factory TicketRef.fromMap(Map<String, dynamic> m) => TicketRef(
+        ticketId: m['ticketId'] ?? '',
+        ticketNumber: m['ticketNumber'] ?? '',
+        subject: m['subject'] ?? '',
+        status: m['status'] ?? 'open',
+      );
+
+  Map<String, dynamic> toMap() => {
+        'ticketId': ticketId,
+        'ticketNumber': ticketNumber,
+        'subject': subject,
+        'status': status,
+      };
+
+  String get label =>
+      ticketNumber.isNotEmpty ? '$ticketNumber · $subject' : subject;
+}
+
+/// Booking context a message was sent under. Captured at send time so
+/// history stays unambiguous even after the pinned booking changes.
+class BookingRef {
+  final String bookingId;
+  final String courtName;
+  final String dateLabel; // e.g. 'Mon 28 Jul'
+  final String timeRange;
+
+  const BookingRef({
+    required this.bookingId,
+    required this.courtName,
+    required this.dateLabel,
+    required this.timeRange,
+  });
+
+  factory BookingRef.fromMap(Map<String, dynamic> m) => BookingRef(
+        bookingId: m['bookingId'] ?? '',
+        courtName: m['courtName'] ?? '',
+        dateLabel: m['dateLabel'] ?? '',
+        timeRange: m['timeRange'] ?? '',
+      );
+
+  Map<String, dynamic> toMap() => {
+        'bookingId': bookingId,
+        'courtName': courtName,
+        'dateLabel': dateLabel,
+        'timeRange': timeRange,
+      };
+
+  String get label =>
+      courtName.isNotEmpty ? '$courtName · $dateLabel' : dateLabel;
+}
 
 extension MessageTypeX on MessageType {
   String get key => name;
@@ -30,32 +152,47 @@ class MessageModel {
   final String id;
   final String senderId;
   final String senderRole;
+  final String? senderName;
   final MessageType type;
   final String content;
   final String? fileName;
   final bool isRead;
   final DateTime createdAt;
+  final BookingRef? bookingRef;
+  final TicketRef? ticketRef;
 
   const MessageModel({
     required this.id,
     required this.senderId,
     required this.senderRole,
+    this.senderName,
     this.type = MessageType.text,
     required this.content,
     this.fileName,
     this.isRead = false,
     required this.createdAt,
+    this.bookingRef,
+    this.ticketRef,
   });
 
   factory MessageModel.fromMap(Map<String, dynamic> m) => MessageModel(
         id: m['id'] ?? '',
         senderId: m['senderId'] ?? '',
         senderRole: m['senderRole'] ?? '',
+        senderName: m['senderName'] as String?,
         type: MessageTypeX.fromString(m['type']),
         content: m['content'] ?? '',
         fileName: m['fileName'],
         isRead: m['isRead'] ?? false,
         createdAt: (m['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+        bookingRef: m['bookingRef'] != null
+            ? BookingRef.fromMap(
+                Map<String, dynamic>.from(m['bookingRef'] as Map))
+            : null,
+        ticketRef: m['ticketRef'] != null
+            ? TicketRef.fromMap(
+                Map<String, dynamic>.from(m['ticketRef'] as Map))
+            : null,
       );
 
   Map<String, dynamic> toMap() => {
@@ -66,6 +203,8 @@ class MessageModel {
         if (fileName != null) 'fileName': fileName,
         'isRead': isRead,
         'createdAt': FieldValue.serverTimestamp(),
+        if (bookingRef != null) 'bookingRef': bookingRef!.toMap(),
+        if (ticketRef != null) 'ticketRef': ticketRef!.toMap(),
       };
 }
 
@@ -75,12 +214,23 @@ class ChatModel {
   final String title;
   final String subtitle;
   final String? bookingId;
+
+  /// '{arenaId}_{customerId}' — identity of a pair chat. Null on legacy
+  /// per-booking chats that haven't been upgraded yet.
+  final String? pairKey;
+  final String? arenaId;
+  final String? customerId;
+  final String? customerName;
+
+  /// Last booking explicitly pinned in the context banner.
+  final String? activeBookingId;
   final List<String> participants;
   final String lastMessage;
   final DateTime lastMessageAt;
   final int unreadCount;
   final String status;
   final List<MessageModel> messages;
+  final BookingSnapshot? bookingSnapshot;
 
   const ChatModel({
     required this.id,
@@ -88,12 +238,18 @@ class ChatModel {
     required this.title,
     this.subtitle = '',
     this.bookingId,
+    this.pairKey,
+    this.arenaId,
+    this.customerId,
+    this.customerName,
+    this.activeBookingId,
     this.participants = const [],
     required this.lastMessage,
     required this.lastMessageAt,
     this.unreadCount = 0,
     this.status = 'active',
     this.messages = const [],
+    this.bookingSnapshot,
   });
 
   factory ChatModel.fromMap(Map<String, dynamic> m) {
@@ -114,6 +270,11 @@ class ChatModel {
       title: m['title'] ?? '',
       subtitle: m['subtitle'] ?? '',
       bookingId: m['bookingId'],
+      pairKey: m['pairKey'],
+      arenaId: m['arenaId'],
+      customerId: m['customerId'],
+      customerName: m['customerName'],
+      activeBookingId: m['activeBookingId'],
       participants: List<String>.from(m['participants'] ?? []),
       lastMessage: m['lastMessage'] ?? '',
       lastMessageAt: (m['lastMessageAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
@@ -121,6 +282,10 @@ class ChatModel {
           ? ((m['unreadCounts'] as Map)[m['_myUid']] ?? 0) as int
           : 0,
       status: m['status'] ?? 'active',
+      bookingSnapshot: m['bookingSnapshot'] != null
+          ? BookingSnapshot.fromMap(
+              Map<String, dynamic>.from(m['bookingSnapshot'] as Map))
+          : null,
     );
   }
 
@@ -141,10 +306,16 @@ class ChatModel {
       'title': title,
       'subtitle': subtitle,
       if (bookingId != null) 'bookingId': bookingId,
+      if (pairKey != null) 'pairKey': pairKey,
+      if (arenaId != null) 'arenaId': arenaId,
+      if (customerId != null) 'customerId': customerId,
+      if (customerName != null) 'customerName': customerName,
+      if (activeBookingId != null) 'activeBookingId': activeBookingId,
       'participants': participants,
       'lastMessage': lastMessage,
       'lastMessageAt': FieldValue.serverTimestamp(),
       'status': status,
+      if (bookingSnapshot != null) 'bookingSnapshot': bookingSnapshot!.toMap(),
     };
   }
 
@@ -154,6 +325,8 @@ class ChatModel {
     int? unreadCount,
     String? status,
     List<MessageModel>? messages,
+    BookingSnapshot? bookingSnapshot,
+    String? activeBookingId,
   }) =>
       ChatModel(
         id: id,
@@ -161,11 +334,17 @@ class ChatModel {
         title: title,
         subtitle: subtitle,
         bookingId: bookingId,
+        pairKey: pairKey,
+        arenaId: arenaId,
+        customerId: customerId,
+        customerName: customerName,
+        activeBookingId: activeBookingId ?? this.activeBookingId,
         participants: participants,
         lastMessage: lastMessage ?? this.lastMessage,
         lastMessageAt: lastMessageAt ?? this.lastMessageAt,
         unreadCount: unreadCount ?? this.unreadCount,
         status: status ?? this.status,
         messages: messages ?? this.messages,
+        bookingSnapshot: bookingSnapshot ?? this.bookingSnapshot,
       );
 }

@@ -17,10 +17,13 @@ class BoostRequestScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = Get.put(BoostController());
-    final args = Get.arguments as Map<String, dynamic>;
-    final String arenaId = args['arenaId'];
-    final String arenaName = args['arenaName'];
-    final BoostType type = args['type'] ?? BoostType.boost;
+    final args = Get.arguments as Map<String, dynamic>?;
+    if (args == null) {
+      return const Scaffold(body: Center(child: Text('Missing boost details')));
+    }
+    final String arenaId = args['arenaId'] as String? ?? '';
+    final String arenaName = args['arenaName'] as String? ?? '';
+    final BoostType type = args['type'] as BoostType? ?? BoostType.boost;
     final bool isEvent = type == BoostType.event;
 
     return Scaffold(
@@ -107,6 +110,29 @@ class BoostRequestScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
             ],
+
+            Obx(() {
+              if (!c.hasActiveBoost(arenaId)) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: AppCard(
+                  color: AppColors.warning.withValues(alpha: 0.12),
+                  border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline, color: AppColors.warning),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          c.activeBoostMessage(arenaId),
+                          style: AppTextStyles.bodySmall.copyWith(color: AppColors.warning),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
 
             Text('Duration', style: AppTextStyles.titleLarge),
             const SizedBox(height: 12),
@@ -217,16 +243,22 @@ class BoostRequestScreen extends StatelessWidget {
             const SizedBox(height: 24),
 
             Obx(
-              () => AppButton(
-                label:
-                    'Submit — PKR ${c.selectedDuration.value.price.toStringAsFixed(0)}',
-                isLoading: c.isSubmitting.value,
-                onPressed: () => c.submit(
-                  arenaId: arenaId,
-                  arenaName: arenaName,
-                  type: type,
-                ),
-              ),
+              () {
+                final blocked = c.hasActiveBoost(arenaId);
+                return AppButton(
+                  label: blocked
+                      ? 'Boost Already Active'
+                      : 'Submit — PKR ${c.selectedDuration.value.price.toStringAsFixed(0)}',
+                  isLoading: c.isSubmitting.value,
+                  onPressed: blocked
+                      ? null
+                      : () => c.submit(
+                            arenaId: arenaId,
+                            arenaName: arenaName,
+                            type: type,
+                          ),
+                );
+              },
             ),
           ],
         ),

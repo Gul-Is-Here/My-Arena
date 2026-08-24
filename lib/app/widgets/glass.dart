@@ -14,6 +14,10 @@ class GlassCard extends StatelessWidget {
   final double radius;
   final double blur;
   final Color? tint;
+  /// Set to false for cards rendered inside scrollable lists.
+  /// BackdropFilter triggers a full subtree repaint on every scroll frame;
+  /// disabling it replaces the blur with a semi-transparent fill at zero cost.
+  final bool enableBlur;
 
   const GlassCard({
     super.key,
@@ -23,6 +27,7 @@ class GlassCard extends StatelessWidget {
     this.radius = 20,
     this.blur = 16,
     this.tint,
+    this.enableBlur = true,
   });
 
   @override
@@ -44,8 +49,9 @@ class GlassCard extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: borderRadius,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        child: _MaybeBlur(
+          enabled: enableBlur,
+          blur: blur,
           child: Material(
             color: Colors.transparent,
             child: InkWell(
@@ -126,17 +132,16 @@ class AmbientBackground extends StatelessWidget {
 }
 
 /// Floating dark pill bottom navigation — "Arena Command" theme: icon-only,
-/// with a solid green rounded-square highlight on the active tab.
+/// with a volt rounded-square highlight on the active tab.
 /// Pair with `Scaffold(extendBody: true)` so content scrolls beneath it.
 class GlassNavBar extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onDestinationSelected;
   final List<NavigationDestination> destinations;
 
-  static const _surface = Color(0xFF191C22);
-  static const _outline = Color(0xFF3B494B);
-  static const _green = Color(0xFF79FF5B);
-  static const _onSurfaceVar = Color(0xFFB9CACB);
+  static const _surface = AppColors.elevated;
+  static const _outline = AppColors.border;
+  static const _onSurfaceVar = AppColors.textSecondary;
 
   const GlassNavBar({
     super.key,
@@ -190,18 +195,42 @@ class GlassNavBar extends StatelessWidget {
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.all(11),
           decoration: BoxDecoration(
-            color: selected ? _green : Colors.transparent,
+            color: selected ? AppColors.primary : Colors.transparent,
             borderRadius: BorderRadius.circular(14),
           ),
           child: IconTheme(
             data: IconThemeData(
-              color: selected ? const Color(0xFF0B0E14) : _onSurfaceVar,
+              color: selected ? AppColors.onPrimary : _onSurfaceVar,
               size: 22,
             ),
             child: selected ? dest.selectedIcon ?? dest.icon : dest.icon,
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Wraps [child] in a BackdropFilter only when [enabled] is true.
+/// When disabled the child is rendered directly; callers that set a
+/// semi-transparent fill on the child get the glass look without the GPU cost.
+class _MaybeBlur extends StatelessWidget {
+  final bool enabled;
+  final double blur;
+  final Widget child;
+
+  const _MaybeBlur({
+    required this.enabled,
+    required this.blur,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) return child;
+    return BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+      child: child,
     );
   }
 }

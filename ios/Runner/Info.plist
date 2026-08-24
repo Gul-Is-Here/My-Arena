@@ -27,7 +27,11 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Camera is used to scan booking QR codes at the arena entrance.</string>
+	<string>Camera is used to scan booking QR codes and to take your profile photo.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Photo library access is needed so you can choose a profile picture.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Location is used to show nearby arenas and to pre-fill your current location when picking a spot on the map.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

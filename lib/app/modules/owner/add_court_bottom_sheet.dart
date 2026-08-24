@@ -49,6 +49,12 @@ class _AddCourtBottomSheetState extends State<AddCourtBottomSheet> {
   TimeOfDay _endTime = const TimeOfDay(hour: 23, minute: 0);
   final Set<CourtAmenity> _amenities = {};
 
+  // Peak pricing
+  bool _hasPeak = false;
+  TimeOfDay _peakStart = const TimeOfDay(hour: 17, minute: 0);
+  TimeOfDay _peakEnd = const TimeOfDay(hour: 23, minute: 0);
+  double _peakMultiplier = 1.5;
+
   bool get _isEdit => widget.initial != null;
 
   @override
@@ -67,6 +73,12 @@ class _AddCourtBottomSheetState extends State<AddCourtBottomSheet> {
       _endTime = _parseTime(court.endTime, const TimeOfDay(hour: 23, minute: 0));
       _amenities.addAll(court.amenities);
       if (court.hasFloodlights) _amenities.add(CourtAmenity.floodlights);
+      if (court.peakMultiplier > 1.0) {
+        _hasPeak = true;
+        _peakStart = TimeOfDay(hour: court.peakStartHour, minute: 0);
+        _peakEnd = TimeOfDay(hour: court.peakEndHour, minute: 0);
+        _peakMultiplier = court.peakMultiplier;
+      }
     }
   }
 
@@ -92,6 +104,16 @@ class _AddCourtBottomSheetState extends State<AddCourtBottomSheet> {
     }
   }
 
+  Future<void> _pickPeakTime(bool isStart) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: isStart ? _peakStart : _peakEnd,
+    );
+    if (picked != null) {
+      setState(() => isStart ? _peakStart = picked : _peakEnd = picked);
+    }
+  }
+
   void _submit() {
     if (!_formKey.currentState!.validate()) return;
     widget.onAdd(
@@ -99,7 +121,6 @@ class _AddCourtBottomSheetState extends State<AddCourtBottomSheet> {
         id: widget.initial?.id ??
             'court-${DateTime.now().millisecondsSinceEpoch}',
         arenaId: widget.initial?.arenaId ?? '',
-        images: widget.initial?.images ?? const [],
         isActive: widget.initial?.isActive ?? true,
         name: _nameCtrl.text.trim(),
         description: _descCtrl.text.trim(),
@@ -112,6 +133,9 @@ class _AddCourtBottomSheetState extends State<AddCourtBottomSheet> {
         advanceBookingDays: int.tryParse(_advanceCtrl.text) ?? 14,
         hasFloodlights: _amenities.contains(CourtAmenity.floodlights),
         amenities: _amenities.toList(),
+        peakStartHour: _hasPeak ? _peakStart.hour : 17,
+        peakEndHour: _hasPeak ? _peakEnd.hour : 23,
+        peakMultiplier: _hasPeak ? _peakMultiplier : 1.0,
       ),
     );
     Get.back();
@@ -161,8 +185,9 @@ class _AddCourtBottomSheetState extends State<AddCourtBottomSheet> {
                     label: Text(t.label),
                     selected: sel,
                     selectedColor: AppColors.primary,
+                    checkmarkColor: AppColors.onPrimary,
                     labelStyle: TextStyle(
-                      color: sel ? Colors.white : null,
+                      color: sel ? AppColors.onPrimary : null,
                       fontWeight: FontWeight.w600,
                     ),
                     onSelected: (_) => setState(() => _type = t),
@@ -266,6 +291,68 @@ class _AddCourtBottomSheetState extends State<AddCourtBottomSheet> {
               ),
               const SizedBox(height: 20),
 
+              // ── Peak Pricing ─────────────────────────────────────────────
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Peak Pricing', style: AppTextStyles.label),
+                      Text(
+                        'Charge more during busy hours',
+                        style: AppTextStyles.bodySmall
+                            .copyWith(color: AppColors.textGrey),
+                      ),
+                    ],
+                  ),
+                  Switch(
+                    value: _hasPeak,
+                    onChanged: (v) => setState(() => _hasPeak = v),
+                    activeThumbColor: AppColors.primary,
+                  ),
+                ],
+              ),
+              if (_hasPeak) ...[
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                        child: _timeButton('Peak From', _peakStart, true,
+                            isPeak: true)),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: Icon(Icons.arrow_forward, size: 16),
+                    ),
+                    Expanded(
+                        child: _timeButton('Peak To', _peakEnd, false,
+                            isPeak: true)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text('Peak multiplier',
+                          style: AppTextStyles.bodyMedium),
+                    ),
+                    const SizedBox(width: 12),
+                    _MultiSelect(
+                      values: const [1.25, 1.5, 1.75, 2.0],
+                      selected: _peakMultiplier,
+                      onSelect: (v) => setState(() => _peakMultiplier = v),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'PKR ${(double.tryParse(_priceCtrl.text) ?? 0).toStringAsFixed(0)} → PKR ${((double.tryParse(_priceCtrl.text) ?? 0) * _peakMultiplier).toStringAsFixed(0)} during peak',
+                  style: AppTextStyles.bodySmall
+                      .copyWith(color: AppColors.primary),
+                ),
+              ],
+              const SizedBox(height: 20),
+
               // ── Amenities ────────────────────────────────────────────────
               Text('Amenities', style: AppTextStyles.label),
               const SizedBox(height: 4),
@@ -293,9 +380,10 @@ class _AddCourtBottomSheetState extends State<AddCourtBottomSheet> {
     );
   }
 
-  Widget _timeButton(String label, TimeOfDay time, bool isStart) {
+  Widget _timeButton(String label, TimeOfDay time, bool isStart,
+      {bool isPeak = false}) {
     return OutlinedButton(
-      onPressed: () => _pickTime(isStart),
+      onPressed: () => isPeak ? _pickPeakTime(isStart) : _pickTime(isStart),
       style: OutlinedButton.styleFrom(
         minimumSize: const Size.fromHeight(48),
         side: BorderSide(color: AppColors.textGrey.withValues(alpha: 0.4)),
@@ -309,6 +397,57 @@ class _AddCourtBottomSheetState extends State<AddCourtBottomSheet> {
           Text(_fmt(time), style: AppTextStyles.titleMedium),
         ],
       ),
+    );
+  }
+}
+
+class _MultiSelect extends StatelessWidget {
+  final List<double> values;
+  final double selected;
+  final void Function(double) onSelect;
+
+  const _MultiSelect(
+      {required this.values,
+      required this.selected,
+      required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: values
+          .map((v) => GestureDetector(
+                onTap: () => onSelect(v),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  margin: const EdgeInsets.only(left: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: selected == v
+                        ? AppColors.primary.withValues(alpha: 0.18)
+                        : AppColors.textGrey.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: selected == v
+                          ? AppColors.primary
+                          : AppColors.textGrey.withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: Text(
+                    '×${v.toStringAsFixed(v == v.roundToDouble() ? 0 : 2)}',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: selected == v
+                          ? AppColors.primary
+                          : AppColors.textGrey,
+                      fontWeight: selected == v
+                          ? FontWeight.w700
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ),
+              ))
+          .toList(),
     );
   }
 }

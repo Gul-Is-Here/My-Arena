@@ -17,7 +17,7 @@ class BracketScreen extends StatefulWidget {
 }
 
 class _BracketScreenState extends State<BracketScreen> {
-  late final String id = Get.arguments as String;
+  late final String id = (Get.arguments as String?) ?? '';
 
   @override
   void initState() {

@@ -9,17 +9,20 @@ import '../../data/models/boost_request_model.dart';
 import '../../data/models/booking_model.dart';
 import '../../routes/app_routes.dart';
 import '../../widgets/arena_image.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_text_styles.dart';
 
-const _bg = Color(0xFF10131A);
-const _surface = Color(0xFF1D2026);
-const _surfaceLow = Color(0xFF191C22);
-const _outline = Color(0xFF3B494B);
-const _cyan = Color(0xFF00DBE9);
-const _greenFixed = Color(0xFF79FF5B);
-const _amber = Color(0xFFFFB59C);
-const _red = Color(0xFFFFB4AB);
-const _onSurface = Color(0xFFE1E2EB);
-const _onSurfaceVar = Color(0xFFB9CACB);
+const _bg = AppColors.background;
+const _surface = AppColors.surface;
+const _surfaceLow = AppColors.elevated;
+const _outline = AppColors.border;
+const _cyan = AppColors.secondary;
+const _greenFixed = AppColors.success;
+const _amber = AppColors.warning;
+const _red = AppColors.error;
+const _onSurface = AppColors.textPrimary;
+const _onSurfaceVar = AppColors.textSecondary;
+const _onFixed = AppColors.onPrimary;
 
 enum _Filter { all, approved, pending, inactive }
 
@@ -37,6 +40,9 @@ class MyArenasScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!Get.isRegistered<OwnerController>()) {
+      Get.put(OwnerController());
+    }
     final owner = OwnerController.to;
     final showSearch = false.obs;
     final query = ''.obs;
@@ -53,9 +59,9 @@ class MyArenasScreen extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('My Arenas',
-                      style: TextStyle(
-                          color: _onSurface, fontSize: 22, fontWeight: FontWeight.w800)),
+                  Text('My Arenas',
+                      style: AppTextStyles.headlineMedium.copyWith(
+                          color: _onSurface, fontSize: 22)),
                   Row(
                     children: [
                       Obx(() => IconButton(
@@ -64,8 +70,8 @@ class MyArenasScreen extends StatelessWidget {
                                 color: _onSurface),
                           )),
                       IconButton(
-                        style: IconButton.styleFrom(backgroundColor: _greenFixed),
-                        icon: const Icon(Icons.add, color: Color(0xFF0B0E14)),
+                        style: IconButton.styleFrom(backgroundColor: AppColors.primary),
+                        icon: const Icon(Icons.add, color: AppColors.onPrimary),
                         onPressed: () => Get.toNamed(AppRoutes.addArena),
                       ),
                     ],
@@ -79,10 +85,10 @@ class MyArenasScreen extends StatelessWidget {
                     child: TextField(
                       autofocus: true,
                       onChanged: (v) => query.value = v,
-                      style: const TextStyle(color: _onSurface),
+                      style: AppTextStyles.bodyLarge.copyWith(color: _onSurface),
                       decoration: InputDecoration(
                         hintText: 'Search arenas…',
-                        hintStyle: const TextStyle(color: _onSurfaceVar),
+                        hintStyle: AppTextStyles.bodyLarge.copyWith(color: _onSurfaceVar),
                         prefixIcon: const Icon(Icons.search, color: _onSurfaceVar),
                         filled: true,
                         fillColor: _surfaceLow,
@@ -185,10 +191,11 @@ class MyArenasScreen extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(value,
-              style: TextStyle(color: color, fontSize: 15, fontWeight: FontWeight.w800)),
+              style: AppTextStyles.label.copyWith(
+                  color: color, fontSize: 15, fontWeight: FontWeight.w800)),
           const SizedBox(width: 5),
           Text(label,
-              style: const TextStyle(
+              style: AppTextStyles.caption.copyWith(
                   color: _onSurfaceVar, fontSize: 11, fontWeight: FontWeight.w700)),
         ],
       ),
@@ -204,14 +211,14 @@ class MyArenasScreen extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
-            color: selected ? _cyan : _surfaceLow,
+            color: selected ? AppColors.primary : _surfaceLow,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: selected ? _cyan : _outline),
+            border: Border.all(color: selected ? AppColors.primary : _outline),
           ),
           alignment: Alignment.center,
           child: Text(label,
-              style: TextStyle(
-                  color: selected ? const Color(0xFF0B0E14) : _onSurfaceVar,
+              style: AppTextStyles.label.copyWith(
+                  color: selected ? AppColors.onPrimary : _onSurfaceVar,
                   fontSize: 13,
                   fontWeight: FontWeight.w700)),
         ),
@@ -275,11 +282,11 @@ class MyArenasScreen extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(pending ? Icons.hourglass_empty : Icons.circle,
-                              size: pending ? 12 : 8, color: const Color(0xFF0B0E14)),
+                              size: pending ? 12 : 8, color: _onFixed),
                           const SizedBox(width: 5),
                           Text(badgeLabel,
-                              style: const TextStyle(
-                                  color: Color(0xFF0B0E14),
+                              style: AppTextStyles.caption.copyWith(
+                                  color: _onFixed,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w800)),
                         ],
@@ -293,12 +300,12 @@ class MyArenasScreen extends StatelessWidget {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                         decoration: BoxDecoration(
-                          color: _cyan,
+                          color: AppColors.primary,
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        child: const Text('⚡ BOOSTED',
-                            style: TextStyle(
-                                color: Color(0xFF0B0E14),
+                        child: Text('⚡ BOOSTED',
+                            style: AppTextStyles.caption.copyWith(
+                                color: AppColors.onPrimary,
                                 fontSize: 11,
                                 fontWeight: FontWeight.w800)),
                       ),
@@ -315,8 +322,8 @@ class MyArenasScreen extends StatelessWidget {
                           border: const Border(top: BorderSide(color: _amber, width: 1.5)),
                         ),
                         alignment: Alignment.center,
-                        child: const Text('Awaiting Admin Approval',
-                            style: TextStyle(
+                        child: Text('Awaiting Admin Approval',
+                            style: AppTextStyles.bodySmall.copyWith(
                                 color: _amber, fontSize: 12, fontWeight: FontWeight.w700)),
                       ),
                     ),
@@ -333,7 +340,7 @@ class MyArenasScreen extends StatelessWidget {
                           child: Text(arena.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: AppTextStyles.titleMedium.copyWith(
                                   color: _onSurface, fontSize: 17, fontWeight: FontWeight.w800)),
                         ),
                         if (!pending && !rejectedLike)
@@ -350,7 +357,7 @@ class MyArenasScreen extends StatelessWidget {
                         child: Text(arena.description,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: _onSurfaceVar, fontSize: 13)),
+                            style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar, fontSize: 13)),
                       ),
                     const SizedBox(height: 14),
                     Container(
@@ -434,10 +441,10 @@ class MyArenasScreen extends StatelessWidget {
     return Expanded(
       child: Column(
         children: [
-          Text(label, style: const TextStyle(color: _onSurfaceVar, fontSize: 11.5)),
+          Text(label, style: AppTextStyles.caption.copyWith(color: _onSurfaceVar, fontSize: 11.5)),
           const SizedBox(height: 4),
           Text(value,
-              style: TextStyle(color: valueColor, fontSize: 15, fontWeight: FontWeight.w800)),
+              style: AppTextStyles.label.copyWith(color: valueColor, fontSize: 15, fontWeight: FontWeight.w800)),
         ],
       ),
     );
@@ -452,16 +459,17 @@ class MyArenasScreen extends StatelessWidget {
       child: OutlinedButton(
         onPressed: onTap,
         style: OutlinedButton.styleFrom(
-          backgroundColor: filled ? _greenFixed : Colors.transparent,
+          backgroundColor: filled ? AppColors.primary : Colors.transparent,
           foregroundColor: filled
-              ? const Color(0xFF0B0E14)
+              ? AppColors.onPrimary
               : (muted ? _onSurfaceVar : _onSurface),
-          side: BorderSide(color: filled ? _greenFixed : _outline),
+          side: BorderSide(color: filled ? AppColors.primary : _outline),
           padding: EdgeInsets.zero,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
         child: Text(label,
-            style: TextStyle(fontSize: 13, fontWeight: filled ? FontWeight.w800 : FontWeight.w600)),
+            style: AppTextStyles.button.copyWith(
+                fontSize: 13, fontWeight: filled ? FontWeight.w800 : FontWeight.w600)),
       ),
     );
   }
@@ -474,11 +482,11 @@ class MyArenasScreen extends StatelessWidget {
           const Icon(Icons.stadium_outlined, size: 72, color: _onSurfaceVar),
           const SizedBox(height: 16),
           Text(noArenasAtAll ? 'No arenas yet' : 'No arenas match this filter',
-              style: const TextStyle(color: _onSurface, fontSize: 17, fontWeight: FontWeight.w700)),
+              style: AppTextStyles.titleMedium.copyWith(color: _onSurface, fontSize: 17, fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
           Text(
             noArenasAtAll ? 'Tap + to add your first arena' : 'Try a different filter or search',
-            style: const TextStyle(color: _onSurfaceVar, fontSize: 13),
+            style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar, fontSize: 13),
           ),
         ],
       ),

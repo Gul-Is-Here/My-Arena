@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -81,6 +80,36 @@ class BoostController extends GetxController {
     }
   }
 
+  bool hasActiveBoost(String arenaId) {
+    return requests.any((r) =>
+        r.arenaId == arenaId &&
+        (r.status == BoostStatus.pending ||
+            (r.status == BoostStatus.approved &&
+                _boostEndDate(r).isAfter(DateTime.now()))));
+  }
+
+  String activeBoostMessage(String arenaId) {
+    final r = requests.firstWhereOrNull((r) =>
+        r.arenaId == arenaId &&
+        (r.status == BoostStatus.pending ||
+            (r.status == BoostStatus.approved &&
+                _boostEndDate(r).isAfter(DateTime.now()))));
+    if (r == null) return '';
+    if (r.status == BoostStatus.pending) return 'A boost request is already pending review.';
+    return 'This arena is boosted until ${_boostEndDate(r).day}/${_boostEndDate(r).month}/${_boostEndDate(r).year}.';
+  }
+
+  DateTime _boostEndDate(BoostRequestModel r) {
+    switch (r.duration) {
+      case BoostDuration.oneWeek:
+        return r.createdAt.add(const Duration(days: 7));
+      case BoostDuration.twoWeeks:
+        return r.createdAt.add(const Duration(days: 14));
+      case BoostDuration.oneMonth:
+        return r.createdAt.add(const Duration(days: 30));
+    }
+  }
+
   Future<void> pickScreenshot() async {
     final picked = await _picker.pickImage(source: ImageSource.gallery);
     if (picked != null) screenshot.value = picked;
@@ -91,6 +120,15 @@ class BoostController extends GetxController {
     required String arenaName,
     required BoostType type,
   }) async {
+    if (hasActiveBoost(arenaId)) {
+      Get.snackbar(
+        'Already boosted',
+        activeBoostMessage(arenaId),
+        snackPosition: SnackPosition.BOTTOM,
+        margin: const EdgeInsets.all(16),
+      );
+      return;
+    }
     if (screenshot.value == null) {
       Get.snackbar(
         'Payment proof required',
@@ -130,7 +168,7 @@ class BoostController extends GetxController {
             : null,
         createdAt: DateTime.now(),
       );
-      await _boostService.createRequest(req, File(screenshot.value!.path));
+      await _boostService.createRequest(req, screenshot.value!);
       isSubmitting.value = false;
       _resetForm();
       Get.back();

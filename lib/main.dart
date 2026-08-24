@@ -1,5 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 
@@ -13,10 +14,24 @@ import 'app/theme/theme_controller.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await GetStorage.init();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await NotificationService.init();
+
+  // cloud_firestore tears down a completed transaction's platform EventChannel
+  // by calling "cancel" on it; if the transaction already finished (or a hot
+  // reload reset plugin registration), the native side has nothing to cancel
+  // and Flutter reports a MissingPluginException. The transaction/listener has
+  // already done its job by then, so this specific exception is safe to drop.
+  final previousOnError = FlutterError.onError;
+  FlutterError.onError = (FlutterErrorDetails details) {
+    final isBenignFirestoreCancel =
+        details.exception is MissingPluginException &&
+        details.exception.toString().contains('cancel') &&
+        details.exception.toString().contains('firebase_firestore');
+    if (isBenignFirestoreCancel) return;
+    previousOnError?.call(details);
+  };
+
   runApp(const MyArenaApp());
 }
 

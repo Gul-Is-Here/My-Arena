@@ -25,7 +25,7 @@ class TournamentDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = TournamentController.to;
-    final String id = Get.arguments as String;
+    final String id = (Get.arguments as String?) ?? '';
 
     return Scaffold(
       body: Obx(() {

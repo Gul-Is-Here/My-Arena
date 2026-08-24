@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 
 import '../controllers/auth_controller.dart';
@@ -19,6 +20,7 @@ class OwnerController extends GetxController {
   final RxList<ArenaModel> myArenas = <ArenaModel>[].obs;
   final Rx<RevenueRange> revenueRange = RevenueRange.daily.obs;
   final RxBool isLoading = true.obs;
+  final RxInt shellTab = 0.obs;
 
   // Live booking stats from Firestore
   final RxInt totalBookings = 0.obs;
@@ -27,6 +29,8 @@ class OwnerController extends GetxController {
 
   StreamSubscription? _arenaSub;
   StreamSubscription? _bookingsSub;
+  // One court-subcollection stream per arena, keyed by arenaId.
+  final Map<String, StreamSubscription> _courtSubs = {};
 
   String get _uid => AuthController.to.currentUser.value?.uid ?? '';
 
@@ -41,23 +45,62 @@ class OwnerController extends GetxController {
     _arenaSub?.cancel();
     if (_uid.isEmpty) return;
     isLoading.value = true;
-    _arenaSub = _arenaService.ownerArenas(_uid).listen((arenas) async {
-      // Fetch courts for each arena
-      final enriched = <ArenaModel>[];
-      for (final arena in arenas) {
-        final courtsSnap = await FirebaseFirestore.instance
-            .collection('arenas')
-            .doc(arena.id)
-            .collection('courts')
-            .get();
-        final courts = courtsSnap.docs
-            .map((d) => CourtModel.fromMap({...d.data(), 'id': d.id}))
-            .toList();
-        enriched.add(arena.copyWith(courts: courts));
-      }
-      myArenas.assignAll(enriched);
+
+    void onArenas(List<ArenaModel> arenas) {
+      // Preserve already-loaded courts: merge incoming arena docs with the
+      // courts that court-subcollection streams have already populated.
+      final merged = arenas.map((a) {
+        final existing = myArenas.firstWhereOrNull((e) => e.id == a.id);
+        return existing != null && existing.courts.isNotEmpty
+            ? a.copyWith(courts: existing.courts)
+            : a;
+      }).toList();
+      myArenas.assignAll(merged);
       isLoading.value = false;
-    }, onError: (_) => isLoading.value = false);
+      _syncCourtStreams(merged);
+    }
+
+    final user = AuthController.to.currentUser.value;
+    if (user?.isArenaStaff == true && user!.assignedArenas.isNotEmpty) {
+      _arenaSub = _arenaService.staffArenas(user.assignedArenas).listen(
+        onArenas,
+        onError: (_) => isLoading.value = false,
+      );
+    } else {
+      _arenaSub = _arenaService.ownerArenas(_uid).listen(
+        onArenas,
+        onError: (_) => isLoading.value = false,
+      );
+    }
+  }
+
+  /// Opens a Firestore courts-subcollection stream for every arena in [arenas]
+  /// that doesn't already have one, and cancels streams for arenas that are
+  /// no longer in the list. Each stream update merges courts directly into
+  /// [myArenas] so the UI rebuilds reactively without any manual refresh.
+  void _syncCourtStreams(List<ArenaModel> arenas) {
+    final liveIds = arenas.map((a) => a.id).toSet();
+
+    // Cancel subs for arenas that have been removed.
+    for (final id in _courtSubs.keys.toList()) {
+      if (!liveIds.contains(id)) {
+        _courtSubs.remove(id)?.cancel();
+      }
+    }
+
+    // Open subs for arenas we haven't subscribed to yet.
+    for (final arena in arenas) {
+      if (_courtSubs.containsKey(arena.id)) continue;
+      _courtSubs[arena.id] = _arenaService.courts(arena.id).listen(
+        (courts) {
+          final idx = myArenas.indexWhere((a) => a.id == arena.id);
+          if (idx == -1) return;
+          myArenas[idx] = myArenas[idx].copyWith(courts: courts);
+          myArenas.refresh();
+        },
+        onError: (_) {},
+      );
+    }
   }
 
   void _listenBookingStats() {
@@ -184,23 +227,66 @@ class OwnerController extends GetxController {
     myArenas.refresh();
     try {
       await _arenaService.updateCourt(arenaId, courtId, {'isActive': !current});
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Toggle court active failed: $e');
       final reverted = [...arena.courts];
       reverted[courtIndex] = reverted[courtIndex].copyWith(isActive: current);
       myArenas[arenaIndex] = arena.copyWith(courts: reverted);
       myArenas.refresh();
+      Get.snackbar('Failed', e.toString().contains('permission-denied')
+          ? 'You don\'t have permission to update this court.'
+          : 'Could not toggle court. Please try again.',
+          snackPosition: SnackPosition.BOTTOM,
+          margin: const EdgeInsets.all(16));
     }
   }
 
+  Future<void> refreshCourts(String arenaId) async {
+    final index = myArenas.indexWhere((a) => a.id == arenaId);
+    if (index == -1) return;
+    try {
+      final courtsSnap = await FirebaseFirestore.instance
+          .collection('arenas')
+          .doc(arenaId)
+          .collection('courts')
+          .get();
+      final courts = courtsSnap.docs
+          .map((d) => CourtModel.fromMap({...d.data(), 'id': d.id}))
+          .toList();
+      myArenas[index] = myArenas[index].copyWith(courts: courts);
+      myArenas.refresh();
+    } catch (_) {}
+  }
+
   Future<void> deleteArena(String arenaId) async {
-    await _arenaService.deleteArena(arenaId);
-    myArenas.removeWhere((a) => a.id == arenaId);
+    try {
+      await _arenaService.deleteArena(arenaId);
+    } catch (e) {
+      debugPrint('Delete arena failed: $e');
+      final msg = e.toString();
+      if (msg.contains('permission-denied')) {
+        Get.snackbar('Permission Denied',
+            'You don\'t have permission to delete this arena.',
+            snackPosition: SnackPosition.BOTTOM,
+            margin: const EdgeInsets.all(16));
+      } else {
+        Get.snackbar('Delete Failed',
+            'Could not delete the arena. Please try again.',
+            snackPosition: SnackPosition.BOTTOM,
+            margin: const EdgeInsets.all(16));
+      }
+      rethrow;
+    }
   }
 
   @override
   void onClose() {
     _arenaSub?.cancel();
     _bookingsSub?.cancel();
+    for (final sub in _courtSubs.values) {
+      sub.cancel();
+    }
+    _courtSubs.clear();
     super.onClose();
   }
 }

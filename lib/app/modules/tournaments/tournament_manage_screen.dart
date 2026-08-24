@@ -20,7 +20,7 @@ class TournamentManageScreen extends StatefulWidget {
 }
 
 class _TournamentManageScreenState extends State<TournamentManageScreen> {
-  late final String id = Get.arguments as String;
+  late final String id = (Get.arguments as String?) ?? '';
 
   @override
   void initState() {

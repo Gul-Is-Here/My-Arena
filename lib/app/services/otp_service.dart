@@ -68,6 +68,194 @@ class OtpService {
         'newPassword': newPassword,
       });
 
+  // ── Account deletion ─────────────────────────────────────────────────
+
+  /// Calls the `deleteAccount` Cloud Function with the user's ID token.
+  /// The function deletes Auth user, anonymises Firestore PII, and removes
+  /// Storage avatar. Throws on failure.
+  Future<void> deleteAccount(String idToken) async {
+    final uri = Uri.parse('$_baseUrl/deleteAccount');
+    if (kDebugMode) debugPrint('OtpService → POST $uri [deleteAccount]');
+
+    final response = await http
+        .post(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $idToken',
+          },
+          body: jsonEncode({}),
+        )
+        .timeout(const Duration(seconds: 30));
+
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    if (kDebugMode) debugPrint('OtpService ← ${response.statusCode} $json');
+
+    if (response.statusCode != 200 || json['success'] != true) {
+      throw Exception(
+          json['message'] ?? 'Failed to delete account (HTTP ${response.statusCode})');
+    }
+  }
+
+  // ── Owner account activation ─────────────────────────────────────────
+
+  /// Called from the activation screen. Validates the code server-side,
+  /// enables the Firebase Auth account, and sets the owner's password.
+  Future<void> activateOwnerAccount({
+    required String email,
+    required String code,
+    required String password,
+  }) =>
+      _post('inviteOwner', {
+        'action': 'accept_invitation',
+        'email': email,
+        'code': code,
+        'password': password,
+      });
+
+  // ── Admin: invite / resend / revoke ──────────────────────────────────
+
+  Future<Map<String, dynamic>> inviteOwner({
+    required String email,
+    required String name,
+    required String phone,
+    required String idToken,
+  }) async {
+    final uri = Uri.parse('$_baseUrl/inviteOwner');
+    final response = await http
+        .post(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $idToken',
+          },
+          body: jsonEncode({'action': 'invite_owner', 'email': email, 'name': name, 'phone': phone}),
+        )
+        .timeout(const Duration(seconds: 30));
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200 || json['success'] != true) {
+      throw Exception(json['message'] ?? 'Failed to send invitation');
+    }
+    return json;
+  }
+
+  Future<void> resendInvitation(String invitationId, String idToken) async {
+    final uri = Uri.parse('$_baseUrl/inviteOwner');
+    final response = await http
+        .post(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $idToken',
+          },
+          body: jsonEncode({'action': 'resend_invitation', 'invitationId': invitationId}),
+        )
+        .timeout(const Duration(seconds: 30));
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200 || json['success'] != true) {
+      throw Exception(json['message'] ?? 'Failed to resend invitation');
+    }
+  }
+
+  Future<void> revokeInvitation(String invitationId, String idToken) async {
+    final uri = Uri.parse('$_baseUrl/inviteOwner');
+    final response = await http
+        .post(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $idToken',
+          },
+          body: jsonEncode({'action': 'revoke_invitation', 'invitationId': invitationId}),
+        )
+        .timeout(const Duration(seconds: 30));
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200 || json['success'] != true) {
+      throw Exception(json['message'] ?? 'Failed to revoke invitation');
+    }
+  }
+
+  // ── Admin: invite / resend / revoke / activate ───────────────────────
+
+  Future<Map<String, dynamic>> inviteAdmin({
+    required String email,
+    required String name,
+    required String phone,
+    required String role,
+    required String idToken,
+  }) async {
+    final uri = Uri.parse('$_baseUrl/inviteAdmin');
+    final response = await http
+        .post(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $idToken',
+          },
+          body: jsonEncode({
+            'action': 'invite_admin',
+            'email': email,
+            'name': name,
+            'phone': phone,
+            'role': role,
+          }),
+        )
+        .timeout(const Duration(seconds: 30));
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200 || json['success'] != true) {
+      throw Exception(json['message'] ?? 'Failed to send admin invitation');
+    }
+    return json;
+  }
+
+  Future<void> resendAdminInvitation(String invitationId, String idToken) async {
+    final uri = Uri.parse('$_baseUrl/inviteAdmin');
+    final response = await http
+        .post(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $idToken',
+          },
+          body: jsonEncode({'action': 'resend_invitation', 'invitationId': invitationId}),
+        )
+        .timeout(const Duration(seconds: 30));
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200 || json['success'] != true) {
+      throw Exception(json['message'] ?? 'Failed to resend invitation');
+    }
+  }
+
+  Future<void> revokeAdminInvitation(String invitationId, String idToken) async {
+    final uri = Uri.parse('$_baseUrl/inviteAdmin');
+    final response = await http
+        .post(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $idToken',
+          },
+          body: jsonEncode({'action': 'revoke_invitation', 'invitationId': invitationId}),
+        )
+        .timeout(const Duration(seconds: 30));
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200 || json['success'] != true) {
+      throw Exception(json['message'] ?? 'Failed to revoke invitation');
+    }
+  }
+
+  Future<void> activateAdminAccount({
+    required String email,
+    required String code,
+    required String password,
+  }) =>
+      _post('inviteAdmin', {
+        'action': 'accept_invitation',
+        'email': email,
+        'code': code,
+        'password': password,
+      });
+
   // ── HTTP helper ──────────────────────────────────────────────────────
 
   Future<void> _post(String endpoint, Map<String, dynamic> body) async {

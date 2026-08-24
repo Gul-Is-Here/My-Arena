@@ -33,8 +33,10 @@ class ReportFilterBar extends StatelessWidget {
                     label: Text(label),
                     selected: selected,
                     selectedColor: AppColors.primary,
+                    checkmarkColor: AppColors.onPrimary,
                     labelStyle: AppTextStyles.bodySmall.copyWith(
-                      color: selected ? Colors.white : AppColors.textGrey,
+                      color:
+                          selected ? AppColors.onPrimary : AppColors.textGrey,
                       fontWeight: FontWeight.w600,
                     ),
                     onSelected: (_) async {

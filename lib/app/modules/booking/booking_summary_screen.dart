@@ -5,7 +5,9 @@ import 'package:get/get.dart';
 import '../../controllers/booking_controller.dart';
 import '../../data/models/booking_model.dart';
 import '../../data/models/court_model.dart';
+import '../../data/models/promotion_model.dart';
 import '../../routes/app_routes.dart';
+import '../../theme/app_colors.dart';
 import '../../widgets/arena_image.dart';
 import '../../widgets/slot_picker_widgets.dart';
 
@@ -31,7 +33,7 @@ class BookingSummaryScreen extends StatelessWidget {
         return SlotPickerColors.green;
       case BookingStatus.rejected:
       case BookingStatus.cancelled:
-        return const Color(0xFFFF5252);
+        return AppColors.error;
       default:
         return SlotPickerColors.pending;
     }
@@ -153,7 +155,7 @@ class BookingSummaryScreen extends StatelessWidget {
                   const Text(
                     'Payment Details',
                     style: TextStyle(
-                      color: SlotPickerColors.green,
+                      color: SlotPickerColors.greenCta,
                       fontWeight: FontWeight.w700,
                       fontSize: 14,
                     ),
@@ -171,10 +173,47 @@ class BookingSummaryScreen extends StatelessWidget {
                         _amountRow('Price per hour',
                             'PKR ${b.pricePerHour.toStringAsFixed(0)}'),
                         const SizedBox(height: 10),
-                        _amountRow(
-                          'Subtotal (${b.totalHours} hr${b.totalHours > 1 ? 's' : ''})',
-                          'PKR ${b.totalAmount.toStringAsFixed(0)}',
-                        ),
+                        Obx(() {
+                          final discount = c.promoDiscount;
+                          final base = (b.totalAmountStored ?? b.pricePerHour * b.totalHours) +
+                              b.posAddOnsTotal - b.posDiscount;
+                          return Column(
+                            children: [
+                              _amountRow(
+                                'Subtotal (${b.totalHours} hr${b.totalHours > 1 ? 's' : ''})',
+                                'PKR ${base.toStringAsFixed(0)}',
+                              ),
+                              if (discount > 0) ...[
+                                const SizedBox(height: 6),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(children: [
+                                      const Icon(Icons.local_offer_rounded,
+                                          size: 13, color: SlotPickerColors.green),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Promo (${c.appliedPromo.value?.code ?? ''})',
+                                        style: const TextStyle(
+                                          color: SlotPickerColors.green,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ]),
+                                    Text(
+                                      '− PKR ${discount.toStringAsFixed(0)}',
+                                      style: const TextStyle(
+                                        color: SlotPickerColors.green,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          );
+                        }),
                         Divider(
                           height: 24,
                           color: Colors.white.withValues(alpha: 0.08),
@@ -220,40 +259,52 @@ class BookingSummaryScreen extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 6),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'PKR ${b.depositAmount.toStringAsFixed(0)}',
-                              style: const TextStyle(
-                                color: SlotPickerColors.green,
-                                fontSize: 22,
-                                fontWeight: FontWeight.w800,
+                        Obx(() {
+                          final disc = c.promoDiscount;
+                          final base = (b.totalAmountStored ?? b.pricePerHour * b.totalHours) +
+                              b.posAddOnsTotal - b.posDiscount;
+                          final total = (base - disc).clamp(0, double.infinity);
+                          final deposit = total * BookingSettings.depositPercent / 100;
+                          final remaining = total - deposit;
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'PKR ${deposit.toStringAsFixed(0)}',
+                                    style: const TextStyle(
+                                      color: SlotPickerColors.greenCta,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${BookingSettings.depositPercent}% of total',
+                                    style: const TextStyle(
+                                      color: SlotPickerColors.muted,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
-                            Text(
-                              '${BookingSettings.depositPercent}% of total',
-                              style: const TextStyle(
-                                color: SlotPickerColors.muted,
-                                fontSize: 11,
+                              const SizedBox(height: 4),
+                              Text(
+                                'PKR ${remaining.toStringAsFixed(0)} remaining, payable at the venue',
+                                style: const TextStyle(
+                                  color: SlotPickerColors.muted,
+                                  fontSize: 11,
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'PKR ${b.remainingAmount.toStringAsFixed(0)} remaining, payable at the venue',
-                            style: const TextStyle(
-                              color: SlotPickerColors.muted,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ),
+                            ],
+                          );
+                        }),
                       ],
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  const _PromoSection(),
                   const SizedBox(height: 16),
                   Container(
                     padding: const EdgeInsets.all(14),
@@ -297,18 +348,130 @@ class BookingSummaryScreen extends StatelessWidget {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  // ── Recurring toggle ─────────────────────────────────
+                  Obx(() => _OptionCard(
+                    icon: Icons.repeat_rounded,
+                    title: 'Recurring weekly',
+                    subtitle: c.isRecurring.value
+                        ? '${c.recurringWeeks.value} weeks — every ${_weekdayOf(b.date)}'
+                        : 'Book the same slot every week',
+                    enabled: c.isRecurring.value,
+                    onToggle: (v) => c.isRecurring.value = v,
+                    child: c.isRecurring.value
+                        ? Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [4, 8, 12].map((w) {
+                                final sel = c.recurringWeeks.value == w;
+                                return GestureDetector(
+                                  onTap: () => c.recurringWeeks.value = w,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: sel
+                                          ? SlotPickerColors.greenCta.withValues(alpha: 0.18)
+                                          : SlotPickerColors.surface,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: sel
+                                            ? SlotPickerColors.greenCta
+                                            : Colors.white.withValues(alpha: 0.1),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '$w wks',
+                                      style: TextStyle(
+                                        color: sel
+                                            ? SlotPickerColors.greenCta
+                                            : SlotPickerColors.muted,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          )
+                        : null,
+                  )),
+                  const SizedBox(height: 12),
+                  // ── Group booking toggle ──────────────────────────────
+                  Obx(() => _OptionCard(
+                    icon: Icons.group_rounded,
+                    title: 'Group / team booking',
+                    subtitle: c.isGroupBooking.value
+                        ? 'Split: PKR ${(b.totalAmount / c.groupSize.value).toStringAsFixed(0)} per player'
+                        : 'Share the slot and split the bill',
+                    enabled: c.isGroupBooking.value,
+                    onToggle: (v) => c.isGroupBooking.value = v,
+                    child: c.isGroupBooking.value
+                        ? Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Row(
+                              children: [
+                                const Text('Players:',
+                                    style: TextStyle(
+                                        color: SlotPickerColors.muted,
+                                        fontSize: 13)),
+                                const Spacer(),
+                                _Stepper(
+                                  value: c.groupSize.value,
+                                  min: 2,
+                                  max: 20,
+                                  onChanged: (v) => c.groupSize.value = v,
+                                ),
+                              ],
+                            ),
+                          )
+                        : null,
+                  )),
                 ],
               ),
             ),
-            _BottomBar(
-              label:
-                  'Pay Deposit — PKR ${b.depositAmount.toStringAsFixed(0)}',
-              onPressed: () => Get.toNamed(AppRoutes.depositPayment),
-            ),
+            Obx(() {
+              final deposit = c.depositAmount;
+              final perPerson = c.isGroupBooking.value
+                  ? deposit / c.groupSize.value
+                  : deposit;
+              final weeks = c.isRecurring.value ? c.recurringWeeks.value : 1;
+              final label = c.isRecurring.value
+                  ? 'Pay Week 1 of $weeks Deposit — PKR ${deposit.toStringAsFixed(0)}'
+                  : c.isGroupBooking.value
+                      ? 'Pay Deposit — PKR ${perPerson.toStringAsFixed(0)}/person'
+                      : 'Pay Deposit — PKR ${deposit.toStringAsFixed(0)}';
+              return _BottomBar(
+                label: label,
+                onPressed: () async {
+                  final error = await c.validateSlots();
+                  if (error != null) {
+                    Get.snackbar(
+                      'Slot Unavailable',
+                      error,
+                      snackPosition: SnackPosition.TOP,
+                      duration: const Duration(seconds: 4),
+                      backgroundColor: AppColors.error.withValues(alpha: 0.9),
+                      colorText: Colors.white,
+                    );
+                    Get.back(); // return to slot picker
+                    return;
+                  }
+                  c.buildDraft();
+                  Get.toNamed(AppRoutes.depositPayment);
+                },
+              );
+            }),
           ],
         ),
       ),
     );
+  }
+
+  static String _weekdayOf(DateTime d) {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return days[d.weekday - 1];
   }
 
   Widget _iconLine(IconData icon, String text) {
@@ -369,7 +532,7 @@ class _Header extends StatelessWidget {
             child: Text(
               'Booking Summary',
               style: TextStyle(
-                color: SlotPickerColors.green,
+                color: SlotPickerColors.onBg,
                 fontSize: 17,
                 fontWeight: FontWeight.w700,
               ),
@@ -412,10 +575,10 @@ class _InfoTile extends StatelessWidget {
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: SlotPickerColors.green.withValues(alpha: 0.12),
+              color: SlotPickerColors.greenCta.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, size: 18, color: SlotPickerColors.green),
+            child: Icon(icon, size: 18, color: SlotPickerColors.greenCta),
           ),
           const SizedBox(width: 12),
           Column(
@@ -449,7 +612,7 @@ class _InfoTile extends StatelessWidget {
 
 class _BottomBar extends StatelessWidget {
   final String label;
-  final VoidCallback onPressed;
+  final Future<void> Function() onPressed;
 
   const _BottomBar({required this.label, required this.onPressed});
 
@@ -468,7 +631,7 @@ class _BottomBar extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
-          onTap: onPressed,
+          onTap: () async => onPressed(),
           child: Container(
             padding: const EdgeInsets.symmetric(vertical: 16),
             alignment: Alignment.center,
@@ -476,12 +639,12 @@ class _BottomBar extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Icon(Icons.payments_outlined,
-                    size: 18, color: Color(0xFF0A1628)),
+                    size: 18, color: AppColors.onPrimary),
                 const SizedBox(width: 8),
                 Text(
                   label,
                   style: const TextStyle(
-                    color: Color(0xFF0A1628),
+                    color: AppColors.onPrimary,
                     fontWeight: FontWeight.w800,
                     fontSize: 15,
                   ),
@@ -491,6 +654,726 @@ class _BottomBar extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ── Reusable toggle option card ────────────────────────────────────────────────
+
+class _OptionCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool enabled;
+  final ValueChanged<bool> onToggle;
+  final Widget? child;
+
+  const _OptionCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.enabled,
+    required this.onToggle,
+    this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: enabled
+            ? SlotPickerColors.greenCta.withValues(alpha: 0.07)
+            : SlotPickerColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: enabled
+              ? SlotPickerColors.greenCta.withValues(alpha: 0.4)
+              : Colors.white.withValues(alpha: 0.06),
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(icon,
+                  size: 20,
+                  color: enabled
+                      ? SlotPickerColors.greenCta
+                      : SlotPickerColors.muted),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: enabled
+                            ? SlotPickerColors.greenCta
+                            : SlotPickerColors.onBg,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: SlotPickerColors.muted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: enabled,
+                onChanged: onToggle,
+                activeColor: SlotPickerColors.greenCta,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ],
+          ),
+          if (child != null) child!,
+        ],
+      ),
+    );
+  }
+}
+
+// ── Numeric stepper ────────────────────────────────────────────────────────────
+
+class _Stepper extends StatelessWidget {
+  final int value;
+  final int min;
+  final int max;
+  final ValueChanged<int> onChanged;
+
+  const _Stepper({
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _btn(Icons.remove, value > min ? () => onChanged(value - 1) : null),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            '$value',
+            style: const TextStyle(
+              color: SlotPickerColors.onBg,
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+            ),
+          ),
+        ),
+        _btn(Icons.add, value < max ? () => onChanged(value + 1) : null),
+      ],
+    );
+  }
+
+  Widget _btn(IconData icon, VoidCallback? onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(
+          color: onTap != null
+              ? SlotPickerColors.greenCta.withValues(alpha: 0.15)
+              : SlotPickerColors.surface,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          icon,
+          size: 16,
+          color: onTap != null
+              ? SlotPickerColors.greenCta
+              : SlotPickerColors.muted,
+        ),
+      ),
+    );
+  }
+}
+
+class _PromoSection extends StatefulWidget {
+  const _PromoSection();
+
+  @override
+  State<_PromoSection> createState() => _PromoSectionState();
+}
+
+class _PromoSectionState extends State<_PromoSection> {
+  final _ctrl = TextEditingController();
+  bool _showManualEntry = false;
+  late final BookingController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = Get.find<BookingController>();
+    // Load available offers if not already loaded.
+    if (_c.arenaOffers.isEmpty && !_c.offersLoading.value) {
+      _c.loadOffersForArena();
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _openManualEntry() {
+    setState(() => _showManualEntry = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final applied = _c.appliedPromo.value;
+      final error = _c.promoError.value;
+      final loading = _c.promoLoading.value;
+      final offers = _c.arenaOffers;
+      final offersLoading = _c.offersLoading.value;
+      final recommended = _c.recommendedOffer;
+      final almostUnlocked = _c.almostUnlockedOffer;
+
+      // ── Applied state ───────────────────────────────────────────────
+      if (applied != null) {
+        final saving = _c.promoDiscount;
+        return _AppliedOfferTile(
+          promo: applied,
+          saving: saving,
+          onRemove: () {
+            _ctrl.clear();
+            _c.clearPromo();
+            setState(() => _showManualEntry = false);
+          },
+        );
+      }
+
+      // ── Offer discovery + manual entry ──────────────────────────────
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Section header
+          const Row(
+            children: [
+              Icon(Icons.local_offer_rounded,
+                  color: SlotPickerColors.greenCta, size: 16),
+              SizedBox(width: 6),
+              Text(
+                'Available Offers',
+                style: TextStyle(
+                  color: SlotPickerColors.greenCta,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Loading state
+          if (offersLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: SlotPickerColors.greenCta,
+                  ),
+                ),
+              ),
+            )
+
+          // "Almost unlocked" hint (shown when no eligible offers exist)
+          else if (offers.isEmpty && almostUnlocked != null)
+            _AlmostUnlockedBanner(
+              offer: almostUnlocked,
+              currentTotal: _c.totalAmount,
+            )
+
+          // No offers at all
+          else if (offers.isEmpty)
+            const SizedBox.shrink()
+
+          // Offer cards
+          else ...[
+            // Recommended offer (first eligible)
+            if (recommended != null)
+              _OfferSuggestionCard(
+                promo: recommended,
+                isRecommended: true,
+                bookingTotal: _c.totalAmount,
+                onApply: () => _c.applyOffer(recommended),
+              ),
+            // Remaining offers
+            ...offers
+                .where((o) => o.id != recommended?.id)
+                .map((o) => _OfferSuggestionCard(
+                      promo: o,
+                      isRecommended: false,
+                      bookingTotal: _c.totalAmount,
+                      onApply: () => _c.applyOffer(o),
+                    )),
+            // Almost unlocked (shown alongside other offers)
+            if (almostUnlocked != null)
+              _AlmostUnlockedBanner(
+                offer: almostUnlocked,
+                currentTotal: _c.totalAmount,
+              ),
+          ],
+
+          // Error from manual code entry
+          if (error != null) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.error.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border:
+                    Border.all(color: AppColors.error.withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.error_outline,
+                      color: AppColors.error, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      error,
+                      style: const TextStyle(
+                          color: AppColors.error, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 12),
+
+          // Manual code entry — secondary action
+          if (!_showManualEntry)
+            GestureDetector(
+              onTap: _openManualEntry,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.keyboard_outlined,
+                      size: 14, color: SlotPickerColors.muted),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Have a promo code?',
+                    style: TextStyle(
+                      color: SlotPickerColors.muted
+                          .withValues(alpha: 0.7),
+                      fontSize: 12,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            _ManualCodeEntry(
+              ctrl: _ctrl,
+              loading: loading,
+              onApply: () {
+                final code = _ctrl.text.trim();
+                if (code.isEmpty) return;
+                _c.applyPromoCode(code);
+              },
+              onDismiss: () {
+                setState(() => _showManualEntry = false);
+                _ctrl.clear();
+                _c.promoError.value = null;
+              },
+            ),
+        ],
+      );
+    });
+  }
+}
+
+// ── Applied offer tile ────────────────────────────────────────────────────────
+
+class _AppliedOfferTile extends StatelessWidget {
+  final PromotionModel promo;
+  final double saving;
+  final VoidCallback onRemove;
+  const _AppliedOfferTile(
+      {required this.promo, required this.saving, required this.onRemove});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: SlotPickerColors.green.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border:
+            Border.all(color: SlotPickerColors.green.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.check_circle_rounded,
+                  color: SlotPickerColors.green, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Offer Applied — ${promo.sourceLabel}',
+                      style: const TextStyle(
+                        color: SlotPickerColors.muted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${promo.code} · ${promo.discountLabel}',
+                      style: const TextStyle(
+                        color: SlotPickerColors.green,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              GestureDetector(
+                onTap: onRemove,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: SlotPickerColors.muted.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close,
+                      color: SlotPickerColors.muted, size: 16),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: SlotPickerColors.green.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              'You\'re saving Rs. ${saving.toStringAsFixed(0)} 🎉',
+              style: const TextStyle(
+                color: SlotPickerColors.green,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Offer suggestion card ─────────────────────────────────────────────────────
+
+class _OfferSuggestionCard extends StatelessWidget {
+  final PromotionModel promo;
+  final bool isRecommended;
+  final double bookingTotal;
+  final VoidCallback onApply;
+
+  const _OfferSuggestionCard({
+    required this.promo,
+    required this.isRecommended,
+    required this.bookingTotal,
+    required this.onApply,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final eligible = promo.isEligibleFor(bookingTotal);
+    final saving = promo.discountFor(bookingTotal);
+    final accentColor = promo.isPlatform
+        ? const Color(0xFF6C63FF)
+        : SlotPickerColors.greenCta;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: SlotPickerColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isRecommended
+              ? accentColor.withValues(alpha: 0.4)
+              : Colors.white.withValues(alpha: 0.07),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    if (isRecommended) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: accentColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          'RECOMMENDED',
+                          style: TextStyle(
+                            color: accentColor,
+                            fontSize: 8,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        promo.sourceLabel.toUpperCase(),
+                        style: const TextStyle(
+                          color: SlotPickerColors.muted,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.7,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  promo.discountLabel,
+                  style: TextStyle(
+                    color: eligible ? accentColor : SlotPickerColors.muted,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  promo.title,
+                  style: const TextStyle(
+                    color: SlotPickerColors.onBg,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                if (eligible && saving > 0) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'You save Rs. ${saving.toStringAsFixed(0)}',
+                    style: const TextStyle(
+                      color: SlotPickerColors.green,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+                if (!eligible && promo.minBookingAmount != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Min Rs. ${promo.minBookingAmount!.toStringAsFixed(0)} required',
+                    style: const TextStyle(
+                      color: SlotPickerColors.muted,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          if (eligible)
+            GestureDetector(
+              onTap: onApply,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: accentColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: accentColor.withValues(alpha: 0.3)),
+                ),
+                child: Text(
+                  'Apply',
+                  style: TextStyle(
+                    color: accentColor,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Almost unlocked banner ────────────────────────────────────────────────────
+
+class _AlmostUnlockedBanner extends StatelessWidget {
+  final PromotionModel offer;
+  final double currentTotal;
+  const _AlmostUnlockedBanner(
+      {required this.offer, required this.currentTotal});
+
+  @override
+  Widget build(BuildContext context) {
+    final gap = (offer.minBookingAmount! - currentTotal).ceil();
+    final savingLabel = offer.discountLabel;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF3D2A00).withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+            color: const Color(0xFFFFB946).withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          const Text('🔓', style: TextStyle(fontSize: 18)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Add Rs. $gap more to unlock $savingLabel',
+              style: const TextStyle(
+                color: Color(0xFFFFB946),
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Manual code entry ─────────────────────────────────────────────────────────
+
+class _ManualCodeEntry extends StatelessWidget {
+  final TextEditingController ctrl;
+  final bool loading;
+  final VoidCallback onApply;
+  final VoidCallback onDismiss;
+
+  const _ManualCodeEntry({
+    required this.ctrl,
+    required this.loading,
+    required this.onApply,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: ctrl,
+                textCapitalization: TextCapitalization.characters,
+                autofocus: true,
+                style: const TextStyle(
+                    color: SlotPickerColors.onBg, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Enter promo code',
+                  hintStyle: const TextStyle(
+                      color: SlotPickerColors.muted, fontSize: 14),
+                  filled: true,
+                  fillColor: SlotPickerColors.surface,
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.08)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.08)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide:
+                        const BorderSide(color: SlotPickerColors.greenCta),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            ElevatedButton(
+              onPressed: loading ? null : onApply,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: SlotPickerColors.greenCta,
+                foregroundColor: Colors.black,
+                minimumSize: const Size(0, 48),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              child: loading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.black))
+                  : const Text('Apply',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+            const SizedBox(width: 4),
+            GestureDetector(
+              onTap: onDismiss,
+              child: const Icon(Icons.close,
+                  color: SlotPickerColors.muted, size: 20),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

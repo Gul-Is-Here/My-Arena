@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -31,9 +31,10 @@ class _TournamentRegistrationScreenState
   final List<TextEditingController> _memberCtrls =
       List.generate(4, (_) => TextEditingController());
   XFile? _paymentScreenshot;
+  Uint8List? _paymentScreenshotBytes;
   bool _submitting = false;
 
-  late final String id = Get.arguments as String;
+  late final String id = (Get.arguments as String?) ?? '';
 
   @override
   void dispose() {
@@ -76,8 +77,7 @@ class _TournamentRegistrationScreenState
           isMine: true,
           registeredAt: DateTime.now(),
         ),
-        paymentScreenshot:
-            _paymentScreenshot != null ? File(_paymentScreenshot!.path) : null,
+        paymentScreenshot: _paymentScreenshot,
       );
       Get.offNamed(AppRoutes.myTournaments);
       Get.snackbar(
@@ -168,7 +168,11 @@ class _TournamentRegistrationScreenState
                     imageQuality: 70,
                   );
                   if (picked != null) {
-                    setState(() => _paymentScreenshot = picked);
+                    final bytes = await picked.readAsBytes();
+                    setState(() {
+                      _paymentScreenshot = picked;
+                      _paymentScreenshotBytes = bytes;
+                    });
                   }
                 },
                 child: AnimatedContainer(
@@ -188,7 +192,7 @@ class _TournamentRegistrationScreenState
                   child: _paymentScreenshot != null
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(16),
-                          child: Image.file(File(_paymentScreenshot!.path),
+                          child: Image.memory(_paymentScreenshotBytes!,
                               fit: BoxFit.cover,
                               width: double.infinity),
                         )

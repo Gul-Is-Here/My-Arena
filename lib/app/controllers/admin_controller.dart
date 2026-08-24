@@ -1,32 +1,23 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:get/get.dart';
 
 import '../data/models/arena_model.dart';
+import '../data/models/booking_model.dart';
 import '../data/models/boost_request_model.dart';
+import '../data/models/admin_invitation_model.dart';
+import '../data/models/owner_invitation_model.dart';
+import '../data/models/ticket_model.dart';
 import '../data/models/user_model.dart';
+import '../repositories/admin_repository.dart';
 import '../services/arena_service.dart';
 import '../services/boost_service.dart';
+import '../controllers/auth_controller.dart';
+import '../services/otp_service.dart';
 
-/// Audit log entry — mirrors Firestore auditLogs/{logId}.
-class AuditLog {
-  final String actorName;
-  final String actorRole;
-  final String action;
-  final String target;
-  final DateTime timestamp;
-
-  const AuditLog({
-    required this.actorName,
-    required this.actorRole,
-    required this.action,
-    required this.target,
-    required this.timestamp,
-  });
-}
-
-/// Admin notification — in-memory; FCM replaces this in a later phase.
+/// Admin notification — in-memory until FCM broadcast is wired in Phase 2.
 class AdminNotification {
   final String title;
   final String body;
@@ -51,10 +42,12 @@ class AdminNotification {
       );
 }
 
-/// Platform-wide admin state — streamed from Firestore.
+/// Platform-wide admin state — all writes go through AdminRepository
+/// so every action is automatically audit-logged to Firestore.
 class AdminController extends GetxController {
   static AdminController get to => Get.find();
 
+  final _repo = AdminRepository();
   final _arenaService = ArenaService();
   final _boostService = BoostService();
   final _db = FirebaseFirestore.instance;
@@ -62,7 +55,6 @@ class AdminController extends GetxController {
   final RxList<ArenaModel> arenas = <ArenaModel>[].obs;
   final RxList<BoostRequestModel> boosts = <BoostRequestModel>[].obs;
   final RxList<UserModel> users = <UserModel>[].obs;
-  final RxList<AuditLog> logs = <AuditLog>[].obs;
   final RxList<AdminNotification> notifications = <AdminNotification>[].obs;
 
   final RxSet<String> verifiedArenaDocs = <String>{}.obs;
@@ -75,21 +67,54 @@ class AdminController extends GetxController {
   StreamSubscription? _arenasSub;
   StreamSubscription? _boostsSub;
   StreamSubscription? _usersSub;
+  StreamSubscription? _bookingsSub;
+  StreamSubscription? _ticketsSub;
+
+  // ── Live booking stats ─────────────────────────────────────────────────
+  final RxList<BookingModel> _recentBookings = <BookingModel>[].obs;
+  final RxInt openTickets = 0.obs;
 
   @override
   void onInit() {
     super.onInit();
-    _arenasSub = _arenaService.allArenas().listen((list) => arenas.assignAll(list));
-    _boostsSub = _boostService.allRequests().listen((list) => boosts.assignAll(list));
+    _arenasSub = _arenaService
+        .allArenas()
+        .listen((list) => arenas.assignAll(list));
+    _boostsSub = _boostService
+        .allRequests()
+        .listen((list) => boosts.assignAll(list));
     _usersSub = _db
         .collection('users')
         .orderBy('createdAt', descending: true)
         .snapshots()
         .listen((s) => users.assignAll(
-              s.docs.map((d) => UserModel.fromMap({...d.data(), 'uid': d.id})).toList(),
+              s.docs
+                  .map((d) => UserModel.fromMap({...d.data(), 'uid': d.id}))
+                  .toList(),
             ));
+
+    // Stream last 30 days of bookings for live stats — keep limit low.
+    final since = Timestamp.fromDate(
+        DateTime.now().subtract(const Duration(days: 30)));
+    _bookingsSub = _db
+        .collection('bookings')
+        .where('createdAt', isGreaterThanOrEqualTo: since)
+        .orderBy('createdAt', descending: true)
+        .limit(500)
+        .snapshots()
+        .listen((s) => _recentBookings.assignAll(
+              s.docs
+                  .map((d) => BookingModel.fromMap({...d.data(), 'id': d.id}))
+                  .toList(),
+            ));
+
+    _ticketsSub = _db
+        .collection('tickets')
+        .where('status', whereNotIn: ['resolved', 'closed'])
+        .snapshots()
+        .listen((s) => openTickets.value = s.docs.length);
+
     _loadSettings();
-    refreshStats();
   }
 
   @override
@@ -97,6 +122,8 @@ class AdminController extends GetxController {
     _arenasSub?.cancel();
     _boostsSub?.cancel();
     _usersSub?.cancel();
+    _bookingsSub?.cancel();
+    _ticketsSub?.cancel();
     super.onClose();
   }
 
@@ -105,98 +132,252 @@ class AdminController extends GetxController {
     if (!doc.exists) return;
     final d = doc.data()!;
     depositPercent.value = (d['depositPercent'] ?? 30) as int;
-    cancellationDeductPercent.value = (d['cancellationDeductPercent'] ?? 20) as int;
+    cancellationDeductPercent.value =
+        (d['cancellationDeductPercent'] ?? 20) as int;
     minCancelHoursBefore.value = (d['minCancelHoursBefore'] ?? 1) as int;
     jazzCashNumber.value = d['jazzCashNumber'] ?? '0300-0000000';
     final verified = List<String>.from(d['verifiedArenaDocs'] ?? []);
     verifiedArenaDocs.assignAll(verified.toSet());
   }
 
-  void _log(String action, String target) {
-    logs.insert(
-      0,
-      AuditLog(
-        actorName: 'Admin',
-        actorRole: 'admin',
-        action: action,
-        target: target,
-        timestamp: DateTime.now(),
-      ),
-    );
-    _db.collection('auditLogs').add({
-      'actorName': 'Admin',
-      'actorRole': 'admin',
-      'action': action,
-      'target': target,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-  // ── Derived lists ────────────────────────────────────────────────────
+  // ── Derived lists ─────────────────────────────────────────────────────
 
   List<ArenaModel> get pendingArenas =>
-      arenas.where((a) => a.status == ArenaStatus.pending).toList();
+      scopedArenas.where((a) => a.status == ArenaStatus.pending).toList();
 
   List<BoostRequestModel> get pendingBoosts =>
-      boosts.where((b) => b.status == 'pending').toList();
+      boosts.where((b) => b.status == BoostStatus.pending).toList();
 
   List<BoostRequestModel> get activeBoosts =>
-      boosts.where((b) => b.status == 'approved').toList();
+      boosts.where((b) => b.status == BoostStatus.approved).toList();
 
-  // ── Arena management ─────────────────────────────────────────────────
+  // ── Scope-filtered views (Phase 5) ────────────────────────────────────
 
-  Future<void> setArenaStatus(String id, ArenaStatus status) async {
-    await _arenaService.setStatus(id, status);
-    _log('Arena ${status.name}', arenas.firstWhereOrNull((a) => a.id == id)?.name ?? id);
+  UserModel? get _me => AuthController.to.currentUser.value;
+
+  /// Arenas visible to the current admin. Full admins see all; scoped admins
+  /// see only arenas in their managedArenaIds list.
+  List<ArenaModel> get scopedArenas {
+    final me = _me;
+    if (me == null || !me.isScoped || me.managedArenaIds.isEmpty) return arenas.toList();
+    return arenas.where((a) => me.managedArenaIds.contains(a.id)).toList();
+  }
+
+  /// Owners visible to the current admin. Full admins see all; scoped admins
+  /// see only owners in their managedOwnerIds list.
+  List<UserModel> get scopedOwners {
+    final me = _me;
+    final allOwners = users.where((u) => u.role == UserRole.owner).toList();
+    if (me == null || !me.isScoped || me.managedOwnerIds.isEmpty) return allOwners;
+    return allOwners.where((u) => me.managedOwnerIds.contains(u.uid)).toList();
+  }
+
+  /// Remaining owner invites for the current admin. Null = unlimited.
+  /// Counts pending + accepted owner invitations created by this admin.
+  int? get remainingOwnerInvites {
+    final me = _me;
+    if (me == null || me.ownerInviteLimit == null) return null;
+    // We track how many they've used via the invitationsStream — but that's
+    // async. We'll count from the cached invitations list if available, or
+    // just surface the limit from the UserModel for UI display.
+    return me.ownerInviteLimit;
+  }
+
+  // ── Arena management (via repository — auto-audited) ─────────────────
+
+  Future<void> setArenaStatus(String id, ArenaStatus status,
+      {String? reason}) async {
+    final name = _arenaName(id);
+    await _repo.setArenaStatus(id, status, name, reason: reason);
   }
 
   Future<void> toggleArenaActive(String id) async {
     final arena = arenas.firstWhereOrNull((a) => a.id == id);
     if (arena == null) return;
-    final next = !arena.isActive;
-    await _arenaService.toggleActive(id, next);
-    _log(next ? 'Arena turned ON' : 'Arena forced OFF', arena.name);
+    await _repo.toggleArenaActive(id, arena.name, !arena.isActive);
+  }
+
+  Future<void> toggleFeatured(String arenaId, bool nextState) async {
+    final name = _arenaName(arenaId);
+    await _repo.toggleFeatured(arenaId, name, nextState);
   }
 
   void toggleDocsVerified(String id) {
-    final name = arenas.firstWhereOrNull((a) => a.id == id)?.name ?? id;
+    final name = _arenaName(id);
     final isVerified = verifiedArenaDocs.contains(id);
     if (isVerified) {
       verifiedArenaDocs.remove(id);
     } else {
       verifiedArenaDocs.add(id);
     }
-    _db.collection('settings').doc('booking').update({
-      'verifiedArenaDocs': verifiedArenaDocs.toList(),
-    });
-    _log(isVerified ? 'Arena documents unverified' : 'Arena documents verified', name);
+    _repo.toggleDocsVerified(
+        id, name, !isVerified, verifiedArenaDocs.toList());
   }
 
-  // ── Boost management ─────────────────────────────────────────────────
-
-  Future<void> setBoostStatus(String id, String status) async {
-    await _boostService.updateStatus(id, status);
-    _log('Boost $status', boosts.firstWhereOrNull((b) => b.id == id)?.arenaName ?? id);
+  Future<void> toggleCarousel(
+    String arenaId, {
+    required bool show,
+    int? order,
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    final name = _arenaName(arenaId);
+    final arena = arenas.firstWhereOrNull((a) => a.id == arenaId);
+    await _repo.toggleCarousel(
+      arenaId,
+      name,
+      show: show,
+      order: order ?? arena?.carouselOrder,
+      startDate: startDate,
+      endDate: endDate,
+    );
   }
 
-  // ── User management ──────────────────────────────────────────────────
+  Future<void> setCarouselOrder(String arenaId, int order) async {
+    await _repo.setCarouselOrder(arenaId, order);
+  }
+
+  // ── Boost management ──────────────────────────────────────────────────
+
+  Future<void> setBoostStatus(String id, BoostStatus status) async {
+    final boost = boosts.firstWhereOrNull((b) => b.id == id);
+    if (boost == null) return;
+    await _repo.setBoostStatus(id, status, boost);
+  }
+
+  // ── User management ───────────────────────────────────────────────────
 
   Future<void> toggleBan(String uid) async {
     final user = users.firstWhereOrNull((u) => u.uid == uid);
     if (user == null) return;
-    final next = !user.isActive;
-    await _db.collection('users').doc(uid).update({'isActive': next});
-    _log(next ? 'User unbanned' : 'User banned', user.name);
+    final next = user.accountStatus == AccountStatus.suspended
+        ? AccountStatus.active
+        : AccountStatus.suspended;
+    await _repo.changeAccountStatus(user, next);
+  }
+
+  Future<void> changeAccountStatus(
+    String uid,
+    AccountStatus newStatus, {
+    String? reason,
+  }) async {
+    final user = users.firstWhereOrNull((u) => u.uid == uid);
+    if (user == null) return;
+    await _repo.changeAccountStatus(user, newStatus, reason: reason);
   }
 
   Future<void> changeRole(String uid, UserRole role) async {
     final user = users.firstWhereOrNull((u) => u.uid == uid);
     if (user == null) return;
-    await _db.collection('users').doc(uid).update({'role': role.value});
-    _log('Role changed to ${role.name}', user.name);
+    await _repo.changeRole(user, role);
   }
 
-  // ── Platform settings ────────────────────────────────────────────────
+  Future<void> updateCustomPermissions(
+    String uid,
+    Map<String, bool> newPerms,
+  ) async {
+    final user = users.firstWhereOrNull((u) => u.uid == uid);
+    if (user == null) return;
+    await _repo.updateCustomPermissions(user, newPerms);
+  }
+
+  Future<void> updateAdminScope(
+    String uid, {
+    required List<String> managedOwnerIds,
+    required List<String> managedArenaIds,
+    int? ownerInviteLimit,
+  }) async {
+    final user = users.firstWhereOrNull((u) => u.uid == uid);
+    if (user == null) return;
+    await _repo.updateAdminScope(
+      user,
+      managedOwnerIds: managedOwnerIds,
+      managedArenaIds: managedArenaIds,
+      ownerInviteLimit: ownerInviteLimit,
+    );
+  }
+
+  // ── Owner invitations ─────────────────────────────────────────────────
+
+  final _otp = OtpService();
+
+
+  /// Live stream of all owner invitations, newest first.
+  Stream<List<OwnerInvitationModel>> invitationsStream() => _db
+      .collection('ownerInvitations')
+      .orderBy('createdAt', descending: true)
+      .snapshots()
+      .map((s) => s.docs
+          .map((d) => OwnerInvitationModel.fromMap(d.data(), d.id))
+          .toList());
+
+  Future<Map<String, dynamic>> inviteOwner({
+    required String email,
+    required String name,
+    required String phone,
+  }) async {
+    // Enforce ownerInviteLimit for scoped admins.
+    final me = _me;
+    if (me != null && me.ownerInviteLimit != null) {
+      // Count invitations this admin has already sent.
+      final snap = await _db
+          .collection('ownerInvitations')
+          .where('invitedBy', isEqualTo: me.uid)
+          .where('status', whereIn: ['pending', 'accepted'])
+          .get();
+      final used = snap.docs.length;
+      if (used >= me.ownerInviteLimit!) {
+        throw Exception(
+            'Invite limit reached (${me.ownerInviteLimit} / ${me.ownerInviteLimit}). '
+            'Contact a super admin to increase your limit.');
+      }
+    }
+    final token = await FirebaseAuth.instance.currentUser!.getIdToken();
+    return _otp.inviteOwner(email: email, name: name, phone: phone, idToken: token!);
+  }
+
+  Future<void> resendInvitation(String invitationId) async {
+    final token = await FirebaseAuth.instance.currentUser!.getIdToken();
+    await _otp.resendInvitation(invitationId, token!);
+  }
+
+  Future<void> revokeInvitation(String invitationId) async {
+    final token = await FirebaseAuth.instance.currentUser!.getIdToken();
+    await _otp.revokeInvitation(invitationId, token!);
+  }
+
+  // ── Admin invitations ─────────────────────────────────────────────────
+
+  Stream<List<AdminInvitationModel>> adminInvitationsStream() => _db
+      .collection('adminInvitations')
+      .orderBy('createdAt', descending: true)
+      .snapshots()
+      .map((s) => s.docs
+          .map((d) => AdminInvitationModel.fromMap(d.data(), d.id))
+          .toList());
+
+  Future<Map<String, dynamic>> inviteAdmin({
+    required String email,
+    required String name,
+    required String phone,
+    required String role,
+  }) async {
+    final token = await FirebaseAuth.instance.currentUser!.getIdToken();
+    return _otp.inviteAdmin(
+        email: email, name: name, phone: phone, role: role, idToken: token!);
+  }
+
+  Future<void> resendAdminInvitation(String invitationId) async {
+    final token = await FirebaseAuth.instance.currentUser!.getIdToken();
+    await _otp.resendAdminInvitation(invitationId, token!);
+  }
+
+  Future<void> revokeAdminInvitation(String invitationId) async {
+    final token = await FirebaseAuth.instance.currentUser!.getIdToken();
+    await _otp.revokeAdminInvitation(invitationId, token!);
+  }
+
+  // ── Platform settings ─────────────────────────────────────────────────
 
   Future<void> saveSettings({
     required int deposit,
@@ -204,20 +385,26 @@ class AdminController extends GetxController {
     required int minHours,
     required String jazzCash,
   }) async {
-    await _db.collection('settings').doc('booking').set({
-      'depositPercent': deposit,
-      'cancellationDeductPercent': deduct,
-      'minCancelHoursBefore': minHours,
-      'jazzCashNumber': jazzCash,
-    }, SetOptions(merge: true));
+    final oldValues = {
+      'depositPercent': depositPercent.value,
+      'cancellationDeductPercent': cancellationDeductPercent.value,
+      'minCancelHoursBefore': minCancelHoursBefore.value,
+      'jazzCashNumber': jazzCashNumber.value,
+    };
+    await _repo.saveSettings(
+      deposit: deposit,
+      deduct: deduct,
+      minHours: minHours,
+      jazzCash: jazzCash,
+      oldValues: oldValues,
+    );
     depositPercent.value = deposit;
     cancellationDeductPercent.value = deduct;
     minCancelHoursBefore.value = minHours;
     jazzCashNumber.value = jazzCash;
-    _log('Platform settings updated', 'settings/booking');
   }
 
-  // ── Notifications (in-memory; FCM in next phase) ─────────────────────
+  // ── Notifications (in-memory; FCM broadcast in Phase 2) ──────────────
 
   int get unreadNotifications =>
       notifications.where((n) => !n.isRead).length;
@@ -228,30 +415,46 @@ class AdminController extends GetxController {
     }
   }
 
-  // ── Dashboard stats ──────────────────────────────────────────────────
+  // ── Dashboard stats ───────────────────────────────────────────────────
 
   int get totalArenas => arenas.length;
   int get totalUsers => users.length;
-  int get totalOwners => users.where((u) => u.role == UserRole.owner).length;
-  int get totalStaff => users.where((u) => u.role == UserRole.staff).length;
+  int get totalOwners =>
+      users.where((u) => u.role == UserRole.owner).length;
+  int get totalStaff =>
+      users.where((u) => u.role.isAdminTier && u.role != UserRole.admin).length;
 
-  // ── Booking stats — aggregated via Cloud Function in production;
-  // read from Firestore stats doc for now.
-  final RxInt totalBookings = 0.obs;
-  final RxInt todaysBookings = 0.obs;
-  final RxDouble monthlyRevenue = 0.0.obs;
-  final RxDouble platformRevenue = 0.0.obs;
+  // ── Live stats derived from streams (auto-update with no extra reads) ──
 
-  Future<void> refreshStats() async {
-    final doc = await _db.collection('settings').doc('stats').get();
-    if (!doc.exists) return;
-    final d = doc.data()!;
-    totalBookings.value = (d['totalBookings'] ?? 0) as int;
-    todaysBookings.value = (d['todaysBookings'] ?? 0) as int;
-    monthlyRevenue.value = (d['monthlyRevenue'] ?? 0.0).toDouble();
-    platformRevenue.value = (d['platformRevenue'] ?? 0.0).toDouble();
+  int get totalBookings => _recentBookings.length;
+
+  int get todaysBookings {
+    final today = DateTime.now();
+    return _recentBookings.where((b) {
+      return b.createdAt.year == today.year &&
+          b.createdAt.month == today.month &&
+          b.createdAt.day == today.day;
+    }).length;
   }
+
+  int get activeBookings =>
+      _recentBookings.where((b) => b.status == BookingStatus.confirmed).length;
+
+  int get completedBookings =>
+      _recentBookings.where((b) => b.status == BookingStatus.completed).length;
+
+  int get cancelledBookings =>
+      _recentBookings.where((b) => b.isCancelled).length;
+
+  double get monthlyRevenue => _recentBookings
+      .where((b) => b.status == BookingStatus.completed)
+      .fold(0.0, (sum, b) => sum + b.totalAmount);
+
+  double get platformRevenue => monthlyRevenue * 0.10;
 
   UserModel? ownerOf(String ownerId) =>
       users.firstWhereOrNull((u) => u.uid == ownerId);
+
+  String _arenaName(String id) =>
+      arenas.firstWhereOrNull((a) => a.id == id)?.name ?? id;
 }

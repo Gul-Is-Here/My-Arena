@@ -7,17 +7,21 @@ import '../../data/models/booking_model.dart';
 import '../../data/models/user_model.dart';
 import '../../routes/app_routes.dart';
 import '../../services/auth_service.dart';
+import '../../services/booking_service.dart';
+import '../../theme/app_colors.dart';
+import '../../theme/app_text_styles.dart';
+import 'pos/pos_booking_sale_screen.dart';
 
-const _bg = Color(0xFF10131A);
-const _surface = Color(0xFF1D2026);
-const _surfaceLow = Color(0xFF191C22);
-const _outline = Color(0xFF3B494B);
-const _cyan = Color(0xFF00DBE9);
-const _greenFixed = Color(0xFF79FF5B);
-const _amber = Color(0xFFFFB59C);
-const _red = Color(0xFFFFB4AB);
-const _onSurface = Color(0xFFE1E2EB);
-const _onSurfaceVar = Color(0xFFB9CACB);
+const _bg = AppColors.background;
+const _surface = AppColors.surface;
+const _surfaceLow = AppColors.elevated;
+const _outline = AppColors.border;
+const _cyan = AppColors.primary;
+const _greenFixed = AppColors.success;
+const _amber = AppColors.warning;
+const _red = AppColors.error;
+const _onSurface = AppColors.textPrimary;
+const _onSurfaceVar = AppColors.textSecondary;
 
 const _months = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -47,11 +51,16 @@ String _statusLabel(BookingStatus s) {
       return 'Refund Sent';
     case BookingStatus.refundConfirmed:
       return 'Refund Confirmed';
+    case BookingStatus.ongoing:
+      return 'Ongoing';
+    case BookingStatus.rescheduleRequested:
+      return 'Reschedule Requested';
   }
 }
 
 Color _statusColor(BookingStatus s) {
   switch (s) {
+    case BookingStatus.ongoing:
     case BookingStatus.confirmed:
     case BookingStatus.completed:
     case BookingStatus.refundConfirmed:
@@ -63,6 +72,7 @@ Color _statusColor(BookingStatus s) {
     case BookingStatus.depositSubmitted:
     case BookingStatus.refundPending:
     case BookingStatus.refundSent:
+    case BookingStatus.rescheduleRequested:
       return _amber;
   }
 }
@@ -87,7 +97,10 @@ class BookingDetailOwnerScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = OwnerBookingController.to;
-    final String id = Get.arguments as String;
+    final String? id = Get.arguments as String?;
+    if (id == null) {
+      return const Scaffold(body: Center(child: Text('No booking selected')));
+    }
 
     return Scaffold(
       backgroundColor: _bg,
@@ -95,9 +108,9 @@ class BookingDetailOwnerScreen extends StatelessWidget {
         child: Obx(() {
           final b = c.bookings.firstWhereOrNull((x) => x.id == id);
           if (b == null) {
-            return const Center(
+            return Center(
               child: Text('Booking not found',
-                  style: TextStyle(color: _onSurfaceVar)),
+                  style: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar)),
             );
           }
           final sColor = _statusColor(b.status);
@@ -113,7 +126,24 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                     _summaryCard(b),
                     const SizedBox(height: 14),
                     _paymentCard(b),
-                    if (b.depositScreenshot != null) ...[
+                    const SizedBox(height: 14),
+                    OutlinedButton.icon(
+                      onPressed: () => Get.toNamed(
+                        AppRoutes.posBookingSale,
+                        arguments: {'booking': b},
+                      ),
+                      icon: const Icon(Icons.link_outlined, size: 18),
+                      label: const Text('Add Booking Sale'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.warning,
+                        side: const BorderSide(color: AppColors.warning),
+                        minimumSize: const Size(double.infinity, 48),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                    BookingLinkedSalesList(bookingId: b.id),
+                    if (!b.isPosBooking && b.depositScreenshot != null) ...[
                       const SizedBox(height: 14),
                       _depositProofCard(context, b),
                     ],
@@ -126,6 +156,16 @@ class BookingDetailOwnerScreen extends StatelessWidget {
               ),
               if (b.status == BookingStatus.depositSubmitted)
                 _actionBar(context, c, b),
+              if (b.status == BookingStatus.refundPending)
+                _refundSentBar(context, b),
+              if (b.status == BookingStatus.rescheduleRequested &&
+                  b.rescheduleRequest != null)
+                _rescheduleBar(context, c, b),
+              if (b.status == BookingStatus.confirmed &&
+                  DateTime.now().isAfter(b.endDateTime) &&
+                  !b.noShow &&
+                  !b.checkedIn)
+                _noShowBar(context, c, b),
             ],
           );
         }),
@@ -142,9 +182,9 @@ class BookingDetailOwnerScreen extends StatelessWidget {
             onPressed: Get.back,
             icon: const Icon(Icons.arrow_back, color: _onSurface),
           ),
-          const Text(
+          Text(
             'Booking Details',
-            style: TextStyle(
+            style: AppTextStyles.titleLarge.copyWith(
                 color: _onSurface, fontSize: 19, fontWeight: FontWeight.w800),
           ),
           const Spacer(),
@@ -165,7 +205,7 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 Text(_statusLabel(b.status),
-                    style: TextStyle(
+                    style: AppTextStyles.caption.copyWith(
                         color: sColor, fontSize: 12, fontWeight: FontWeight.w700)),
               ],
             ),
@@ -217,13 +257,13 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                     ? Image.network(user!.avatar, fit: BoxFit.cover,
                         errorBuilder: (_, _, _) => Center(
                             child: Text(initials,
-                                style: const TextStyle(
+                                style: AppTextStyles.titleLarge.copyWith(
                                     color: _cyan,
                                     fontSize: 18,
                                     fontWeight: FontWeight.w800))))
                     : Center(
                         child: Text(initials,
-                            style: const TextStyle(
+                            style: AppTextStyles.titleLarge.copyWith(
                                 color: _cyan, fontSize: 18, fontWeight: FontWeight.w800)),
                       ),
               ),
@@ -233,7 +273,7 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(name,
-                        style: const TextStyle(
+                        style: AppTextStyles.titleLarge.copyWith(
                             color: _onSurface, fontSize: 17, fontWeight: FontWeight.w800)),
                     const SizedBox(height: 6),
                     if ((user?.phone.isNotEmpty ?? false)) ...[
@@ -242,7 +282,7 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                           const Icon(Icons.call_outlined, size: 14, color: _onSurfaceVar),
                           const SizedBox(width: 6),
                           Text(user!.phone,
-                              style: const TextStyle(color: _onSurfaceVar, fontSize: 13)),
+                              style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar, fontSize: 13)),
                         ],
                       ),
                       const SizedBox(height: 4),
@@ -250,10 +290,10 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                     if (user?.createdAt != null)
                       Row(
                         children: [
-                          const Icon(Icons.star, size: 13, color: _cyan),
+                          const Icon(Icons.star, size: 13, color: AppColors.primary),
                           const SizedBox(width: 6),
                           Text('Customer since ${_fmtMonthYear(user!.createdAt!)}',
-                              style: const TextStyle(
+                              style: AppTextStyles.label.copyWith(
                                   color: _cyan, fontSize: 12.5, fontWeight: FontWeight.w600)),
                         ],
                       ),
@@ -288,8 +328,8 @@ class BookingDetailOwnerScreen extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Summary',
-                  style: TextStyle(color: _onSurface, fontSize: 16, fontWeight: FontWeight.w800)),
+              Text('Summary',
+                  style: AppTextStyles.titleMedium.copyWith(color: _onSurface, fontWeight: FontWeight.w800)),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
@@ -298,8 +338,8 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                   border: Border.all(color: _outline),
                 ),
                 child: Text(b.bookedByRole == 'customer' ? 'Customer' : 'Walk-in',
-                    style: const TextStyle(
-                        color: _onSurfaceVar, fontSize: 11, fontWeight: FontWeight.w700)),
+                    style: AppTextStyles.caption.copyWith(
+                        color: _onSurfaceVar, fontWeight: FontWeight.w700)),
               ),
             ],
           ),
@@ -337,10 +377,10 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(label, style: const TextStyle(color: _onSurfaceVar, fontSize: 12)),
+                    Text(label, style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar, fontSize: 12)),
                     const SizedBox(height: 2),
                     Text(value,
-                        style: const TextStyle(
+                        style: AppTextStyles.titleMedium.copyWith(
                             color: _onSurface, fontSize: 14.5, fontWeight: FontWeight.w700)),
                   ],
                 ),
@@ -354,30 +394,31 @@ class BookingDetailOwnerScreen extends StatelessWidget {
   }
 
   Widget _paymentCard(BookingModel b) {
+    if (b.isPosBooking) return _posPaymentCard(b);
     final hasScreenshot = b.depositScreenshot != null;
     return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Payment Info',
-              style: TextStyle(color: _onSurface, fontSize: 16, fontWeight: FontWeight.w800)),
+          Text('Payment Info',
+              style: AppTextStyles.titleMedium.copyWith(color: _onSurface, fontWeight: FontWeight.w800)),
           const SizedBox(height: 14),
           _amountRow('Subtotal', 'PKR ${b.totalAmount.toStringAsFixed(0)}'),
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.check_circle, size: 16, color: _greenFixed),
-                  SizedBox(width: 8),
+                  const Icon(Icons.check_circle, size: 16, color: _greenFixed),
+                  const SizedBox(width: 8),
                   Text('Deposit Paid',
-                      style: TextStyle(
-                          color: _greenFixed, fontSize: 14, fontWeight: FontWeight.w700)),
+                      style: AppTextStyles.bodyMedium.copyWith(
+                          color: _greenFixed, fontWeight: FontWeight.w700)),
                 ],
               ),
               Text('PKR ${b.depositAmount.toStringAsFixed(0)}',
-                  style: const TextStyle(
+                  style: AppTextStyles.titleMedium.copyWith(
                       color: _greenFixed, fontSize: 15, fontWeight: FontWeight.w800)),
             ],
           ),
@@ -389,8 +430,8 @@ class BookingDetailOwnerScreen extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Payment Status',
-                  style: TextStyle(color: _onSurfaceVar, fontSize: 13)),
+              Text('Payment Status',
+                  style: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar, fontSize: 13)),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
@@ -406,9 +447,96 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                         size: 13, color: hasScreenshot ? _cyan : _amber),
                     const SizedBox(width: 5),
                     Text(hasScreenshot ? 'Screenshot Uploaded' : 'Awaiting Screenshot',
-                        style: TextStyle(
+                        style: AppTextStyles.caption.copyWith(
                             color: hasScreenshot ? _cyan : _amber,
-                            fontSize: 11,
+                            fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _posPaymentCard(BookingModel b) {
+    final paid = b.amountPaid ?? 0;
+    final remaining = b.remainingAmount;
+    final fullyPaid = remaining <= 0;
+    final method = b.posPaymentMethod ?? 'cash';
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Payment Info',
+              style: AppTextStyles.titleMedium.copyWith(color: _onSurface, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 14),
+          _amountRow('Court Total', 'PKR ${b.totalAmount.toStringAsFixed(0)}'),
+          if (b.posDiscount > 0) ...[
+            const SizedBox(height: 8),
+            _amountRow('Discount', '− PKR ${b.posDiscount.toStringAsFixed(0)}'),
+          ],
+          if (b.posAddOnsTotal > 0) ...[
+            const SizedBox(height: 8),
+            _amountRow('Add-ons', '+ PKR ${b.posAddOnsTotal.toStringAsFixed(0)}'),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.check_circle, size: 16, color: _greenFixed),
+                  const SizedBox(width: 8),
+                  Text('Amount Paid',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                          color: _greenFixed, fontWeight: FontWeight.w700)),
+                ],
+              ),
+              Text('PKR ${paid.toStringAsFixed(0)}',
+                  style: AppTextStyles.titleMedium.copyWith(
+                      color: _greenFixed, fontSize: 15, fontWeight: FontWeight.w800)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _amountRow('Balance Due', 'PKR ${remaining.toStringAsFixed(0)}'),
+          const SizedBox(height: 14),
+          const Divider(height: 1, color: _outline),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Payment Method',
+                  style: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar, fontSize: 13)),
+              Text(method[0].toUpperCase() + method.substring(1),
+                  style: AppTextStyles.bodyMedium.copyWith(
+                      color: _onSurface, fontWeight: FontWeight.w700, fontSize: 13)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Payment Status',
+                  style: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar, fontSize: 13)),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: (fullyPaid ? _greenFixed : _amber).withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                      color: (fullyPaid ? _greenFixed : _amber).withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(fullyPaid ? Icons.check_circle_outline : Icons.pending_outlined,
+                        size: 13, color: fullyPaid ? _greenFixed : _amber),
+                    const SizedBox(width: 5),
+                    Text(fullyPaid ? 'Fully Paid' : 'Balance Pending',
+                        style: AppTextStyles.caption.copyWith(
+                            color: fullyPaid ? _greenFixed : _amber,
                             fontWeight: FontWeight.w700)),
                   ],
                 ),
@@ -423,9 +551,9 @@ class BookingDetailOwnerScreen extends StatelessWidget {
   Widget _amountRow(String label, String value) => Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: _onSurfaceVar, fontSize: 13.5)),
+          Text(label, style: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar, fontSize: 13.5)),
           Text(value,
-              style: const TextStyle(color: _onSurface, fontSize: 14.5, fontWeight: FontWeight.w700)),
+              style: AppTextStyles.titleMedium.copyWith(color: _onSurface, fontSize: 14.5, fontWeight: FontWeight.w700)),
         ],
       );
 
@@ -434,8 +562,8 @@ class BookingDetailOwnerScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Deposit Proof',
-              style: TextStyle(color: _onSurface, fontSize: 16, fontWeight: FontWeight.w800)),
+          Text('Deposit Proof',
+              style: AppTextStyles.titleMedium.copyWith(color: _onSurface, fontWeight: FontWeight.w800)),
           const SizedBox(height: 12),
           GestureDetector(
             onTap: () => _showScreenshot(context, b),
@@ -466,14 +594,14 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                       color: Colors.black.withValues(alpha: 0.55),
                       borderRadius: BorderRadius.circular(24),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.search, size: 16, color: Colors.white),
-                        SizedBox(width: 6),
+                        const Icon(Icons.search, size: 16, color: Colors.white),
+                        const SizedBox(width: 6),
                         Text('View Screenshot',
-                            style: TextStyle(
-                                color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+                            style: AppTextStyles.label.copyWith(
+                                color: Colors.white, fontWeight: FontWeight.w700)),
                       ],
                     ),
                   ),
@@ -492,8 +620,8 @@ class BookingDetailOwnerScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Cancellation & Refund',
-              style: TextStyle(color: _onSurface, fontSize: 16, fontWeight: FontWeight.w800)),
+          Text('Cancellation & Refund',
+              style: AppTextStyles.titleMedium.copyWith(color: _onSurface, fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
           _summaryRow(
               Icons.event_busy_outlined, 'Requested', _fmtDate(cx.requestedAt)),
@@ -522,7 +650,7 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
               icon: const Icon(Icons.close, size: 18),
-              label: const Text('Reject', style: TextStyle(fontWeight: FontWeight.w700)),
+              label: Text('Reject', style: AppTextStyles.button.copyWith(fontWeight: FontWeight.w700)),
             ),
           ),
           const SizedBox(width: 12),
@@ -552,12 +680,222 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
                 icon: const Icon(Icons.check_circle_outline, size: 18),
-                label: const Text('Approve Booking',
-                    style: TextStyle(fontWeight: FontWeight.w800)),
+                label: Text('Approve Booking',
+                    style: AppTextStyles.button.copyWith(fontWeight: FontWeight.w800)),
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _refundSentBar(BuildContext context, BookingModel b) {
+    final refCtrl = TextEditingController();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: () {
+            showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: _surfaceLow,
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              builder: (_) => Padding(
+                padding: EdgeInsets.only(
+                  left: 20, right: 20, top: 20,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40, height: 4,
+                        decoration: BoxDecoration(color: _outline, borderRadius: BorderRadius.circular(2)),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text('Mark Refund Sent',
+                        style: AppTextStyles.titleLarge.copyWith(color: _onSurface, fontSize: 18, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Enter your bank transfer reference so the customer can verify receipt.',
+                      style: AppTextStyles.bodySmall.copyWith(color: _onSurfaceVar, fontSize: 13),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: refCtrl,
+                      style: AppTextStyles.bodyMedium.copyWith(color: _onSurface),
+                      decoration: InputDecoration(
+                        hintText: 'e.g. TRN-20240712-001',
+                        hintStyle: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar),
+                        filled: true,
+                        fillColor: _surface,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _outline)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _outline)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _cyan)),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          final ref = refCtrl.text.trim();
+                          if (ref.isEmpty) {
+                            Get.snackbar('Required', 'Enter a bank transfer reference.',
+                                snackPosition: SnackPosition.BOTTOM);
+                            return;
+                          }
+                          await BookingService().submitRefundWithRef(b.id, ref);
+                          Get.back();
+                          Get.snackbar('Refund Marked', 'Customer will be notified to confirm.',
+                              snackPosition: SnackPosition.BOTTOM,
+                              backgroundColor: _surface, colorText: _greenFixed);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.onPrimary,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: Text('Confirm Refund Sent', style: AppTextStyles.button.copyWith(fontWeight: FontWeight.w800, fontSize: 15)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.primary,
+            backgroundColor: AppColors.primary.withValues(alpha: 0.08),
+            side: BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+          icon: const Icon(Icons.currency_exchange, size: 18),
+          label: Text('Mark Refund Sent', style: AppTextStyles.button.copyWith(fontWeight: FontWeight.w700)),
+        ),
+      ),
+    );
+  }
+
+  Widget _rescheduleBar(BuildContext context, OwnerBookingController c, BookingModel b) {
+    final req = b.rescheduleRequest!;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: _amber.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _amber.withValues(alpha: 0.4)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.edit_calendar_outlined, color: _amber, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  'Customer Requested Reschedule',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: _amber, fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${_fmtDate(req.proposedDate)} · ${req.timeRange}',
+              style: AppTextStyles.bodyMedium.copyWith(color: _onSurface),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      await c.rejectReschedule(b.id);
+                      Get.back();
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _red,
+                      side: BorderSide(color: _red.withValues(alpha: 0.6)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Decline'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () async {
+                      await c.approveReschedule(b.id);
+                      Get.back();
+                      Get.snackbar('Reschedule Approved',
+                          'Booking moved to the new slot.',
+                          snackPosition: SnackPosition.BOTTOM,
+                          margin: const EdgeInsets.all(16));
+                    },
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _greenFixed,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Approve'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _noShowBar(BuildContext context, OwnerBookingController c, BookingModel b) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: () => Get.defaultDialog(
+            backgroundColor: _surfaceLow,
+            titleStyle: AppTextStyles.titleLarge.copyWith(color: _onSurface, fontWeight: FontWeight.w800),
+            middleTextStyle: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar),
+            title: 'Mark as No-Show?',
+            middleText: 'This will complete the booking and flag the customer as a no-show.',
+            textCancel: 'Cancel',
+            textConfirm: 'Mark No-Show',
+            confirmTextColor: Colors.white,
+            buttonColor: _amber,
+            onConfirm: () async {
+              await c.markNoShow(b.id);
+              Get.back();
+              Get.back();
+            },
+          ),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: _amber,
+            backgroundColor: _amber.withValues(alpha: 0.08),
+            side: BorderSide(color: _amber.withValues(alpha: 0.5)),
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+          icon: const Icon(Icons.person_off_outlined, size: 18),
+          label: Text('Mark No-Show', style: AppTextStyles.button.copyWith(fontWeight: FontWeight.w700)),
+        ),
       ),
     );
   }
@@ -568,8 +906,8 @@ class BookingDetailOwnerScreen extends StatelessWidget {
     final name = b.customerName.isNotEmpty ? b.customerName : (user?.name ?? 'This customer');
     Get.defaultDialog(
       backgroundColor: _surfaceLow,
-      titleStyle: const TextStyle(color: _onSurface, fontWeight: FontWeight.w800),
-      middleTextStyle: const TextStyle(color: _onSurfaceVar),
+      titleStyle: AppTextStyles.titleLarge.copyWith(color: _onSurface, fontWeight: FontWeight.w800),
+      middleTextStyle: AppTextStyles.bodyMedium.copyWith(color: _onSurfaceVar),
       title: 'Reject booking?',
       middleText: '$name\'s deposit will need to be refunded manually.',
       textCancel: 'Back',
@@ -603,8 +941,8 @@ class BookingDetailOwnerScreen extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('Deposit Screenshot',
-                  style: TextStyle(color: _onSurface, fontSize: 18, fontWeight: FontWeight.w800)),
+              Text('Deposit Screenshot',
+                  style: AppTextStyles.titleLarge.copyWith(color: _onSurface, fontSize: 18, fontWeight: FontWeight.w800)),
               const SizedBox(height: 16),
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
@@ -622,7 +960,7 @@ class BookingDetailOwnerScreen extends StatelessWidget {
               const SizedBox(height: 16),
               TextButton(
                 onPressed: Get.back,
-                child: const Text('Close', style: TextStyle(color: _cyan)),
+                child: Text('Close', style: AppTextStyles.label.copyWith(color: _onSurfaceVar)),
               ),
             ],
           ),

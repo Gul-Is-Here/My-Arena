@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../controllers/booking_controller.dart';
 import '../../routes/app_routes.dart';
+import '../../theme/app_colors.dart';
 import '../../widgets/slot_picker_widgets.dart';
 
 class DepositPaymentScreen extends StatefulWidget {
@@ -18,12 +19,19 @@ class DepositPaymentScreen extends StatefulWidget {
 
 class _DepositPaymentScreenState extends State<DepositPaymentScreen> {
   XFile? _screenshot;
+  Uint8List? _screenshotBytes;
   bool _submitting = false;
   bool _copied = false;
 
   Future<void> _pickScreenshot() async {
     final picked = await Get.find<BookingController>().pickDepositScreenshot();
-    if (picked != null) setState(() => _screenshot = picked);
+    if (picked != null) {
+      final bytes = await picked.readAsBytes();
+      setState(() {
+        _screenshot = picked;
+        _screenshotBytes = bytes;
+      });
+    }
   }
 
   Future<void> _copyNumber(String number) async {
@@ -108,9 +116,9 @@ class _DepositPaymentScreenState extends State<DepositPaymentScreen> {
                   const SizedBox(height: 6),
                   Center(
                     child: Text(
-                      'PKR ${b.depositAmount.toStringAsFixed(0)}',
+                      'PKR ${c.depositAmount.toStringAsFixed(0)}',
                       style: const TextStyle(
-                        color: SlotPickerColors.green,
+                        color: SlotPickerColors.greenCta,
                         fontSize: 34,
                         fontWeight: FontWeight.w800,
                       ),
@@ -171,7 +179,7 @@ class _DepositPaymentScreenState extends State<DepositPaymentScreen> {
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.copy_outlined,
-                                      size: 20, color: SlotPickerColors.green),
+                                      size: 20, color: SlotPickerColors.greenCta),
                                   onPressed: () =>
                                       _copyNumber(c.jazzCashNumber.value),
                                 ),
@@ -192,7 +200,7 @@ class _DepositPaymentScreenState extends State<DepositPaymentScreen> {
                             child: const Text(
                               'COPIED!',
                               style: TextStyle(
-                                color: Color(0xFF0A1628),
+                                color: AppColors.onPrimary,
                                 fontSize: 10,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 0.4,
@@ -223,8 +231,8 @@ class _DepositPaymentScreenState extends State<DepositPaymentScreen> {
                       child: _screenshot != null
                           ? ClipRRect(
                               borderRadius: BorderRadius.circular(16),
-                              child: Image.file(
-                                File(_screenshot!.path),
+                              child: Image.memory(
+                                _screenshotBytes!,
                                 height: 180,
                                 width: double.infinity,
                                 fit: BoxFit.cover,
@@ -309,11 +317,12 @@ class _DepositPaymentScreenState extends State<DepositPaymentScreen> {
                           setState(() => _submitting = true);
                           try {
                             await c.submitDeposit(
-                              File(_screenshot!.path),
+                              _screenshot!,
                               c.jazzCashNumber.value,
                             );
                             Get.offNamed(AppRoutes.bookingConfirmation);
-                          } catch (e) {
+                          } catch (e, st) {
+                            debugPrint('❌ submitDeposit failed: $e\n$st');
                             if (!mounted) return;
                             setState(() => _submitting = false);
                             Get.snackbar('Submission failed', e.toString(),
@@ -330,7 +339,7 @@ class _DepositPaymentScreenState extends State<DepositPaymentScreen> {
                             height: 22,
                             child: CircularProgressIndicator(
                               strokeWidth: 2.4,
-                              color: Color(0xFF0A1628),
+                              color: AppColors.onPrimary,
                             ),
                           )
                         : Text(
@@ -338,7 +347,7 @@ class _DepositPaymentScreenState extends State<DepositPaymentScreen> {
                             style: TextStyle(
                               color: _screenshot == null
                                   ? SlotPickerColors.muted
-                                  : const Color(0xFF0A1628),
+                                  : AppColors.onPrimary,
                               fontWeight: FontWeight.w800,
                               fontSize: 15,
                               letterSpacing: 0.4,
@@ -364,14 +373,14 @@ class _DepositPaymentScreenState extends State<DepositPaymentScreen> {
             width: 26,
             height: 26,
             decoration: BoxDecoration(
-              color: SlotPickerColors.green.withValues(alpha: 0.14),
+              color: SlotPickerColors.greenCta.withValues(alpha: 0.14),
               shape: BoxShape.circle,
             ),
             child: Center(
               child: Text(
                 '$n',
                 style: const TextStyle(
-                  color: SlotPickerColors.green,
+                  color: SlotPickerColors.greenCta,
                   fontWeight: FontWeight.w700,
                   fontSize: 12,
                 ),

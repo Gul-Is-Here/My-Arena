@@ -39,7 +39,6 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
   void initState() {
     super.initState();
     ever(_discovery.userPosition, (_) => _rebuild());
-    ever(_discovery.searchRadius, (_) => _rebuild());
     ever(_discovery.isLoading, (_) {
       if (!_discovery.isLoading.value) _rebuild();
     });
@@ -57,7 +56,7 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
     await _buildMarkersAndCircle();
     _animateCameraToFit();
     if (_discovery.nearby.isEmpty && !_discovery.isLoading.value) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _show50kmSheet());
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showNoArenasSnack());
     }
   }
 
@@ -124,7 +123,7 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
     canvas.drawCircle(
       Offset(cx, cy),
       circleR + 1,
-      Paint()..color = AppColors.primary,
+      Paint()..color = AppColors.secondary,
     );
 
     // Clip to circle then draw image or placeholder
@@ -152,7 +151,7 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
       canvas.drawCircle(
         Offset(cx, cy),
         circleR,
-        Paint()..color = AppColors.primary,
+        Paint()..color = AppColors.secondary,
       );
       final iconPainter = TextPainter(
         text: const TextSpan(
@@ -214,7 +213,7 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
         ),
         const Radius.circular(14),
       ),
-      Paint()..color = AppColors.primary,
+      Paint()..color = AppColors.secondary,
     );
 
     // Label text
@@ -240,7 +239,7 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
 
   Future<void> _buildMarkersAndCircle() async {
     final arenas = _discovery.nearby;
-    final radius = _discovery.searchRadius.value * 1000;
+    const radius = 30.0 * 1000; // 30 km in metres
 
     // Build all marker icons in parallel
     final icons = await Future.wait(
@@ -263,8 +262,8 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
       circleId: const CircleId('radius'),
       center: _center,
       radius: radius,
-      fillColor: AppColors.primary.withValues(alpha: 0.10),
-      strokeColor: AppColors.primary,
+      fillColor: AppColors.secondary.withValues(alpha: 0.10),
+      strokeColor: AppColors.secondary,
       strokeWidth: 2,
     );
 
@@ -308,31 +307,17 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
     );
   }
 
-  double _zoomForRadius() =>
-      _discovery.searchRadius.value <= 30 ? 10.5 : 9.5;
+  double _zoomForRadius() => 10.5;
 
-  void _show50kmSheet() {
+  void _showNoArenasSnack() {
     if (!mounted) return;
-    if (_discovery.searchRadius.value >= 50) {
-      Get.snackbar(
-        'No arenas found',
-        'No arenas found within 50 km either.',
-        snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: AppColors.error.withValues(alpha: 0.9),
-        colorText: Colors.white,
-        margin: const EdgeInsets.all(16),
-      );
-      return;
-    }
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _NoArenasSheet(
-        onExpand: () {
-          Navigator.pop(context);
-          _discovery.expandTo50km();
-        },
-      ),
+    Get.snackbar(
+      'No arenas nearby',
+      'No arenas found within 30 km of your location.',
+      snackPosition: SnackPosition.BOTTOM,
+      backgroundColor: AppColors.error.withValues(alpha: 0.9),
+      colorText: Colors.white,
+      margin: const EdgeInsets.all(16),
     );
   }
 
@@ -355,31 +340,29 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
           ),
         ),
         actions: [
-          Obx(() => Container(
-                margin:
-                    const EdgeInsets.only(right: 12, top: 8, bottom: 8),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(20),
+          Container(
+          margin: const EdgeInsets.only(right: 12, top: 8, bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.black54,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.radio_button_checked,
+                  color: AppColors.secondary, size: 14),
+              const SizedBox(width: 6),
+              Text(
+                '30 km',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.radio_button_checked,
-                        color: AppColors.primary, size: 14),
-                    const SizedBox(width: 6),
-                    Text(
-                      '${_discovery.searchRadius.value.toStringAsFixed(0)} km',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              )),
+              ),
+            ],
+          ),
+        ),
         ],
       ),
       body: Obx(() {
@@ -434,7 +417,7 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
                     ],
                   ),
                   child: const Icon(Icons.my_location,
-                      color: AppColors.primary),
+                      color: AppColors.secondary),
                 ),
               ),
             ),
@@ -460,7 +443,7 @@ class _ArenaMapViewScreenState extends State<ArenaMapViewScreen> {
                 color: Colors.black45,
                 child: const Center(
                   child: CircularProgressIndicator(
-                      color: AppColors.primary),
+                      color: AppColors.secondary),
                 ),
               ),
           ],
@@ -513,7 +496,7 @@ class _ArenaPopupCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Row(children: [
                     const Icon(Icons.near_me_outlined,
-                        size: 13, color: AppColors.primary),
+                        size: 13, color: AppColors.secondary),
                     const SizedBox(width: 4),
                     Text(
                       '${distance.toStringAsFixed(1)} km',
@@ -521,13 +504,32 @@ class _ArenaPopupCard extends StatelessWidget {
                           .copyWith(color: AppColors.textGrey),
                     ),
                     const SizedBox(width: 12),
-                    const Icon(Icons.star,
-                        size: 13, color: AppColors.warning),
-                    const SizedBox(width: 4),
-                    Text(
-                      arena.rating.toStringAsFixed(1),
-                      style: AppTextStyles.bodySmall,
-                    ),
+                    if (arena.reviewCount == 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceElevated,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'New',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.textSecondary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      )
+                    else ...[
+                      const Icon(Icons.star,
+                          size: 13, color: AppColors.primary),
+                      const SizedBox(width: 4),
+                      Text(
+                        arena.rating.toStringAsFixed(1),
+                        style: AppTextStyles.bodySmall,
+                      ),
+                    ],
                   ]),
                   const SizedBox(height: 4),
                   Text(
@@ -541,7 +543,7 @@ class _ArenaPopupCard extends StatelessWidget {
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
+                        foregroundColor: AppColors.onPrimary,
                         padding:
                             const EdgeInsets.symmetric(vertical: 8),
                         shape: RoundedRectangleBorder(
@@ -551,8 +553,8 @@ class _ArenaPopupCard extends StatelessWidget {
                         AppRoutes.arenaDetailCustomer,
                         arguments: arena.id,
                       ),
-                      child: const Text('View Details',
-                          style: TextStyle(fontSize: 13)),
+                      child: Text('View Details',
+                          style: AppTextStyles.label.copyWith(fontSize: 13)),
                     ),
                   ),
                 ],
@@ -573,75 +575,3 @@ class _ArenaPopupCard extends StatelessWidget {
   }
 }
 
-// ── No Arenas Bottom Sheet ────────────────────────────────────────────────────
-
-class _NoArenasSheet extends StatelessWidget {
-  final VoidCallback onExpand;
-  const _NoArenasSheet({required this.onExpand});
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassCard(
-      radius: 24,
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.white24,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 20),
-          const Icon(Icons.location_off_outlined,
-              size: 48, color: AppColors.textGrey),
-          const SizedBox(height: 12),
-          Text('No Arenas Nearby', style: AppTextStyles.titleLarge),
-          const SizedBox(height: 8),
-          Text(
-            "We couldn't find any arenas within 30 km of your location.",
-            textAlign: TextAlign.center,
-            style: AppTextStyles.bodyMedium
-                .copyWith(color: AppColors.textGrey),
-          ),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(
-                        color: AppColors.textGrey.withValues(alpha: 0.4)),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
-                  ),
-                  child: const Text('Cancel',
-                      style: TextStyle(color: AppColors.textGrey)),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: onExpand,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
-                  ),
-                  child: const Text('Expand to 50 km'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}

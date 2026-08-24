@@ -1,16 +1,13 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../data/models/arena_model.dart';
-import '../data/models/court_model.dart';
 import '../services/arena_service.dart';
 
-/// Edit an existing arena: every field (basic info, photos, location,
-/// courts) is loaded from Firestore and written back on save.
+/// Edit an existing arena's information (name, description, photos, location).
+/// Court management is handled separately from the Arena Details screen.
 class ArenaEditController extends GetxController {
   ArenaEditController({required this.arenaId});
 
@@ -21,22 +18,15 @@ class ArenaEditController extends GetxController {
   final RxBool isSaving = false.obs;
   final RxBool loadFailed = false.obs;
 
-  // Basic info
   final nameCtrl = TextEditingController();
   final descriptionCtrl = TextEditingController();
 
-  // Images — existing Storage URLs plus newly picked local files
   final RxList<String> existingImages = <String>[].obs;
   final RxList<XFile> newImages = <XFile>[].obs;
   final ImagePicker _picker = ImagePicker();
 
-  // Location
   final addressCtrl = TextEditingController();
   final Rx<LatLng?> pickedLatLng = Rx<LatLng?>(null);
-
-  // Courts — edited locally, synced to the subcollection on save
-  final RxList<CourtModel> courts = <CourtModel>[].obs;
-  final Set<String> _originalCourtIds = {};
 
   ArenaModel? _arena;
 
@@ -61,20 +51,12 @@ class ArenaEditController extends GetxController {
         pickedLatLng.value = LatLng(arena.location.lat, arena.location.lng);
       }
       existingImages.assignAll(arena.images);
-
-      final allCourts = await _arenaService.fetchAllCourts(arenaId);
-      courts.assignAll(allCourts);
-      _originalCourtIds
-        ..clear()
-        ..addAll(allCourts.map((c) => c.id));
     } catch (_) {
       loadFailed.value = true;
     } finally {
       isLoading.value = false;
     }
   }
-
-  // ── Images ────────────────────────────────────────────────────────────
 
   Future<void> pickImages() async {
     try {
@@ -86,30 +68,13 @@ class ArenaEditController extends GetxController {
   }
 
   void removeExistingImage(int index) => existingImages.removeAt(index);
-
   void removeNewImage(int index) => newImages.removeAt(index);
-
   int get totalImages => existingImages.length + newImages.length;
 
-  // ── Location ──────────────────────────────────────────────────────────
-
-  void setLocation(LatLng latLng) => pickedLatLng.value = latLng;
-
-  // ── Courts ────────────────────────────────────────────────────────────
-
-  void upsertCourt(CourtModel court) {
-    final index = courts.indexWhere((c) => c.id == court.id);
-    if (index == -1) {
-      courts.add(court);
-    } else {
-      courts[index] = court;
-      courts.refresh();
-    }
+  void setLocation(LatLng latLng, {String? address}) {
+    pickedLatLng.value = latLng;
+    if (address != null && address.isNotEmpty) addressCtrl.text = address;
   }
-
-  void removeCourt(int index) => courts.removeAt(index);
-
-  // ── Save ──────────────────────────────────────────────────────────────
 
   bool _validate() {
     if (nameCtrl.text.trim().length < 3) {
@@ -128,10 +93,6 @@ class ArenaEditController extends GetxController {
       _warn('Enter the arena address');
       return false;
     }
-    if (courts.isEmpty) {
-      _warn('Keep at least one court');
-      return false;
-    }
     return true;
   }
 
@@ -139,13 +100,11 @@ class ArenaEditController extends GetxController {
     if (isSaving.value || !_validate()) return;
     isSaving.value = true;
     try {
-      // 1. Upload any newly added photos
-      final files = newImages.map((x) => File(x.path)).toList();
+      final files = newImages.toList();
       final uploadedUrls = files.isEmpty
           ? <String>[]
           : await _arenaService.uploadArenaImages(arenaId, files);
 
-      // 2. Update the arena document
       final location = pickedLatLng.value;
       await _arenaService.updateArena(arenaId, {
         'name': nameCtrl.text.trim(),
@@ -158,20 +117,6 @@ class ArenaEditController extends GetxController {
         },
       });
 
-      // 3. Sync courts: update kept ones, add new ones, delete removed ones
-      final keptIds = <String>{};
-      for (final court in courts) {
-        if (_originalCourtIds.contains(court.id)) {
-          keptIds.add(court.id);
-          await _arenaService.updateCourt(arenaId, court.id, court.toMap());
-        } else {
-          await _arenaService.addCourt(arenaId, court);
-        }
-      }
-      for (final id in _originalCourtIds.difference(keptIds)) {
-        await _arenaService.deleteCourt(arenaId, id);
-      }
-
       isSaving.value = false;
       Get.back();
       Get.snackbar(
@@ -182,7 +127,16 @@ class ArenaEditController extends GetxController {
       );
     } catch (e) {
       isSaving.value = false;
-      _warn('Failed to save: ${e.toString()}');
+      debugPrint('Arena save failed: $e');
+      final msg = e.toString();
+      if (msg.contains('permission-denied')) {
+        _warn('You don\'t have permission to update this arena. '
+            'Make sure you\'re signed in as the arena owner.');
+      } else if (msg.contains('not-found')) {
+        _warn('Arena not found. It may have been deleted.');
+      } else {
+        _warn('Failed to save. Please check your connection and try again.');
+      }
     }
   }
 
