@@ -220,6 +220,22 @@ class _ChatCard extends StatelessWidget {
 
   const _ChatCard({required this.chat, required this.timeAgo});
 
+  // For booking chats: owners see the customer's name; customers see the
+  // arena name. Support chats always show their stored title.
+  String get _displayTitle {
+    if (chat.type != ChatType.booking) return chat.title;
+    final myUid = Get.isRegistered<ChatController>()
+        ? ChatController.to.myUid
+        : '';
+    final isOwnerSide = myUid.isNotEmpty && myUid != chat.customerId;
+    if (isOwnerSide) {
+      return chat.customerName?.isNotEmpty == true
+          ? chat.customerName!
+          : chat.title;
+    }
+    return chat.title; // customer sees arena name (stored in title)
+  }
+
   bool get _isConfirmed =>
       chat.lastMessage.toLowerCase().contains('confirmed');
 
@@ -315,7 +331,7 @@ class _ChatCard extends StatelessWidget {
                         children: [
                           Expanded(
                             child: Text(
-                              chat.title,
+                              _displayTitle,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: AppTextStyles.titleMedium.copyWith(

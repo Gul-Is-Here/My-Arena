@@ -10,6 +10,7 @@ import '../../services/auth_service.dart';
 import '../../services/booking_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_text_styles.dart';
+import 'pos/pos_booking_sale_screen.dart';
 
 const _bg = AppColors.background;
 const _surface = AppColors.surface;
@@ -125,6 +126,23 @@ class BookingDetailOwnerScreen extends StatelessWidget {
                     _summaryCard(b),
                     const SizedBox(height: 14),
                     _paymentCard(b),
+                    const SizedBox(height: 14),
+                    OutlinedButton.icon(
+                      onPressed: () => Get.toNamed(
+                        AppRoutes.posBookingSale,
+                        arguments: {'booking': b},
+                      ),
+                      icon: const Icon(Icons.link_outlined, size: 18),
+                      label: const Text('Add Booking Sale'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.warning,
+                        side: const BorderSide(color: AppColors.warning),
+                        minimumSize: const Size(double.infinity, 48),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                    BookingLinkedSalesList(bookingId: b.id),
                     if (!b.isPosBooking && b.depositScreenshot != null) ...[
                       const SizedBox(height: 14),
                       _depositProofCard(context, b),

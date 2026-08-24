@@ -7,6 +7,7 @@ import '../../controllers/auth_controller.dart';
 import '../../controllers/notification_controller.dart';
 import '../../controllers/owner_booking_controller.dart';
 import '../../controllers/owner_controller.dart';
+import '../../controllers/pos_controller.dart';
 import '../../data/models/booking_model.dart';
 import '../../routes/app_routes.dart';
 import '../../theme/app_colors.dart';
@@ -374,22 +375,24 @@ class DashboardTab extends StatelessWidget {
           .where((b) => _isSameDay(b.date, today))
           .length;
       final pendingCount = ownerBookings.pendingApproval.length;
-      final totalEarnings = ownerBookings.all
-          .where(
-            (b) =>
-                b.status == BookingStatus.confirmed ||
-                b.status == BookingStatus.completed,
-          )
-          .fold(0.0, (acc, b) => acc + b.totalAmount);
-      final todayCash = ownerBookings.all
-          .where(
-            (b) =>
-                _isSameDay(b.date, today) &&
-                b.bookedByRole == 'owner' &&
-                (b.status == BookingStatus.confirmed ||
-                    b.status == BookingStatus.completed),
-          )
-          .fold(0.0, (acc, b) => acc + b.totalAmount);
+      // Total collected (amountPaid) from the unified ledger — consistent with POS dashboard
+      final pos = Get.isRegistered<PosController>() ? PosController.to : null;
+      final totalEarnings = pos != null
+          ? pos.transactions.fold(0.0, (acc, t) => acc + t.amountPaid)
+          : ownerBookings.all
+              .where((b) =>
+                  b.status == BookingStatus.confirmed ||
+                  b.status == BookingStatus.completed)
+              .fold(0.0, (acc, b) => acc + b.totalAmount);
+      final todayCash = pos != null
+          ? pos.todayCounterCollected.value
+          : ownerBookings.all
+              .where((b) =>
+                  _isSameDay(b.date, today) &&
+                  b.bookedByRole == 'owner' &&
+                  (b.status == BookingStatus.confirmed ||
+                      b.status == BookingStatus.completed))
+              .fold(0.0, (acc, b) => acc + b.totalAmount);
 
       return GridView.count(
         crossAxisCount: cols,

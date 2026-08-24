@@ -30,7 +30,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   @override
   void initState() {
     super.initState();
-    if (!Get.isRegistered<OwnerController>()) Get.put(OwnerController());
+    if (!Get.isRegistered<OwnerController>()) Get.put(OwnerController(), permanent: true);
     if (!Get.isRegistered<OwnerBookingController>()) {
       Get.put(OwnerBookingController(), permanent: true);
     }
@@ -86,6 +86,12 @@ class _NarrowShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!Get.isRegistered<OwnerController>() ||
+        !Get.isRegistered<ChatController>()) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     final owner = OwnerController.to;
     final chat = ChatController.to;
 
@@ -224,6 +230,12 @@ class _WideShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!Get.isRegistered<OwnerController>() ||
+        !Get.isRegistered<ChatController>()) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     final owner = OwnerController.to;
     final chat = ChatController.to;
     final screenW = MediaQuery.sizeOf(context).width;

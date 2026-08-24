@@ -146,6 +146,9 @@ class PosService {
         if (expenseDelta != 0) 'expenses': FieldValue.increment(expenseDelta),
       });
 
+  Future<void> addCashIn(String shiftId, double amount) =>
+      _shifts.doc(shiftId).update({'cashIn': FieldValue.increment(amount)});
+
   // ── Products / Add-ons ────────────────────────────────────────────────────
   // NOTE: No compound query — filter/sort client-side.
 
@@ -216,4 +219,14 @@ class PosService {
       'net': paid - expenses,
     };
   }
+
+  /// Live stream of bookingSale POS transactions for a specific booking.
+  Stream<List<PosTransactionModel>> bookingLinkedSalesStream(String bookingId) =>
+      _db
+          .collection('posTransactions')
+          .where('bookingId', isEqualTo: bookingId)
+          .where('type', isEqualTo: 'bookingSale')
+          .orderBy('createdAt', descending: true)
+          .snapshots()
+          .map((s) => s.docs.map((d) => PosTransactionModel.fromMap(d.data())).toList());
 }

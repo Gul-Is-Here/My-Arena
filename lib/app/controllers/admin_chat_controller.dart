@@ -73,6 +73,9 @@ class AdminChatController extends GetxController {
     return _msgRx[chatId]!;
   }
 
+  Future<void> markRead(String chatId) =>
+      _service.markRead(chatId, myUid).catchError((_) {});
+
   /// Admin replies in a conversation — joins as participant first so the
   /// other side's unread counts and streams include the admin.
   Future<void> sendReply(String chatId, String text) async {

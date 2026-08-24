@@ -147,12 +147,13 @@ class NotificationService {
   static void _navigate(Map<String, String?> data) {
     final type = data['type'];
     final relatedId = data['relatedId'];
-    debugPrint('_navigate: type=$type relatedId=$relatedId');
+    debugPrint('_navigate: type=$type relatedId=$relatedId data=$data');
     if (type == null || relatedId == null || relatedId.isEmpty) return;
-    _navigateAsync(type, relatedId);
+    _navigateAsync(type, relatedId, data);
   }
 
-  static Future<void> _navigateAsync(String type, String relatedId) async {
+  static Future<void> _navigateAsync(
+      String type, String relatedId, Map<String, String?> data) async {
     // Determine recipient role from the currently signed-in user, not from
     // any stale payload. This means deep-links always open the correct screen
     // for whoever is currently logged in.
@@ -160,6 +161,7 @@ class NotificationService {
         ? AuthController.to.currentUser.value
         : null;
     final isOwnerSide = user?.role == UserRole.owner || user?.isArenaStaff == true;
+    final isAdminTier = user?.role.isAdminTier == true;
 
     switch (type) {
       case 'booking':
@@ -189,21 +191,24 @@ class NotificationService {
           }
         }
         break;
+
       case 'chat':
-        Get.toNamed(AppRoutes.chatRoom, arguments: relatedId);
-        break;
-      case 'support':
-        if (user?.role == UserRole.admin || user?.role == UserRole.superAdmin) {
-          Get.toNamed(AppRoutes.notifications);
-        } else if (isOwnerSide) {
-          Get.toNamed(AppRoutes.ownerTickets);
-        } else {
-          Get.toNamed(AppRoutes.customerTicketDetail, arguments: relatedId);
+        {
+          // isAdminChat flag is set by the Cloud Function when notifying an
+          // admin about a support message → open adminChatView not chatRoom.
+          final isAdminChat = data['isAdminChat'] == 'true';
+          if (isAdminTier || isAdminChat) {
+            Get.toNamed(AppRoutes.adminChatView, arguments: relatedId);
+          } else {
+            Get.toNamed(AppRoutes.chatRoom, arguments: relatedId);
+          }
         }
         break;
+
       case 'tournament':
         Get.toNamed(AppRoutes.tournamentDetail, arguments: relatedId);
         break;
+
       default:
         Get.toNamed(AppRoutes.notifications);
         break;

@@ -60,6 +60,9 @@ dependencies:
   google_fonts: ^6.2.1
   url_launcher: ^6.3.1
   geoflutterfire_plus: ^0.0.34
+  pdf: ^3.13.0
+  printing: ^5.15.0
+  path_provider: ^2.1.6
 
 dev_dependencies:
   flutter_test:

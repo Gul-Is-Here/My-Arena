@@ -18,6 +18,7 @@ class PosShiftModel {
   final double otherSales;
   final double cashRefunds;
   final double expenses;
+  final double cashIn; // mid-shift cash added to drawer (not from sales)
   final String notes;
 
   const PosShiftModel({
@@ -36,11 +37,12 @@ class PosShiftModel {
     this.otherSales = 0,
     this.cashRefunds = 0,
     this.expenses = 0,
+    this.cashIn = 0,
     this.notes = '',
   });
 
   double get totalRevenue => cashSales + cardSales + otherSales;
-  double get expectedCash => openingCash + cashSales - cashRefunds - expenses;
+  double get expectedCash => openingCash + cashIn + cashSales - cashRefunds - expenses;
   double get cashDifference => closingCash - expectedCash;
   double get netRevenue => totalRevenue - cashRefunds - expenses;
 
@@ -60,6 +62,7 @@ class PosShiftModel {
         'otherSales': otherSales,
         'cashRefunds': cashRefunds,
         'expenses': expenses,
+        if (cashIn != 0) 'cashIn': cashIn,
         if (notes.isNotEmpty) 'notes': notes,
       };
 
@@ -83,6 +86,7 @@ class PosShiftModel {
         otherSales: (m['otherSales'] as num?)?.toDouble() ?? 0,
         cashRefunds: (m['cashRefunds'] as num?)?.toDouble() ?? 0,
         expenses: (m['expenses'] as num?)?.toDouble() ?? 0,
+        cashIn: (m['cashIn'] as num?)?.toDouble() ?? 0,
         notes: m['notes'] ?? '',
       );
 
@@ -95,6 +99,7 @@ class PosShiftModel {
     double? otherSales,
     double? cashRefunds,
     double? expenses,
+    double? cashIn,
     String? notes,
   }) =>
       PosShiftModel(
@@ -113,6 +118,7 @@ class PosShiftModel {
         otherSales: otherSales ?? this.otherSales,
         cashRefunds: cashRefunds ?? this.cashRefunds,
         expenses: expenses ?? this.expenses,
+        cashIn: cashIn ?? this.cashIn,
         notes: notes ?? this.notes,
       );
 }

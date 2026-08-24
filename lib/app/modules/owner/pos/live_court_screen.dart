@@ -4,14 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 
-import '../../../controllers/auth_controller.dart';
 import '../../../controllers/owner_booking_controller.dart';
 import '../../../controllers/pos_controller.dart';
 import '../../../data/models/booking_model.dart';
 import '../../../data/models/court_model.dart';
 import '../../../data/models/extension_request_model.dart';
+import '../../../data/models/pos_product_model.dart';
 import '../../../data/models/pos_transaction_model.dart';
 import '../../../routes/app_routes.dart';
+import 'pos_collect_sheet.dart';
 import '../../../services/extension_service.dart';
 import '../../../theme/app_colors.dart';
 import '../../../theme/app_text_styles.dart';
@@ -328,6 +329,14 @@ class _CourtCard extends StatelessWidget {
                     color: AppColors.accent,
                     onTap: () => _showSessionSheet(context, current, court),
                   ),
+                // Add Items — food/drinks/equipment during live session
+                if (current != null && current.checkedIn)
+                  _ActionChip(
+                    label: 'Add Items',
+                    icon: Icons.add_shopping_cart_outlined,
+                    color: AppColors.secondary,
+                    onTap: () => _showAddItemsSheet(context, current),
+                  ),
                 // Collect Balance — shown when there's an outstanding amount
                 if (current != null && current.remainingAmount > 0)
                   _ActionChip(
@@ -375,7 +384,14 @@ class _CourtCard extends StatelessWidget {
   void _showCollectSheet(BuildContext context, BookingModel booking) {
     Get.bottomSheet(
       isScrollControlled: true,
-      _CollectBalanceSheet(booking: booking),
+      PosCollectBalanceSheet(booking: booking),
+    );
+  }
+
+  void _showAddItemsSheet(BuildContext context, BookingModel booking) {
+    Get.bottomSheet(
+      isScrollControlled: true,
+      _AddItemsSheet(booking: booking),
     );
   }
 }
@@ -664,6 +680,58 @@ class _SessionSheetState extends State<_SessionSheet> {
             _PendingExtensionPanel(booking: b),
             const Divider(height: 24, color: AppColors.border),
 
+            // Add items (food, beverages, equipment) to this session
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Add Items',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary)),
+                      Text('Food, beverages, equipment rental',
+                          style: AppTextStyles.caption.copyWith(
+                              color: AppColors.textSecondary)),
+                    ],
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () {
+                    Get.back();
+                    Get.bottomSheet(
+                      isScrollControlled: true,
+                      _AddItemsSheet(booking: b),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.secondary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: AppColors.secondary.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.add_shopping_cart_outlined,
+                            size: 14, color: AppColors.secondary),
+                        const SizedBox(width: 6),
+                        Text('Add Items',
+                            style: AppTextStyles.caption.copyWith(
+                                color: AppColors.secondary,
+                                fontWeight: FontWeight.w700)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 24, color: AppColors.border),
+
             // Checkout section
             Text('Checkout', style: AppTextStyles.bodyMedium.copyWith(
               fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
@@ -741,32 +809,16 @@ class _SessionSheetState extends State<_SessionSheet> {
   Future<void> _checkout(double amountToCollect) async {
     setState(() => _submitting = true);
     try {
-      // Record POS transaction for checkout payment if amount > 0
-      if (amountToCollect > 0) {
-        final pos = PosController.to;
-        final arena = pos.selectedArena.value;
-        if (arena != null) {
-          final user = AuthController.to.currentUser.value;
-          await pos.recordTransaction(PosTransactionModel(
-            id: '',
-            arenaId: arena.id,
-            arenaName: arena.name,
-            courtId: widget.court.id,
-            courtName: widget.court.name,
-            bookingId: _booking.id,
-            customerName: _booking.customerName.isNotEmpty ? _booking.customerName : 'Walk-in',
-            totalAmount: amountToCollect,
-            amountPaid: amountToCollect,
-            remainingAmount: 0,
-            paymentMethod: _payMethod,
-            type: PosTransactionType.checkout,
-            processedById: user?.uid ?? '',
-            processedByName: user?.name ?? '',
-            createdAt: DateTime.now(),
-          ));
-        }
-      }
       final b = _booking;
+      // Collect remaining balance through the unified ledger (source: pos)
+      if (amountToCollect > 0) {
+        await PosController.to.collectBalance(
+          booking: b,
+          amount: amountToCollect,
+          method: _payMethod,
+        );
+      }
+      // Mark booking as completed
       final newRemaining = (b.remainingAmount - amountToCollect).clamp(0.0, double.infinity);
       await OwnerBookingController.to.checkoutSession(b.id, amountToCollect, newRemaining);
       Get.back();
@@ -1087,212 +1139,6 @@ class _PendingExtensionPanelState extends State<_PendingExtensionPanel> {
   }
 }
 
-// ── Collect Balance Bottom Sheet ──────────────────────────────────────────
-
-class _CollectBalanceSheet extends StatefulWidget {
-  final BookingModel booking;
-  const _CollectBalanceSheet({required this.booking});
-
-  @override
-  State<_CollectBalanceSheet> createState() => _CollectBalanceSheetState();
-}
-
-class _CollectBalanceSheetState extends State<_CollectBalanceSheet> {
-  PosPaymentMethod _method = PosPaymentMethod.cash;
-  final _refController = TextEditingController();
-  bool _submitting = false;
-
-  BookingModel get _booking {
-    final live = OwnerBookingController.to.bookings
-        .firstWhereOrNull((b) => b.id == widget.booking.id);
-    return live ?? widget.booking;
-  }
-
-  @override
-  void dispose() {
-    _refController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Obx(() {
-      final b = _booking;
-      final remaining = b.remainingAmount;
-      return Container(
-        decoration: const BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        padding: EdgeInsets.fromLTRB(
-            16, 16, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40, height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.border,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Header
-              Text('Collect Balance',
-                  style: AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 4),
-              Text(
-                '${b.customerName.isNotEmpty ? b.customerName : 'Walk-in'} · ${b.courtName} · ${b.timeRange}',
-                style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 20),
-
-              // Summary
-              _SummaryRow('Total Amount', 'PKR ${_pkr.format(b.totalAmount)}'),
-              const SizedBox(height: 6),
-              _SummaryRow('Already Paid', 'PKR ${_pkr.format(b.amountPaid ?? 0)}'),
-              const SizedBox(height: 6),
-              _SummaryRow('Outstanding', 'PKR ${_pkr.format(remaining)}', highlight: true),
-              const Divider(height: 24, color: AppColors.border),
-
-              // Payment method
-              Text('Payment Method',
-                  style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  PosPaymentMethod.cash,
-                  PosPaymentMethod.card,
-                  PosPaymentMethod.jazzcash,
-                  PosPaymentMethod.easypaisa,
-                  PosPaymentMethod.bankTransfer,
-                ].map((m) {
-                  final sel = _method == m;
-                  return GestureDetector(
-                    onTap: () => setState(() => _method = m),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: sel
-                            ? AppColors.warning.withValues(alpha: 0.12)
-                            : AppColors.elevated,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                            color: sel ? AppColors.warning : AppColors.border),
-                      ),
-                      child: Text(m.label,
-                          style: AppTextStyles.caption.copyWith(
-                            color: sel ? AppColors.warning : AppColors.textPrimary,
-                            fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
-                          )),
-                    ),
-                  );
-                }).toList(),
-              ),
-
-              // Reference number (shown for non-cash methods)
-              if (_method != PosPaymentMethod.cash) ...[
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _refController,
-                  style: AppTextStyles.bodySmall,
-                  decoration: InputDecoration(
-                    hintText: 'Reference / transaction no. (optional)',
-                    hintStyle: AppTextStyles.caption.copyWith(
-                        color: AppColors.textDisabled),
-                    filled: true,
-                    fillColor: AppColors.elevated,
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: AppColors.border),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: AppColors.border),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: AppColors.warning),
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 20),
-
-              if (remaining <= 0)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: AppColors.success.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
-                  ),
-                  child: Text('No outstanding balance — fully paid.',
-                      textAlign: TextAlign.center,
-                      style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.success, fontWeight: FontWeight.w600)),
-                )
-              else
-                FilledButton(
-                  onPressed: _submitting ? null : () => _collect(remaining),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.warning,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(double.infinity, 50),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: _submitting
-                      ? const SizedBox(
-                          width: 20, height: 20,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white))
-                      : Text('Collect PKR ${_pkr.format(remaining)}'),
-                ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        ),
-      );
-    });
-  }
-
-  Future<void> _collect(double amount) async {
-    setState(() => _submitting = true);
-    try {
-      await PosController.to.collectBalance(
-        booking: _booking,
-        amount: amount,
-        method: _method,
-        refNo: _refController.text.trim().isEmpty ? null : _refController.text.trim(),
-      );
-      Get.back();
-      Get.snackbar(
-        'Payment Collected',
-        'PKR ${_pkr.format(amount)} collected via ${_method.label}',
-        backgroundColor: AppColors.success,
-        colorText: Colors.white,
-      );
-    } catch (e) {
-      Get.snackbar('Error', e.toString(),
-          backgroundColor: AppColors.error, colorText: Colors.white);
-    } finally {
-      if (mounted) setState(() => _submitting = false);
-    }
-  }
-}
-
 class _ExtensionRequestTile extends StatelessWidget {
   final ExtensionRequestModel req;
   final bool acting;
@@ -1386,6 +1232,317 @@ class _ExtensionRequestTile extends StatelessWidget {
                 ),
               ],
             ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Add Items Sheet ───────────────────────────────────────────────────────
+
+class _AddItemsSheet extends StatefulWidget {
+  final BookingModel booking;
+  const _AddItemsSheet({required this.booking});
+
+  @override
+  State<_AddItemsSheet> createState() => _AddItemsSheetState();
+}
+
+class _AddItemsSheetState extends State<_AddItemsSheet> {
+  final Map<String, int> _qty = {}; // productId → quantity
+  bool _submitting = false;
+
+  BookingModel get _booking {
+    final live = OwnerBookingController.to.bookings
+        .firstWhereOrNull((b) => b.id == widget.booking.id);
+    return live ?? widget.booking;
+  }
+
+  List<PosProductModel> get _products =>
+      PosController.to.products.where((p) => p.isActive).toList();
+
+  double get _total => _products.fold(0.0, (sum, p) {
+        final q = _qty[p.id] ?? 0;
+        return sum + p.price * q;
+      });
+
+  bool get _hasItems => _qty.values.any((q) => q > 0);
+
+  Future<void> _confirm() async {
+    if (!_hasItems) return;
+    setState(() => _submitting = true);
+    try {
+      final items = _products
+          .where((p) => (_qty[p.id] ?? 0) > 0)
+          .map((p) => {
+                'name': p.name,
+                'qty': _qty[p.id]!,
+                'unitPrice': p.price,
+              })
+          .toList();
+
+      await PosController.to.addSessionItems(
+        booking: _booking,
+        items: items,
+        total: _total,
+      );
+
+      Get.back();
+      Get.snackbar(
+        'Items Added',
+        'PKR ${_pkr.format(_total)} added to session bill',
+        backgroundColor: AppColors.success,
+        colorText: Colors.white,
+      );
+    } catch (e) {
+      Get.snackbar('Error', e.toString(),
+          backgroundColor: AppColors.error, colorText: Colors.white);
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final products = _products;
+      final categories = products.map((p) => p.category).toSet().toList();
+
+      return Container(
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: EdgeInsets.fromLTRB(
+            16, 16, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Add Items to Session',
+                          style: AppTextStyles.titleMedium
+                              .copyWith(fontWeight: FontWeight.w700)),
+                      Text(
+                        '${_booking.customerName.isNotEmpty ? _booking.customerName : 'Walk-in'} · ${_booking.courtName}',
+                        style: AppTextStyles.bodySmall
+                            .copyWith(color: AppColors.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            if (products.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Center(
+                  child: Text(
+                    'No products set up yet.\nGo to POS → Products to add items.',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.bodySmall
+                        .copyWith(color: AppColors.textSecondary),
+                  ),
+                ),
+              )
+            else
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.45),
+                child: ListView(
+                  shrinkWrap: true,
+                  children: categories.expand((cat) {
+                    final catProducts =
+                        products.where((p) => p.category == cat).toList();
+                    return [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, bottom: 6),
+                        child: Text(cat.label.toUpperCase(),
+                            style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textDisabled,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.8)),
+                      ),
+                      ...catProducts.map((p) => _ProductRow(
+                            product: p,
+                            qty: _qty[p.id] ?? 0,
+                            onIncrement: () =>
+                                setState(() => _qty[p.id] = (_qty[p.id] ?? 0) + 1),
+                            onDecrement: () {
+                              final current = _qty[p.id] ?? 0;
+                              if (current > 0) {
+                                setState(() => _qty[p.id] = current - 1);
+                              }
+                            },
+                          )),
+                    ];
+                  }).toList(),
+                ),
+              ),
+
+            if (_hasItems) ...[
+              const Divider(height: 20, color: AppColors.border),
+              Row(
+                children: [
+                  Text('Total to add',
+                      style: AppTextStyles.bodySmall
+                          .copyWith(color: AppColors.textSecondary)),
+                  const Spacer(),
+                  Text('PKR ${_pkr.format(_total)}',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w800)),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Added to session bill — collect at checkout',
+                style: AppTextStyles.caption
+                    .copyWith(color: AppColors.textSecondary),
+              ),
+            ],
+
+            const SizedBox(height: 14),
+            FilledButton(
+              onPressed: (_submitting || !_hasItems) ? null : _confirm,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.secondary,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 50),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                disabledBackgroundColor: AppColors.border,
+              ),
+              child: _submitting
+                  ? const SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : Text(_hasItems
+                      ? 'Add PKR ${_pkr.format(_total)} to Bill'
+                      : 'Select items above'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      );
+    });
+  }
+}
+
+class _ProductRow extends StatelessWidget {
+  final PosProductModel product;
+  final int qty;
+  final VoidCallback onIncrement;
+  final VoidCallback onDecrement;
+
+  const _ProductRow({
+    required this.product,
+    required this.qty,
+    required this.onIncrement,
+    required this.onDecrement,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(product.name,
+                    style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w600)),
+                Text('PKR ${_pkr.format(product.price)}',
+                    style: AppTextStyles.caption
+                        .copyWith(color: AppColors.textSecondary)),
+              ],
+            ),
+          ),
+          Row(
+            children: [
+              GestureDetector(
+                onTap: onDecrement,
+                child: Container(
+                  width: 30, height: 30,
+                  decoration: BoxDecoration(
+                    color: qty > 0
+                        ? AppColors.secondary.withValues(alpha: 0.12)
+                        : AppColors.elevated,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: qty > 0
+                            ? AppColors.secondary.withValues(alpha: 0.4)
+                            : AppColors.border),
+                  ),
+                  child: Icon(Icons.remove,
+                      size: 14,
+                      color: qty > 0
+                          ? AppColors.secondary
+                          : AppColors.textDisabled),
+                ),
+              ),
+              SizedBox(
+                width: 32,
+                child: Text(
+                  '$qty',
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w700),
+                ),
+              ),
+              GestureDetector(
+                onTap: onIncrement,
+                child: Container(
+                  width: 30, height: 30,
+                  decoration: BoxDecoration(
+                    color: AppColors.secondary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: AppColors.secondary.withValues(alpha: 0.4)),
+                  ),
+                  child: Icon(Icons.add,
+                      size: 14, color: AppColors.secondary),
+                ),
+              ),
+            ],
+          ),
+          if (qty > 0) ...[
+            const SizedBox(width: 10),
+            SizedBox(
+              width: 64,
+              child: Text(
+                'PKR ${_pkr.format(product.price * qty)}',
+                textAlign: TextAlign.end,
+                style: AppTextStyles.caption.copyWith(
+                    color: AppColors.secondary,
+                    fontWeight: FontWeight.w700),
+              ),
+            ),
+          ] else
+            const SizedBox(width: 74),
         ],
       ),
     );

@@ -1,6 +1,7 @@
 import 'package:get/get.dart';
 
 import '../data/models/user_model.dart';
+import '../data/models/booking_model.dart';
 import '../modules/admin/admin_arena_detail_screen.dart';
 import '../modules/admin/admin_permissions_screen.dart';
 import '../modules/admin/admin_scope_screen.dart';
@@ -100,6 +101,7 @@ import '../modules/owner/pos/pos_shift_screen.dart';
 import '../modules/owner/pos/pos_reports_screen.dart';
 import '../modules/owner/pos/pos_products_screen.dart';
 import '../modules/owner/pos_receipt_screen.dart';
+import '../modules/owner/pos/pos_booking_sale_screen.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -602,6 +604,16 @@ class AppPages {
     GetPage(
       name: AppRoutes.posProducts,
       page: () => const PosProductsScreen(),
+      middlewares: [OwnerMiddleware()],
+    ),
+    GetPage(
+      name: AppRoutes.posBookingSale,
+      page: () {
+        final args = Get.arguments as Map<String, dynamic>?;
+        return PosBookingSaleScreen(
+          initialBooking: args?['booking'] as BookingModel?,
+        );
+      },
       middlewares: [OwnerMiddleware()],
     ),
   ];

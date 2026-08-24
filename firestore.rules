@@ -436,7 +436,16 @@ service cloud.firestore {
     // isAdminTier() covers platform admin read-only access.
 
     match /posTransactions/{txnId} {
-      allow read: if isAuth() && (
+      // Allow get on non-existent doc (resource == null) so idempotency checks
+      // (e.g. BookingService.confirmBooking) don't fail with permission-denied
+      // when the ledger entry was never created.
+      allow get: if isAuth() && (
+        resource == null ||
+        ownsArena(resource.data.arenaId) ||
+        isArenaStaff(resource.data.arenaId) ||
+        isAdminTier()
+      );
+      allow list: if isAuth() && (
         ownsArena(resource.data.arenaId) ||
         isArenaStaff(resource.data.arenaId) ||
         isAdminTier()

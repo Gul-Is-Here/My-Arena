@@ -43,30 +43,38 @@ class BookingService {
   Stream<RecurringSeriesModel?> seriesStream(String seriesId) => _series
       .doc(seriesId)
       .snapshots()
-      .map((s) => s.exists
-          ? RecurringSeriesModel.fromMap({...s.data()!, 'id': s.id})
-          : null);
+      .map(
+        (s) => s.exists
+            ? RecurringSeriesModel.fromMap({...s.data()!, 'id': s.id})
+            : null,
+      );
 
   Stream<List<RecurringSeriesModel>> customerSeriesStream(String customerId) =>
       _series
           .where('customerId', isEqualTo: customerId)
           .orderBy('startDate', descending: false)
           .snapshots()
-          .map((s) => s.docs
-              .map((d) =>
-                  RecurringSeriesModel.fromMap({...d.data(), 'id': d.id}))
-              .toList());
+          .map(
+            (s) => s.docs
+                .map(
+                  (d) =>
+                      RecurringSeriesModel.fromMap({...d.data(), 'id': d.id}),
+                )
+                .toList(),
+          );
 
-  Stream<List<RecurringSeriesModel>> ownerSeriesStream(String ownerId) =>
-      _series
-          .where('ownerId', isEqualTo: ownerId)
-          .where('status', whereIn: ['pending', 'confirmed', 'partially_confirmed'])
-          .orderBy('startDate', descending: false)
-          .snapshots()
-          .map((s) => s.docs
-              .map((d) =>
-                  RecurringSeriesModel.fromMap({...d.data(), 'id': d.id}))
-              .toList());
+  Stream<List<RecurringSeriesModel>> ownerSeriesStream(
+    String ownerId,
+  ) => _series
+      .where('ownerId', isEqualTo: ownerId)
+      .where('status', whereIn: ['pending', 'confirmed', 'partially_confirmed'])
+      .orderBy('startDate', descending: false)
+      .snapshots()
+      .map(
+        (s) => s.docs
+            .map((d) => RecurringSeriesModel.fromMap({...d.data(), 'id': d.id}))
+            .toList(),
+      );
 
   // ── Create booking with double-booking prevention ────────────────────
 
@@ -76,13 +84,15 @@ class BookingService {
   /// Atomic slot keys: one document per court-hour.
   /// Key format: {courtId}_{yyyyMMdd}_{HH}
   List<DocumentReference<Map<String, dynamic>>> _slotRefs(
-      BookingModel booking) {
+    BookingModel booking,
+  ) {
     final dateStr =
         '${booking.date.year}${booking.date.month.toString().padLeft(2, '0')}${booking.date.day.toString().padLeft(2, '0')}';
     return List.generate(
       booking.totalHours,
-      (i) => _slotLocks
-          .doc('${booking.courtId}_${dateStr}_${(booking.startHour + i).toString().padLeft(2, '0')}'),
+      (i) => _slotLocks.doc(
+        '${booking.courtId}_${dateStr}_${(booking.startHour + i).toString().padLeft(2, '0')}',
+      ),
     );
   }
 
@@ -96,7 +106,8 @@ class BookingService {
         final slotSnap = await tx.get(slotRef);
         if (slotSnap.exists) {
           throw Exception(
-              'This slot is already booked. Please choose another time.');
+            'This slot is already booked. Please choose another time.',
+          );
         }
       }
       // Reserve every hour atomically.
@@ -107,7 +118,8 @@ class BookingService {
           'arenaId': booking.arenaId,
           'customerId': booking.customerId,
           'date': Timestamp.fromDate(
-              DateTime(booking.date.year, booking.date.month, booking.date.day)),
+            DateTime(booking.date.year, booking.date.month, booking.date.day),
+          ),
         });
       }
       tx.set(ref, {
@@ -121,7 +133,7 @@ class BookingService {
     return ref.id;
   }
 
-/// Customer deposit submission — uploads screenshot first, then writes the
+  /// Customer deposit submission — uploads screenshot first, then writes the
   /// booking as deposit_submitted in a single Firestore set. Avoids the
   /// two-step (create pending_deposit → update) race where the second write
   /// could fail after the customer was already shown a success screen.
@@ -133,13 +145,18 @@ class BookingService {
     final ref = _bookings.doc();
 
     // 1. Upload screenshot BEFORE touching Firestore, so we have the URL ready.
-    debugPrint('📸 [createBookingWithDeposit] uploading screenshot for booking ${ref.id}');
+    debugPrint(
+      '📸 [createBookingWithDeposit] uploading screenshot for booking ${ref.id}',
+    );
     final uid = FirebaseAuth.instance.currentUser?.uid ?? ref.id;
     final storageRef = _storage.ref(
-        'bookings/$uid/deposit_${ref.id}_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      'bookings/$uid/deposit_${ref.id}_${DateTime.now().millisecondsSinceEpoch}.jpg',
+    );
     await storageRef.putData(await screenshot.readAsBytes());
     final screenshotUrl = await storageRef.getDownloadURL();
-    debugPrint('📸 [createBookingWithDeposit] screenshot uploaded → $screenshotUrl');
+    debugPrint(
+      '📸 [createBookingWithDeposit] screenshot uploaded → $screenshotUrl',
+    );
 
     // 2. Write booking + slot locks atomically.
     debugPrint('📝 [createBookingWithDeposit] writing booking to Firestore…');
@@ -149,7 +166,8 @@ class BookingService {
         final slotSnap = await tx.get(slotRef);
         if (slotSnap.exists) {
           throw Exception(
-              'This slot is already booked. Please choose another time.');
+            'This slot is already booked. Please choose another time.',
+          );
         }
       }
       for (final slotRef in slotRefs) {
@@ -159,7 +177,8 @@ class BookingService {
           'arenaId': booking.arenaId,
           'customerId': booking.customerId,
           'date': Timestamp.fromDate(
-              DateTime(booking.date.year, booking.date.month, booking.date.day)),
+            DateTime(booking.date.year, booking.date.month, booking.date.day),
+          ),
         });
       }
       tx.set(ref, {
@@ -175,7 +194,9 @@ class BookingService {
         },
       });
     });
-    debugPrint('✅ [createBookingWithDeposit] booking ${ref.id} written as deposit_submitted');
+    debugPrint(
+      '✅ [createBookingWithDeposit] booking ${ref.id} written as deposit_submitted',
+    );
     return ref.id;
   }
 
@@ -189,7 +210,8 @@ class BookingService {
         final slotSnap = await tx.get(slotRef);
         if (slotSnap.exists) {
           throw Exception(
-              'This slot is already booked. Please choose another time.');
+            'This slot is already booked. Please choose another time.',
+          );
         }
       }
       for (final slotRef in slotRefs) {
@@ -199,7 +221,8 @@ class BookingService {
           'arenaId': booking.arenaId,
           'customerId': booking.customerId,
           'date': Timestamp.fromDate(
-              DateTime(booking.date.year, booking.date.month, booking.date.day)),
+            DateTime(booking.date.year, booking.date.month, booking.date.day),
+          ),
         });
       }
       tx.set(ref, {
@@ -217,27 +240,34 @@ class BookingService {
 
   // ── Status transitions ───────────────────────────────────────────────
 
-  Future<void> updateStatus(String bookingId, String status,
-          {Map<String, dynamic>? extra}) =>
-      _bookings.doc(bookingId).update({
-        'status': status,
-        ...?extra,
-      });
+  Future<void> updateStatus(
+    String bookingId,
+    String status, {
+    Map<String, dynamic>? extra,
+  }) => _bookings.doc(bookingId).update({'status': status, ...?extra});
 
-  Future<void> submitDeposit(String bookingId,
-      {required XFile screenshot, required String accountUsed}) async {
+  Future<void> submitDeposit(
+    String bookingId, {
+    required XFile screenshot,
+    required String accountUsed,
+  }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? bookingId;
     final ref = _storage.ref(
-        'bookings/$uid/deposit_${bookingId}_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      'bookings/$uid/deposit_${bookingId}_${DateTime.now().millisecondsSinceEpoch}.jpg',
+    );
     await ref.putData(await screenshot.readAsBytes());
     final url = await ref.getDownloadURL();
-    await updateStatus(bookingId, 'deposit_submitted', extra: {
-      'depositPayment': {
-        'screenshot': url,
-        'accountUsed': accountUsed,
-        'submittedAt': FieldValue.serverTimestamp(),
-      }
-    });
+    await updateStatus(
+      bookingId,
+      'deposit_submitted',
+      extra: {
+        'depositPayment': {
+          'screenshot': url,
+          'accountUsed': accountUsed,
+          'submittedAt': FieldValue.serverTimestamp(),
+        },
+      },
+    );
   }
 
   Future<void> confirmBooking(String bookingId, String confirmedBy) async {
@@ -258,12 +288,14 @@ class BookingService {
     // duplicates on retry (tiny race window is acceptable for Phase 1).
     if (booking != null && !booking.isPosBooking) {
       final ikey = '${bookingId}_confirmed';
-      final existing = await _db
+      // Use the idempotency key as the document ID to avoid a collection
+      // query — Firestore rules allow single-doc reads but reject collection
+      // queries on posTransactions (rule references resource.data.arenaId).
+      final existingDoc = await _db
           .collection('posTransactions')
-          .where('idempotencyKey', isEqualTo: ikey)
-          .limit(1)
+          .doc(ikey)
           .get();
-      if (existing.docs.isEmpty) {
+      if (!existingDoc.exists) {
         final ledger = LedgerService();
         final entry = ledger.entryForConfirmedBooking(
           booking,
@@ -271,25 +303,48 @@ class BookingService {
           '',
           confirmedByRole: 'owner',
         );
-        final ledgerRef = _db.collection('posTransactions').doc();
-        batch.set(ledgerRef, {...entry.toMap(), 'id': ledgerRef.id});
+        batch.set(_db.collection('posTransactions').doc(ikey), {
+          ...entry.toMap(),
+          'id': ikey,
+        });
       }
     }
 
     await batch.commit();
   }
 
-  Future<void> rejectBooking(String bookingId) =>
-      updateStatus(bookingId, 'rejected');
+  Future<void> rejectBooking(String bookingId) async {
+    // Release slot locks so the hours become bookable again.
+    final bookingSnap = await _bookings.doc(bookingId).get();
+    if (bookingSnap.exists) {
+      final booking = BookingModel.fromMap({
+        ...bookingSnap.data()!,
+        'id': bookingId,
+      });
+      final slotRefs = _slotRefs(booking);
+      final batch = _db.batch();
+      for (final slotRef in slotRefs) {
+        batch.delete(slotRef);
+      }
+      batch.update(_bookings.doc(bookingId), {'status': 'rejected'});
+      await batch.commit();
+    } else {
+      await updateStatus(bookingId, 'rejected');
+    }
+  }
 
-  Future<void> cancelBooking(String bookingId,
-      {required double refundAmount,
-      required Map<String, String> customerAccount}) async {
+  Future<void> cancelBooking(
+    String bookingId, {
+    required double refundAmount,
+    required Map<String, String> customerAccount,
+  }) async {
     // Release slot locks so the court-hours become bookable again.
     final bookingSnap = await _bookings.doc(bookingId).get();
     if (bookingSnap.exists) {
-      final booking =
-          BookingModel.fromMap({...bookingSnap.data()!, 'id': bookingId});
+      final booking = BookingModel.fromMap({
+        ...bookingSnap.data()!,
+        'id': bookingId,
+      });
       final slotRefs = _slotRefs(booking);
       final batch = _db.batch();
       for (final slotRef in slotRefs) {
@@ -304,37 +359,51 @@ class BookingService {
       });
       await batch.commit();
     } else {
-      await updateStatus(bookingId, 'cancelled', extra: {
-        'cancellation.requestedAt': FieldValue.serverTimestamp(),
-        'cancellation.refundAmount': refundAmount,
-        'cancellation.customerAccount': customerAccount,
-        'cancellation.refundStatus': 'pending',
-      });
+      await updateStatus(
+        bookingId,
+        'cancelled',
+        extra: {
+          'cancellation.requestedAt': FieldValue.serverTimestamp(),
+          'cancellation.refundAmount': refundAmount,
+          'cancellation.customerAccount': customerAccount,
+          'cancellation.refundStatus': 'pending',
+        },
+      );
     }
   }
 
   Future<void> submitRefund(String bookingId, XFile screenshot) async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? bookingId;
     final ref = _storage.ref(
-        'bookings/$uid/refund_${bookingId}_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      'bookings/$uid/refund_${bookingId}_${DateTime.now().millisecondsSinceEpoch}.jpg',
+    );
     await ref.putData(await screenshot.readAsBytes());
     final url = await ref.getDownloadURL();
-    await updateStatus(bookingId, 'refund_sent', extra: {
-      'cancellation.refundScreenshot': url,
-      'cancellation.refundStatus': 'sent',
-    });
+    await updateStatus(
+      bookingId,
+      'refund_sent',
+      extra: {
+        'cancellation.refundScreenshot': url,
+        'cancellation.refundStatus': 'sent',
+      },
+    );
   }
 
   Future<void> submitRefundWithRef(String bookingId, String bankRef) =>
-      updateStatus(bookingId, 'refund_sent', extra: {
-        'cancellation.refundBankRef': bankRef,
-        'cancellation.refundStatus': 'sent',
-      });
+      updateStatus(
+        bookingId,
+        'refund_sent',
+        extra: {
+          'cancellation.refundBankRef': bankRef,
+          'cancellation.refundStatus': 'sent',
+        },
+      );
 
-  Future<void> confirmRefund(String bookingId) =>
-      updateStatus(bookingId, 'refund_confirmed', extra: {
-        'cancellation.refundStatus': 'confirmed',
-      });
+  Future<void> confirmRefund(String bookingId) => updateStatus(
+    bookingId,
+    'refund_confirmed',
+    extra: {'cancellation.refundStatus': 'confirmed'},
+  );
 
   // ── Reschedule ───────────────────────────────────────────────────────
 
@@ -343,21 +412,23 @@ class BookingService {
     required DateTime proposedDate,
     required int proposedStartHour,
     required int proposedTotalHours,
-  }) =>
-      _bookings.doc(bookingId).update({
-        'status': BookingStatus.rescheduleRequested.key,
-        'rescheduleRequest': RescheduleRequest(
-          proposedDate: proposedDate,
-          proposedStartHour: proposedStartHour,
-          proposedTotalHours: proposedTotalHours,
-          requestedAt: DateTime.now(),
-        ).toMap(),
-      });
+  }) => _bookings.doc(bookingId).update({
+    'status': BookingStatus.rescheduleRequested.key,
+    'rescheduleRequest': RescheduleRequest(
+      proposedDate: proposedDate,
+      proposedStartHour: proposedStartHour,
+      proposedTotalHours: proposedTotalHours,
+      requestedAt: DateTime.now(),
+    ).toMap(),
+  });
 
   /// Owner approves: atomically delete old slot locks, write new ones, and
   /// update the booking. Without the lock swap, the old hours stay blocked
   /// and the new hours are unprotected — fixed here with a transaction.
-  Future<void> approveReschedule(String bookingId, RescheduleRequest req) async {
+  Future<void> approveReschedule(
+    String bookingId,
+    RescheduleRequest req,
+  ) async {
     final snap = await _bookings.doc(bookingId).get();
     if (!snap.exists) throw Exception('Booking not found');
     final booking = BookingModel.fromMap({...snap.data()!, 'id': bookingId});
@@ -368,7 +439,8 @@ class BookingService {
     final newSlotRefs = List.generate(
       req.proposedTotalHours,
       (i) => _slotLocks.doc(
-          '${booking.courtId}_${dateStr}_${(req.proposedStartHour + i).toString().padLeft(2, '0')}'),
+        '${booking.courtId}_${dateStr}_${(req.proposedStartHour + i).toString().padLeft(2, '0')}',
+      ),
     );
 
     await _runTx(_db, (tx) async {
@@ -387,8 +459,13 @@ class BookingService {
           'courtId': booking.courtId,
           'arenaId': booking.arenaId,
           'customerId': booking.customerId,
-          'date': Timestamp.fromDate(DateTime(
-              req.proposedDate.year, req.proposedDate.month, req.proposedDate.day)),
+          'date': Timestamp.fromDate(
+            DateTime(
+              req.proposedDate.year,
+              req.proposedDate.month,
+              req.proposedDate.day,
+            ),
+          ),
         });
       }
       tx.update(_bookings.doc(bookingId), {
@@ -410,12 +487,11 @@ class BookingService {
         'rescheduleRequest': FieldValue.delete(),
       });
 
-  Future<void> checkIn(String bookingId) =>
-      _bookings.doc(bookingId).update({
-        'checkedIn': true,
-        'checkedInAt': FieldValue.serverTimestamp(),
-        'status': 'ongoing',
-      });
+  Future<void> checkIn(String bookingId) => _bookings.doc(bookingId).update({
+    'checkedIn': true,
+    'checkedInAt': FieldValue.serverTimestamp(),
+    'status': 'ongoing',
+  });
 
   /// Atomically: write slot locks for the new hours, increment totalHours,
   /// update totalAmount (stored) and remainingAmount on the booking.
@@ -426,14 +502,18 @@ class BookingService {
     final newSlotRefs = List.generate(
       extraHours,
       (i) => _slotLocks.doc(
-          '${booking.courtId}_${dateStr}_${(currentEnd + i).toString().padLeft(2, '0')}'),
+        '${booking.courtId}_${dateStr}_${(currentEnd + i).toString().padLeft(2, '0')}',
+      ),
     );
     final oldStored =
         booking.totalAmountStored ?? booking.pricePerHour * booking.totalHours;
     final newTotalStored = oldStored + extraHours * booking.pricePerHour;
-    final newTotal = newTotalStored + booking.posAddOnsTotal - booking.posDiscount;
-    final newRemaining =
-        (newTotal - (booking.amountPaid ?? 0)).clamp(0.0, double.infinity);
+    final newTotal =
+        newTotalStored + booking.posAddOnsTotal - booking.posDiscount;
+    final newRemaining = (newTotal - (booking.amountPaid ?? 0)).clamp(
+      0.0,
+      double.infinity,
+    );
 
     await _runTx(_db, (tx) async {
       for (final slotRef in newSlotRefs) {
@@ -449,7 +529,8 @@ class BookingService {
           'arenaId': booking.arenaId,
           'customerId': booking.customerId,
           'date': Timestamp.fromDate(
-              DateTime(booking.date.year, booking.date.month, booking.date.day)),
+            DateTime(booking.date.year, booking.date.month, booking.date.day),
+          ),
         });
       }
       tx.update(_bookings.doc(booking.id), {
@@ -496,7 +577,8 @@ class BookingService {
           customerId: booking.customerId.isEmpty ? null : booking.customerId,
           customerName: booking.customerName,
           type: PosTransactionType.checkout,
-          source: LedgerSource.pos, // always counter collection regardless of booking origin
+          source: LedgerSource
+              .pos, // always counter collection regardless of booking origin
           paymentMethod: PosPaymentMethod.cash,
           totalAmount: booking.totalAmount,
           amountPaid: amountCollected,
@@ -517,17 +599,21 @@ class BookingService {
     await batch.commit();
   }
 
-  Future<void> markNoShow(String bookingId) =>
-      updateStatus(bookingId, BookingStatus.completed.key, extra: {
-        'noShow': true,
-        'completedAt': FieldValue.serverTimestamp(),
-      });
+  Future<void> markNoShow(String bookingId) => updateStatus(
+    bookingId,
+    BookingStatus.completed.key,
+    extra: {'noShow': true, 'completedAt': FieldValue.serverTimestamp()},
+  );
 
   Future<void> autoComplete(String bookingId, {bool noShow = false}) =>
-      updateStatus(bookingId, BookingStatus.completed.key, extra: {
-        'completedAt': FieldValue.serverTimestamp(),
-        if (noShow) 'noShow': true,
-      });
+      updateStatus(
+        bookingId,
+        BookingStatus.completed.key,
+        extra: {
+          'completedAt': FieldValue.serverTimestamp(),
+          if (noShow) 'noShow': true,
+        },
+      );
 
   // ── Recurring ────────────────────────────────────────────────────────
 
@@ -553,7 +639,8 @@ class BookingService {
         final snap = await _slotLocks.doc(key).get();
         if (snap.exists) {
           throw Exception(
-              'Week $week (${_shortDate(weekDate)}) is already booked. No bookings were created — please choose a different slot.');
+            'Week $week (${_shortDate(weekDate)}) is already booked. No bookings were created — please choose a different slot.',
+          );
         }
       }
     }
@@ -565,10 +652,13 @@ class BookingService {
     if (depositScreenshot != null && depositAccount != null) {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
       final storageRef = _storage.ref(
-          'bookings/$uid/deposit_series_${first.recurringGroupId}_${DateTime.now().millisecondsSinceEpoch}.jpg');
+        'bookings/$uid/deposit_series_${first.recurringGroupId}_${DateTime.now().millisecondsSinceEpoch}.jpg',
+      );
       await storageRef.putData(await depositScreenshot.readAsBytes());
       screenshotUrl = await storageRef.getDownloadURL();
-      debugPrint('📸 [createRecurringBookings] series screenshot → $screenshotUrl');
+      debugPrint(
+        '📸 [createRecurringBookings] series screenshot → $screenshotUrl',
+      );
     }
 
     // ── Build week bookings + pre-allocated doc refs ──
@@ -576,32 +666,34 @@ class BookingService {
     final refs = <DocumentReference<Map<String, dynamic>>>[];
     for (var week = 1; week <= totalWeeks; week++) {
       final weekDate = first.date.add(Duration(days: 7 * (week - 1)));
-      weekBookings.add(BookingModel(
-        id: '',
-        arenaId: first.arenaId,
-        arenaName: first.arenaName,
-        courtId: first.courtId,
-        courtName: first.courtName,
-        customerId: first.customerId,
-        customerName: first.customerName,
-        ownerId: first.ownerId,
-        date: DateTime(weekDate.year, weekDate.month, weekDate.day),
-        startHour: first.startHour,
-        totalHours: first.totalHours,
-        pricePerHour: first.pricePerHour,
-        totalAmountStored: first.totalAmountStored,
-        createdAt: DateTime.now(),
-        recurringGroupId: first.recurringGroupId,
-        recurringWeek: week,
-        recurringTotal: totalWeeks,
-        isGroupBooking: first.isGroupBooking,
-        groupSize: first.groupSize,
-        joinCode: first.joinCode,
-        appliedPromoId: week == 1 ? first.appliedPromoId : null,
-        appliedPromoCode: week == 1 ? first.appliedPromoCode : null,
-        promoDiscount: week == 1 ? first.promoDiscount : 0,
-        appliedPromoScope: week == 1 ? first.appliedPromoScope : null,
-      ));
+      weekBookings.add(
+        BookingModel(
+          id: '',
+          arenaId: first.arenaId,
+          arenaName: first.arenaName,
+          courtId: first.courtId,
+          courtName: first.courtName,
+          customerId: first.customerId,
+          customerName: first.customerName,
+          ownerId: first.ownerId,
+          date: DateTime(weekDate.year, weekDate.month, weekDate.day),
+          startHour: first.startHour,
+          totalHours: first.totalHours,
+          pricePerHour: first.pricePerHour,
+          totalAmountStored: first.totalAmountStored,
+          createdAt: DateTime.now(),
+          recurringGroupId: first.recurringGroupId,
+          recurringWeek: week,
+          recurringTotal: totalWeeks,
+          isGroupBooking: first.isGroupBooking,
+          groupSize: first.groupSize,
+          joinCode: first.joinCode,
+          appliedPromoId: week == 1 ? first.appliedPromoId : null,
+          appliedPromoCode: week == 1 ? first.appliedPromoCode : null,
+          promoDiscount: week == 1 ? first.promoDiscount : 0,
+          appliedPromoScope: week == 1 ? first.appliedPromoScope : null,
+        ),
+      );
       refs.add(_bookings.doc());
     }
 
@@ -621,7 +713,8 @@ class BookingService {
           final snap = await tx.get(slotRef);
           if (snap.exists) {
             throw Exception(
-                'Week ${i + 1} slot was just taken. No bookings were created — please choose a different time.');
+              'Week ${i + 1} slot was just taken. No bookings were created — please choose a different time.',
+            );
           }
         }
       }
@@ -634,13 +727,16 @@ class BookingService {
             'arenaId': wb.arenaId,
             'customerId': wb.customerId,
             'date': Timestamp.fromDate(
-                DateTime(wb.date.year, wb.date.month, wb.date.day)),
+              DateTime(wb.date.year, wb.date.month, wb.date.day),
+            ),
           });
         }
         tx.set(refs[i], {
           ...wb.toMap(),
           'id': refs[i].id,
-          'status': screenshotUrl != null ? 'deposit_submitted' : 'pending_deposit',
+          'status': screenshotUrl != null
+              ? 'deposit_submitted'
+              : 'pending_deposit',
           'paymentStatus': paymentStatusKey,
           'createdAt': FieldValue.serverTimestamp(),
           'startDateTime': Timestamp.fromDate(wb.startDateTime),
@@ -676,12 +772,13 @@ class BookingService {
         'createdAt': FieldValue.serverTimestamp(),
       });
     });
-    debugPrint('✅ [createRecurringBookings] ${weekBookings.length} weeks + series doc written atomically');
+    debugPrint(
+      '✅ [createRecurringBookings] ${weekBookings.length} weeks + series doc written atomically',
+    );
     return refs.map((r) => r.id).toList();
   }
 
-  String _shortDate(DateTime d) =>
-      '${d.day}/${d.month}/${d.year}';
+  String _shortDate(DateTime d) => '${d.day}/${d.month}/${d.year}';
 
   /// Cancel all future-eligible bookings in a recurring series.
   /// Completed historical occurrences are left unchanged.
@@ -718,7 +815,10 @@ class BookingService {
 
   /// Confirm all deposit_submitted bookings in a recurring series.
   /// Idempotent: reads the series doc first and skips if already confirmed.
-  Future<void> approveRecurringSeries(String recurringGroupId, String confirmedBy) async {
+  Future<void> approveRecurringSeries(
+    String recurringGroupId,
+    String confirmedBy,
+  ) async {
     final seriesSnap = await _series.doc(recurringGroupId).get();
     if (seriesSnap.exists) {
       final currentStatus = seriesSnap.data()?['status'] as String?;
@@ -728,18 +828,24 @@ class BookingService {
       }
     }
 
+    // See rejectRecurringSeries for why ownerId must be filtered here: the
+    // bookings/{id} read rule checks ownerId == uid(), and Firestore denies
+    // list queries whose filters can't structurally prove every potential
+    // match satisfies the rule.
     final snap = await _bookings
-        .where('ownerId', isEqualTo: confirmedBy)
         .where('recurringGroupId', isEqualTo: recurringGroupId)
+        .where('ownerId', isEqualTo: confirmedBy)
         .where('status', isEqualTo: 'deposit_submitted')
         .get();
     if (snap.docs.isEmpty) return;
 
     // Sort by recurringWeek so week 1 is always first.
     final docs = snap.docs.toList()
-      ..sort((a, b) =>
-          ((a.data()['recurringWeek'] as int?) ?? 99)
-              .compareTo((b.data()['recurringWeek'] as int?) ?? 99));
+      ..sort(
+        (a, b) => ((a.data()['recurringWeek'] as int?) ?? 99).compareTo(
+          (b.data()['recurringWeek'] as int?) ?? 99,
+        ),
+      );
 
     final batch = _db.batch();
     // Confirm only the first week (smallest recurringWeek).
@@ -760,23 +866,23 @@ class BookingService {
       });
     }
     // Update series doc: confirmed = 1, status = partially_confirmed.
-    final totalOccurrences = seriesSnap.data()?['totalOccurrences'] as int? ?? docs.length;
-    batch.set(
-      _series.doc(recurringGroupId),
-      {
-        'status': totalOccurrences == 1 ? 'confirmed' : 'partially_confirmed',
-        'confirmedCount': 1,
-        'confirmedAt': FieldValue.serverTimestamp(),
-        'confirmedBy': confirmedBy,
-      },
-      SetOptions(merge: true),
-    );
+    final totalOccurrences =
+        seriesSnap.data()?['totalOccurrences'] as int? ?? docs.length;
+    batch.set(_series.doc(recurringGroupId), {
+      'status': totalOccurrences == 1 ? 'confirmed' : 'partially_confirmed',
+      'confirmedCount': 1,
+      'confirmedAt': FieldValue.serverTimestamp(),
+      'confirmedBy': confirmedBy,
+    }, SetOptions(merge: true));
     await batch.commit();
   }
 
   /// Reject all deposit_submitted bookings in a recurring series.
   /// Idempotent: no-op if already rejected/cancelled.
-  Future<void> rejectRecurringSeries(String recurringGroupId, String rejectedBy) async {
+  Future<void> rejectRecurringSeries(
+    String recurringGroupId,
+    String rejectedBy,
+  ) async {
     final seriesSnap = await _series.doc(recurringGroupId).get();
     if (seriesSnap.exists) {
       final currentStatus = seriesSnap.data()?['status'] as String?;
@@ -786,26 +892,35 @@ class BookingService {
       }
     }
 
+    // Fetch all non-terminal bookings in the series — includes both
+    // deposit_submitted (customer paid) and pending_deposit (not yet paid).
+    // Firestore evaluates list-query security rules against the query's
+    // potential result set, not the actual documents returned — so the
+    // query must filter on ownerId itself for the bookings/{id} `ownerId ==
+    // uid()` read rule to provably hold. Without it, the whole query is
+    // denied even though every real match belongs to this owner.
     final snap = await _bookings
-        .where('ownerId', isEqualTo: rejectedBy)
         .where('recurringGroupId', isEqualTo: recurringGroupId)
-        .where('status', isEqualTo: 'deposit_submitted')
+        .where('ownerId', isEqualTo: rejectedBy)
+        .where('status', whereIn: ['deposit_submitted', 'pending_deposit'])
         .get();
-    if (snap.docs.isEmpty) return;
 
     final batch = _db.batch();
     for (final doc in snap.docs) {
+      final booking = BookingModel.fromMap({...doc.data(), 'id': doc.id});
+      for (final slotRef in _slotRefs(booking)) {
+        batch.delete(slotRef);
+      }
       batch.update(doc.reference, {
         'status': 'rejected',
         'paymentStatus': PaymentStatus.unpaid.key,
         'rejectedAt': FieldValue.serverTimestamp(),
       });
     }
-    batch.set(
-      _series.doc(recurringGroupId),
-      {'status': 'cancelled', 'rejectedAt': FieldValue.serverTimestamp()},
-      SetOptions(merge: true),
-    );
+    batch.set(_series.doc(recurringGroupId), {
+      'status': 'cancelled',
+      'rejectedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
     await batch.commit();
   }
 
@@ -833,15 +948,12 @@ class BookingService {
 
   // ── Waitlist ──────────────────────────────────────────────────────────
 
-  Stream<List<Map<String, dynamic>>> waitlistItems(String customerId) =>
-      _db
-          .collection('waitlist')
-          .where('customerId', isEqualTo: customerId)
-          .orderBy('createdAt', descending: true)
-          .snapshots()
-          .map((s) => s.docs
-              .map((d) => {'id': d.id, ...d.data()})
-              .toList());
+  Stream<List<Map<String, dynamic>>> waitlistItems(String customerId) => _db
+      .collection('waitlist')
+      .where('customerId', isEqualTo: customerId)
+      .orderBy('createdAt', descending: true)
+      .snapshots()
+      .map((s) => s.docs.map((d) => {'id': d.id, ...d.data()}).toList());
 
   Future<void> cancelWaitlistItem(String docId) =>
       _db.collection('waitlist').doc(docId).delete();
@@ -850,8 +962,10 @@ class BookingService {
 
   /// Bookings across a list of arena IDs — used by arena staff who are not
   /// the owner. Firestore `whereIn` supports up to 30 values.
-  Stream<List<BookingModel>> staffBookings(List<String> arenaIds,
-          {int limit = 200}) {
+  Stream<List<BookingModel>> staffBookings(
+    List<String> arenaIds, {
+    int limit = 200,
+  }) {
     final ids = arenaIds.take(30).toList();
     if (ids.isEmpty) {
       return Stream.value([]);
@@ -861,29 +975,34 @@ class BookingService {
         .orderBy('createdAt', descending: true)
         .limit(limit)
         .snapshots()
-        .map((s) => s.docs
-            .map((d) => BookingModel.fromMap({...d.data(), 'id': d.id}))
-            .toList());
+        .map(
+          (s) => s.docs
+              .map((d) => BookingModel.fromMap({...d.data(), 'id': d.id}))
+              .toList(),
+        );
   }
 
-  Stream<List<BookingModel>> ownerBookings(String ownerId,
-          {int limit = 200}) =>
+  Stream<List<BookingModel>> ownerBookings(String ownerId, {int limit = 200}) =>
       _bookings
           .where('ownerId', isEqualTo: ownerId)
           .orderBy('createdAt', descending: true)
           .limit(limit)
           .snapshots()
-          .map((s) => s.docs
-              .map((d) => BookingModel.fromMap({...d.data(), 'id': d.id}))
-              .toList());
+          .map(
+            (s) => s.docs
+                .map((d) => BookingModel.fromMap({...d.data(), 'id': d.id}))
+                .toList(),
+          );
 
   Stream<List<BookingModel>> customerBookings(String customerId) => _bookings
       .where('customerId', isEqualTo: customerId)
       .orderBy('createdAt', descending: true)
       .snapshots()
-      .map((s) => s.docs
-          .map((d) => BookingModel.fromMap({...d.data(), 'id': d.id}))
-          .toList());
+      .map(
+        (s) => s.docs
+            .map((d) => BookingModel.fromMap({...d.data(), 'id': d.id}))
+            .toList(),
+      );
 
   /// All bookings between one customer and one arena — powers the live
   /// booking-context banner in the pair chat. Equality-only filters, so no
@@ -893,26 +1012,31 @@ class BookingService {
           .where('arenaId', isEqualTo: arenaId)
           .where('customerId', isEqualTo: customerId)
           .snapshots()
-          .map((s) => s.docs
-              .map((d) => BookingModel.fromMap({...d.data(), 'id': d.id}))
-              .toList());
+          .map(
+            (s) => s.docs
+                .map((d) => BookingModel.fromMap({...d.data(), 'id': d.id}))
+                .toList(),
+          );
 
   Stream<List<BookingModel>> arenaBookings(String arenaId) => _bookings
       .where('arenaId', isEqualTo: arenaId)
       .orderBy('createdAt', descending: true)
       .snapshots()
-      .map((s) => s.docs
-          .map((d) => BookingModel.fromMap({...d.data(), 'id': d.id}))
-          .toList());
+      .map(
+        (s) => s.docs
+            .map((d) => BookingModel.fromMap({...d.data(), 'id': d.id}))
+            .toList(),
+      );
 
-  Stream<List<BookingModel>> pendingDepositBookings(String arenaId) =>
-      _bookings
-          .where('arenaId', isEqualTo: arenaId)
-          .where('status', isEqualTo: 'deposit_submitted')
-          .snapshots()
-          .map((s) => s.docs
-              .map((d) => BookingModel.fromMap({...d.data(), 'id': d.id}))
-              .toList());
+  Stream<List<BookingModel>> pendingDepositBookings(String arenaId) => _bookings
+      .where('arenaId', isEqualTo: arenaId)
+      .where('status', isEqualTo: 'deposit_submitted')
+      .snapshots()
+      .map(
+        (s) => s.docs
+            .map((d) => BookingModel.fromMap({...d.data(), 'id': d.id}))
+            .toList(),
+      );
 
   /// Real-time stream of taken hours for a court on a date, derived from
   /// slotLocks. Returns a Set<int> of booked hours. Updates instantly when
@@ -925,34 +1049,43 @@ class BookingService {
     // Query by courtId field + date field stored in each lock doc.
     return _slotLocks
         .where('courtId', isEqualTo: courtId)
-        .where('date',
-            isEqualTo: Timestamp.fromDate(
-                DateTime(date.year, date.month, date.day)))
+        .where(
+          'date',
+          isEqualTo: Timestamp.fromDate(
+            DateTime(date.year, date.month, date.day),
+          ),
+        )
         .snapshots()
         .map((snap) {
-      final hours = <int>{};
-      for (final doc in snap.docs) {
-        // Parse the hour from the document ID suffix.
-        final id = doc.id;
-        if (id.startsWith(prefix)) {
-          final hStr = id.substring(prefix.length);
-          final h = int.tryParse(hStr);
-          if (h != null) hours.add(h);
-        }
-      }
-      return hours;
-    });
+          final hours = <int>{};
+          for (final doc in snap.docs) {
+            // Parse the hour from the document ID suffix.
+            final id = doc.id;
+            if (id.startsWith(prefix)) {
+              final hStr = id.substring(prefix.length);
+              final h = int.tryParse(hStr);
+              if (h != null) hours.add(h);
+            }
+          }
+          return hours;
+        });
   }
 
   /// Booked slots for a court on a specific date (for slot grid).
-  Future<List<BookingModel>> bookedSlots(
-      String courtId, DateTime date) async {
+  Future<List<BookingModel>> bookedSlots(String courtId, DateTime date) async {
     final day = DateTime(date.year, date.month, date.day);
     final snap = await _bookings
         .where('courtId', isEqualTo: courtId)
         .where('date', isEqualTo: Timestamp.fromDate(day))
-        .where('status',
-            whereIn: ['pending_deposit', 'deposit_submitted', 'confirmed', 'ongoing'])
+        .where(
+          'status',
+          whereIn: [
+            'pending_deposit',
+            'deposit_submitted',
+            'confirmed',
+            'ongoing',
+          ],
+        )
         .get();
     return snap.docs
         .map((d) => BookingModel.fromMap({...d.data(), 'id': d.id}))

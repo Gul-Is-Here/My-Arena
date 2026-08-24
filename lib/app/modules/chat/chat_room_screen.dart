@@ -46,6 +46,16 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   late final String chatId = (Get.arguments as String?) ?? '';
 
   @override
+  void initState() {
+    super.initState();
+    // Mark the chat as read when opened (covers notification-tap entry path
+    // where the caller doesn't invoke ChatController.openChat first).
+    if (chatId.isNotEmpty && Get.isRegistered<ChatController>()) {
+      ChatController.to.openChat(chatId);
+    }
+  }
+
+  @override
   void dispose() {
     _textCtrl.dispose();
     _scrollCtrl.dispose();
@@ -628,6 +638,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
             Expanded(
               child: Obx(() {
                 final msgs = c.messagesFor(chatId);
+                final chat = c.byId(chatId);
                 if (msgs.isEmpty) {
                   return Center(
                     child: Text(
@@ -685,7 +696,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                         if (msg.type == MessageType.system)
                           _systemMessage(msg)
                         else
-                          _bubble(context, msg, c.myUid),
+                          _bubble(context, msg, c.myUid, chat),
                       ],
                     );
                   },
@@ -1072,8 +1083,21 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     );
   }
 
-  Widget _bubble(BuildContext context, MessageModel msg, String myUid) {
+  Widget _bubble(BuildContext context, MessageModel msg, String myUid, ChatModel? chat) {
     final mine = msg.senderId == myUid;
+    // For booking chats the sender label shown to the customer should be the
+    // arena name; for support chats use the stored senderName or role.
+    final senderLabel = () {
+      if (mine) return '';
+      if (chat?.type == ChatType.booking) {
+        // Customer (myUid == chat.customerId) sees the arena name on messages
+        // from the other side. Owner sees the customer name.
+        final isCustomer = chat?.customerId == myUid;
+        if (isCustomer) return chat?.title ?? msg.senderRole;
+        return chat?.customerName ?? msg.senderName ?? msg.senderRole;
+      }
+      return msg.senderName ?? msg.senderRole;
+    }();
 
     if (msg.type == MessageType.text && _isBookingDetailsMsg(msg.content)) {
       return _bookingDetailsCard(msg, mine);
@@ -1168,9 +1192,9 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (!mine)
+                if (!mine && senderLabel.isNotEmpty)
                   Text(
-                    '${msg.senderRole} · ',
+                    '$senderLabel · ',
                     style: AppTextStyles.caption.copyWith(
                       fontSize: 10,
                       color: _onSurfaceVar,

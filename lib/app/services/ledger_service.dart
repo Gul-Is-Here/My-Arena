@@ -65,6 +65,110 @@ class LedgerService {
     );
   }
 
+  /// Adds products/add-ons to a live session.
+  /// Atomically: writes an addOn ledger entry + increments booking.totalAmount
+  /// and booking.remainingAmount (items are not pre-paid).
+  Future<void> addSessionItems({
+    required BookingModel booking,
+    required List<Map<String, dynamic>> items, // [{name, qty, unitPrice}]
+    required double total,
+    required PosPaymentMethod method,
+    String? shiftId,
+    String? notes,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    final uid = user?.uid ?? '';
+    final ikey = '${booking.id}_addon_${DateTime.now().millisecondsSinceEpoch}';
+    final newTotal = booking.totalAmount + total;
+    final newRemaining = booking.remainingAmount + total;
+
+    final txn = PosTransactionModel(
+      id: '',
+      arenaId: booking.arenaId,
+      arenaName: booking.arenaName,
+      bookingId: booking.id,
+      courtId: booking.courtId,
+      courtName: booking.courtName,
+      customerId: booking.customerId.isEmpty ? null : booking.customerId,
+      customerName: booking.customerName,
+      type: PosTransactionType.addOn,
+      source: LedgerSource.pos,
+      paymentMethod: method,
+      totalAmount: newTotal,
+      amountPaid: 0,
+      remainingAmount: newRemaining,
+      discount: 0,
+      processedById: uid,
+      processedByName: '',
+      processedByRole: 'owner',
+      createdAt: DateTime.now(),
+      shiftId: shiftId,
+      idempotencyKey: ikey,
+      notes: notes ?? items.map((i) => '${i['qty']}x ${i['name']}').join(', '),
+    );
+
+    final batch = _db.batch();
+    final ledgerRef = _txns.doc();
+    batch.set(ledgerRef, {...txn.toMap(), 'id': ledgerRef.id});
+    batch.update(_bookings.doc(booking.id), {
+      'totalAmount': FieldValue.increment(total),
+      'remainingAmount': FieldValue.increment(total),
+    });
+    await batch.commit();
+  }
+
+  /// Creates a standalone POS order linked to an existing booking.
+  /// Does NOT touch booking.totalAmount / amountPaid / remainingAmount.
+  /// Multiple orders can be linked to the same booking.
+  Future<String> createBookingLinkedSale({
+    required BookingModel booking,
+    required List<Map<String, dynamic>> items, // [{name, qty, unitPrice}]
+    required double subtotal,
+    required double discount,
+    required double total,
+    required PosPaymentMethod method,
+    required double amountPaid,
+    String? refNo,
+    String? shiftId,
+    String? notes,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    final uid = user?.uid ?? '';
+    final ikey = '${booking.id}_sale_${DateTime.now().millisecondsSinceEpoch}';
+    final remaining = (total - amountPaid).clamp(0.0, double.infinity);
+
+    final txn = PosTransactionModel(
+      id: '',
+      arenaId: booking.arenaId,
+      arenaName: booking.arenaName,
+      bookingId: booking.id,
+      courtId: booking.courtId,
+      courtName: booking.courtName,
+      customerId: booking.customerId.isEmpty ? null : booking.customerId,
+      customerName: booking.customerName,
+      type: PosTransactionType.bookingSale,
+      source: LedgerSource.pos,
+      paymentMethod: method,
+      totalAmount: total,
+      amountPaid: amountPaid,
+      remainingAmount: remaining,
+      discount: discount,
+      refNo: refNo,
+      processedById: uid,
+      processedByName: '',
+      processedByRole: 'owner',
+      createdAt: DateTime.now(),
+      shiftId: shiftId,
+      idempotencyKey: ikey,
+      items: items,
+      notes: notes ?? items.map((i) => '${i['qty']}x ${i['name']}').join(', '),
+    );
+
+    final ref = _txns.doc();
+    await ref.set({...txn.toMap(), 'id': ref.id});
+    return ref.id;
+  }
+
   /// Collects remaining balance from an existing online booking at the counter.
   /// Atomically: writes a ledger entry + increments booking.amountPaid.
   Future<void> collectBalance({

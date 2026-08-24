@@ -5,7 +5,7 @@ import 'package:get/get.dart';
 
 import '../data/models/arena_model.dart';
 import '../data/models/booking_model.dart';
-import '../data/models/pos_expense_model.dart';
+import '../data/models/pos_expense_model.dart'; // ExpenseCategory, PosExpenseModel
 import '../data/models/pos_product_model.dart';
 import '../data/models/pos_shift_model.dart';
 import '../data/models/pos_transaction_model.dart';
@@ -317,6 +317,97 @@ class PosController extends GetxController {
     refreshStats();
   }
 
+  // ── Cash In / Cash Out ────────────────────────────────────────────────
+
+  Future<void> addCashIn(double amount, String reason) async {
+    final shift = openShift.value;
+    if (shift == null) return;
+    await _service.addCashIn(shift.id, amount);
+  }
+
+  Future<void> addCashOut(double amount, String reason) async {
+    final shift = openShift.value;
+    if (shift == null) return;
+    // Cash out = expense against the shift
+    await _service.updateShiftSales(shift.id, expenseDelta: amount);
+    // Also write an expense record so the ledger has a line item
+    await _service.addExpense(PosExpenseModel(
+      id: '',
+      arenaId: shift.arenaId,
+      arenaName: shift.arenaName,
+      description: reason.isEmpty ? 'Cash Out' : reason,
+      amount: amount,
+      category: ExpenseCategory.other,
+      date: DateTime.now(),
+      addedById: _uid,
+      addedByName: _userName,
+      shiftId: shift.id,
+    ));
+    refreshStats();
+  }
+
+  // ── Session add-ons ───────────────────────────────────────────────────
+
+  Future<void> addSessionItems({
+    required BookingModel booking,
+    required List<Map<String, dynamic>> items,
+    required double total,
+  }) async {
+    await _ledger.addSessionItems(
+      booking: booking,
+      items: items,
+      total: total,
+      method: PosPaymentMethod.cash, // not collected yet — method recorded on checkout
+      shiftId: openShift.value?.id,
+    );
+    refreshStats();
+  }
+
+  // ── Booking-linked POS sale ───────────────────────────────────────────
+
+  /// Creates a standalone POS order linked to an existing booking.
+  /// Does NOT modify booking.totalAmount / amountPaid / remainingAmount.
+  Future<String> createBookingLinkedSale({
+    required BookingModel booking,
+    required List<Map<String, dynamic>> items,
+    required double subtotal,
+    required double discount,
+    required double total,
+    required PosPaymentMethod method,
+    required double amountPaid,
+    String? refNo,
+    String? notes,
+  }) async {
+    final id = await _ledger.createBookingLinkedSale(
+      booking: booking,
+      items: items,
+      subtotal: subtotal,
+      discount: discount,
+      total: total,
+      method: method,
+      amountPaid: amountPaid,
+      refNo: refNo,
+      shiftId: openShift.value?.id,
+      notes: notes,
+    );
+    // Update shift sales for the amount actually collected
+    if (amountPaid > 0) {
+      final shift = openShift.value;
+      if (shift != null) {
+        final isCash = method == PosPaymentMethod.cash;
+        final isCard = method == PosPaymentMethod.card;
+        await _service.updateShiftSales(
+          shift.id,
+          cashDelta: isCash ? amountPaid : 0,
+          cardDelta: isCard ? amountPaid : 0,
+          otherDelta: (!isCash && !isCard) ? amountPaid : 0,
+        );
+      }
+    }
+    refreshStats();
+    return id;
+  }
+
   // ── Balance collection ────────────────────────────────────────────────
 
   /// Collect outstanding balance from an online booking at the counter.
@@ -349,6 +440,11 @@ class PosController extends GetxController {
     }
     refreshStats();
   }
+
+  // ── Booking-linked sales query ────────────────────────────────────────
+
+  Stream<List<PosTransactionModel>> bookingLinkedSalesStream(String bookingId) =>
+      _service.bookingLinkedSalesStream(bookingId);
 
   // ── Products helper ───────────────────────────────────────────────────
 

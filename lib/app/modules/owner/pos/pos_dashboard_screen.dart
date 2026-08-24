@@ -10,6 +10,7 @@ import '../../../data/models/booking_model.dart';
 import '../../../routes/app_routes.dart';
 import '../../../theme/app_colors.dart';
 import '../../../theme/app_text_styles.dart';
+import 'pos_collect_sheet.dart';
 
 final _pkr = NumberFormat('#,##0');
 
@@ -526,6 +527,8 @@ class _TodayBookingRow extends StatelessWidget {
     final isNow = booking.startHour <= now.hour &&
         now.hour < booking.startHour + booking.totalHours;
     final isPast = booking.endDateTime.isBefore(now);
+    final remaining = booking.remainingAmount;
+    final hasOutstanding = remaining > 0;
 
     Color statusColor;
     if (isNow) statusColor = AppColors.success;
@@ -538,55 +541,109 @@ class _TodayBookingRow extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(
+          color: hasOutstanding
+              ? AppColors.warning.withValues(alpha: 0.4)
+              : AppColors.border,
+        ),
         boxShadow: isNow
             ? [BoxShadow(color: AppColors.success.withValues(alpha: 0.1), blurRadius: 8)]
             : null,
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 4,
-            height: 44,
-            decoration: BoxDecoration(
-              color: statusColor,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Row(
             children: [
-              Text(booking.timeRange, style: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.textSecondary, fontSize: 11)),
-              Text(booking.courtName, style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+              Container(
+                width: 4,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: statusColor,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(booking.timeRange, style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textSecondary, fontSize: 11)),
+                  Text(booking.courtName, style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+                ],
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  booking.customerName.isNotEmpty ? booking.customerName : 'Walk-in',
+                  style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (hasOutstanding)
+                GestureDetector(
+                  onTap: () => Get.bottomSheet(
+                    isScrollControlled: true,
+                    PosCollectBalanceSheet(booking: booking),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: AppColors.warning.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color: AppColors.warning.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.payments_outlined,
+                            color: AppColors.warning, size: 12),
+                        const SizedBox(width: 4),
+                        Text('Collect',
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.warning,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
+                            )),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    isNow ? 'LIVE' : isPast ? 'Done' : booking.status.label,
+                    style: AppTextStyles.caption.copyWith(
+                      color: statusColor,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
             ],
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              booking.customerName.isNotEmpty ? booking.customerName : 'Walk-in',
-              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              isNow ? 'LIVE' : isPast ? 'Done' : booking.status.label,
-              style: AppTextStyles.caption.copyWith(
-                color: statusColor,
-                fontWeight: FontWeight.w700,
-                fontSize: 10,
+          if (hasOutstanding) ...[
+            const SizedBox(height: 6),
+            Padding(
+              padding: const EdgeInsets.only(left: 14),
+              child: Text(
+                'Outstanding: PKR ${_pkr.format(remaining)}',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.warning,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 11,
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );

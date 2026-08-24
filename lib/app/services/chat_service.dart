@@ -31,6 +31,7 @@ class ChatService {
     required String subtitle,
     required String requesterUid,
     BookingSnapshot? bookingSnapshot,
+    String? customerName,
   }) async {
     final pairKey = '${arenaId}_$customerId';
 
@@ -66,6 +67,8 @@ class ChatService {
       'pairKey': pairKey,
       'arenaId': arenaId,
       'customerId': customerId,
+      if (customerName != null && customerName.isNotEmpty)
+        'customerName': customerName,
       'activeBookingId': bookingId,
       'title': title,
       'subtitle': subtitle,
@@ -89,6 +92,7 @@ class ChatService {
     required String ownerId,
     required String title,
     required String requesterUid,
+    String? customerName,
   }) async {
     final pairKey = '${arenaId}_$customerId';
 
@@ -131,6 +135,8 @@ class ChatService {
       'pairKey': pairKey,
       'arenaId': arenaId,
       'customerId': customerId,
+      if (customerName != null && customerName.isNotEmpty)
+        'customerName': customerName,
       'title': title,
       'subtitle': 'Arena chat',
       'lastMessage': '',

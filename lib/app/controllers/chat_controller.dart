@@ -270,14 +270,19 @@ class ChatController extends GetxController {
     required String arenaId,
     required String arenaName,
     required String ownerId,
-  }) =>
-      _service.getOrCreateArenaChat(
-        arenaId: arenaId,
-        customerId: myUid,
-        ownerId: ownerId,
-        title: arenaName,
-        requesterUid: myUid,
-      );
+  }) {
+    final user = Get.isRegistered<AuthController>()
+        ? AuthController.to.currentUser.value
+        : null;
+    return _service.getOrCreateArenaChat(
+      arenaId: arenaId,
+      customerId: myUid,
+      ownerId: ownerId,
+      title: arenaName,
+      requesterUid: myUid,
+      customerName: user?.name,
+    );
+  }
 
   Map<String, dynamic>? _ticketRefForSupport() {
     final t = selectedTicket.value;
@@ -374,6 +379,7 @@ class ChatController extends GetxController {
       title: b.arenaName,
       subtitle: '${b.courtName} · ${b.timeRange}',
       requesterUid: myUid,
+      customerName: b.customerName.isNotEmpty ? b.customerName : null,
       bookingSnapshot: BookingSnapshot(
         arenaName: b.arenaName,
         courtName: b.courtName,
@@ -477,6 +483,7 @@ class ChatController extends GetxController {
       title: first.arenaName,
       subtitle: '${first.courtName} · ${first.timeRange}',
       requesterUid: myUid,
+      customerName: first.customerName.isNotEmpty ? first.customerName : null,
       bookingSnapshot: BookingSnapshot(
         arenaName: first.arenaName,
         courtName: first.courtName,
@@ -510,6 +517,7 @@ class ChatController extends GetxController {
       title: b.arenaName,
       subtitle: '${b.courtName} · ${b.timeRange}',
       requesterUid: myUid,
+      customerName: b.customerName.isNotEmpty ? b.customerName : null,
       bookingSnapshot: BookingSnapshot(
         arenaName: b.arenaName,
         courtName: b.courtName,

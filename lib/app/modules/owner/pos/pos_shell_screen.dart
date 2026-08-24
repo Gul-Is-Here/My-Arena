@@ -31,7 +31,7 @@ class PosShellScreen extends StatefulWidget {
 }
 
 class _PosShellScreenState extends State<PosShellScreen> {
-  int _tab = 0; // 0=home 1=courts 2=bookings 3=transactions 4=more
+  int _tab = 0; // 0=home 1=bookings 2=courts 3=transactions 4=more
 
   void _setTab(int t) => setState(() => _tab = t);
 
@@ -147,6 +147,7 @@ class _Sidebar extends StatelessWidget {
             _navItem(Icons.speed_outlined, 'Dashboard', 0),
             _navItem(Icons.stadium_outlined, 'Live Courts', 1),
             _navItem(Icons.add_circle_outline, 'New Walk-in', -1, isAction: true),
+            _navItem(Icons.link_outlined, 'Booking Sale', -2, isAction: true),
             if (expanded) _sectionLabel('Manage'),
             _navItem(Icons.calendar_today_outlined, 'Bookings', 2),
             _navItem(Icons.receipt_long_outlined, 'Transactions', 3),
@@ -181,6 +182,7 @@ class _Sidebar extends StatelessWidget {
       onTap: () {
         if (subRoute != null) { Get.toNamed(subRoute); return; }
         if (t == -1) { Get.toNamed(AppRoutes.posWalkIn); return; }
+        if (t == -2) { Get.toNamed(AppRoutes.posBookingSale); return; }
         onTab(t);
       },
       child: Container(
@@ -451,8 +453,8 @@ class _TabContent extends StatelessWidget {
   Widget build(BuildContext context) {
     return IndexedStack(index: tab, children: [
       _HomeTab(isMobile: isMobile),
-      const _CourtsTab(),
       const _BookingsTab(),
+      const _CourtsTab(),
       const _TransactionsTab(),
       const _MoreTab(),
     ]);
@@ -495,7 +497,7 @@ class _HomeTab extends StatelessWidget {
           // KPI grid
           _KpiGrid(isMobile: isMobile),
           const SizedBox(height: 20),
-          // Primary CTA - Walk-in
+          // Primary CTAs
           _WalkInCta(),
           const SizedBox(height: 12),
           // Quick actions row
@@ -671,10 +673,10 @@ class _QuickActionsRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final actions = [
       _QA('Court View', Icons.stadium_outlined, AppColors.primary, () => Get.toNamed(AppRoutes.posLiveCourts)),
-      _QA('Transactions', Icons.receipt_long_outlined, AppColors.accent, () => Get.toNamed(AppRoutes.posTransactions)),
+      _QA('Booking Sale', Icons.link_outlined, AppColors.accent, () => Get.toNamed(AppRoutes.posBookingSale)),
+      _QA('Transactions', Icons.receipt_long_outlined, AppColors.secondary, () => Get.toNamed(AppRoutes.posTransactions)),
       _QA('Expenses', Icons.money_off_outlined, AppColors.warning, () => Get.toNamed(AppRoutes.posExpenses)),
-      _QA('Reports', Icons.bar_chart_outlined, AppColors.secondary, () => Get.toNamed(AppRoutes.posReports)),
-      _QA('Shift', Icons.access_time_outlined, AppColors.textSecondary, () => Get.toNamed(AppRoutes.posShift)),
+      _QA('Reports', Icons.bar_chart_outlined, AppColors.textSecondary, () => Get.toNamed(AppRoutes.posReports)),
       _QA('Products', Icons.storefront_outlined, AppColors.error, () => Get.toNamed(AppRoutes.posProducts)),
     ];
     return GridView.builder(
@@ -691,6 +693,7 @@ class _QuickActionsRow extends StatelessWidget {
         final a = actions[i];
         return GestureDetector(
           onTap: a.onTap,
+          behavior: HitTestBehavior.opaque,
           child: Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
@@ -1118,7 +1121,7 @@ class _BookingTimelineItem extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 10),
             child: GestureDetector(
               onTap: () => Get.toNamed(AppRoutes.bookingDetailOwner,
-                  arguments: booking),
+                  arguments: booking.id),
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -1437,11 +1440,13 @@ class _MoreTab extends StatelessWidget {
           );
         }),
         ...[
+          _MoreItem('Booking Sale', Icons.link_outlined, AppColors.accent,
+              'Add POS charges to an existing booking', () => Get.toNamed(AppRoutes.posBookingSale)),
           _MoreItem('Expenses', Icons.money_off_outlined, AppColors.warning,
               'Track operating costs', () => Get.toNamed(AppRoutes.posExpenses)),
           _MoreItem('Reports', Icons.bar_chart_outlined, AppColors.secondary,
               'Revenue and analytics', () => Get.toNamed(AppRoutes.posReports)),
-          _MoreItem('Products', Icons.storefront_outlined, AppColors.accent,
+          _MoreItem('Products', Icons.storefront_outlined, AppColors.error,
               'Manage add-ons and products', () => Get.toNamed(AppRoutes.posProducts)),
         ].map((m) => GestureDetector(
           onTap: m.onTap,

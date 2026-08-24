@@ -62,7 +62,8 @@ async function removeStaleToken(uid, token) {
   } catch (_) { /* best-effort */ }
 }
 
-async function sendPush(uid, title, body, type = "general", relatedId = null) {
+// Extra data fields merged into the FCM data payload (all values must be strings).
+async function sendPush(uid, title, body, type = "general", relatedId = null, extraData = {}) {
   // Durable in-app inbox copy — written even when the user has no FCM token,
   // so the notification center shows every event.
   await admin.firestore().collection("notifications").add({
@@ -78,9 +79,15 @@ async function sendPush(uid, title, body, type = "general", relatedId = null) {
   const tokens = await getTokens(uid);
   if (tokens.length === 0) return;
 
+  const dataPayload = {
+    type,
+    ...(relatedId ? { relatedId } : {}),
+    ...extraData,
+  };
+
   const msgBase = {
     notification: { title, body },
-    data: { type, ...(relatedId ? { relatedId } : {}) },
+    data: dataPayload,
     android: {
       priority: "high",
       notification: { sound: "default", channelId: "my_arena_channel" },
@@ -491,14 +498,17 @@ exports.autoTransitionBookings = onSchedule("every 30 minutes", async () => {
 });
 
 // ── Chat: new message → notify the other party ──────────────────────
-// Routing is determined from the chat document, NOT the sender's role,
-// so notifications are correct regardless of which side is logged in.
+// All six chat flows (customer↔owner, customer↔admin, owner↔admin) use
+// type="chat" in the payload so the Flutter handler opens the correct
+// chat room directly.  Admin recipients get isAdminChat="true" so the
+// app knows to open adminChatView instead of chatRoom.
 exports.onChatMessageCreated = onDocumentCreated("chats/{chatId}/messages/{msgId}", async (event) => {
   const msg = event.data.data();
   if (!msg || msg.type === "system" || msg.senderRole === "system") return;
 
   const db = admin.firestore();
-  const chatSnap = await db.collection("chats").doc(event.params.chatId).get();
+  const chatId = event.params.chatId;
+  const chatSnap = await db.collection("chats").doc(chatId).get();
   if (!chatSnap.exists) return;
   const chat = chatSnap.data();
 
@@ -506,50 +516,65 @@ exports.onChatMessageCreated = onDocumentCreated("chats/{chatId}/messages/{msgId
     ? msg.content.substring(0, 60)
     : "Sent a message";
   const senderName = msg.senderName ?? "Someone";
+  const senderRole = msg.senderRole ?? "customer";
+  const senderId = msg.senderId ?? "";
 
-  // ── Booking chat (customer ↔ owner/staff) ────────────────────────
+  // ── Flow 1 & 2: Booking chat (customer ↔ owner / staff) ──────────
   if (chat.type === "booking" || chat.arenaId) {
-    const senderRole = msg.senderRole ?? "customer";
-
     if (senderRole === "customer") {
-      // Customer sent → notify owner + all arena staff
+      // Customer → Owner/Staff
       const title = `New message from ${senderName}`;
       if (chat.ownerId) {
-        await sendPush(chat.ownerId, title, preview, "chat", event.params.chatId);
+        await sendPush(chat.ownerId, title, preview, "chat", chatId);
       }
       if (chat.arenaId) {
-        await notifyArenaStaff(db, chat.arenaId, title, preview, "chat", event.params.chatId);
+        await notifyArenaStaff(db, chat.arenaId, title, preview, "chat", chatId);
       }
     } else {
-      // Owner or staff replied → notify the customer
+      // Owner/Staff → Customer
       const title = `Reply from ${senderName}`;
       if (chat.customerId) {
-        await sendPush(chat.customerId, title, preview, "chat", event.params.chatId);
+        await sendPush(chat.customerId, title, preview, "chat", chatId);
       }
     }
     return;
   }
 
-  // ── Support chat (customer/owner ↔ admin) ────────────────────────
-  if (chat.type === "support" || chat.type === "owner_support" ||
-      chat.type === "customer_support") {
-    const senderRole = msg.senderRole ?? "customer";
-    if (senderRole === "admin") {
-      // Admin replied → notify the ticket raiser (participants[0] is the non-admin user).
-      const participants = chat.participants ?? [];
-      const raiser = participants.find((p) => p !== msg.senderId) ?? participants[0];
+  // ── Flows 3–6: Support chat (customer/owner ↔ admin) ─────────────
+  // chat.type is "owner_support" or "customer_support".
+  // participants = [raiserId] initially; admins join by being the senderId.
+  if (chat.type === "owner_support" || chat.type === "customer_support" || chat.type === "support") {
+    const participants = chat.participants ?? [];
+
+    if (senderRole === "admin" || senderRole === "superAdmin") {
+      // Admin/SuperAdmin → Customer or Owner
+      // The raiser is the only non-admin participant.
+      const raiser = participants.find((p) => p !== senderId);
       if (raiser) {
-        await sendPush(raiser, `Reply from Support`, preview, "support", event.params.chatId);
+        await sendPush(raiser, `Reply from Support`, preview, "chat", chatId);
       }
     } else {
-      // Customer/owner sent → notify admins and super admins
+      // Customer or Owner → Admin/SuperAdmin
+      // Notify every admin + superAdmin user so any available admin can respond.
+      const adminRoles = ["admin", "superAdmin", "operationsManager", "supportAgent"];
       const adminsSnap = await db.collection("users")
-        .where("role", "in", ["admin", "superAdmin"])
+        .where("role", "in", adminRoles)
         .get();
-      await Promise.all(adminsSnap.docs.map((d) =>
-        sendPush(d.id, `Support message from ${senderName}`, preview, "support", event.params.chatId)
-      ));
+      await Promise.all(adminsSnap.docs
+        .filter((d) => d.id !== senderId) // don't self-notify
+        .map((d) =>
+          sendPush(
+            d.id,
+            `Support message from ${senderName}`,
+            preview,
+            "chat",
+            chatId,
+            { isAdminChat: "true" }, // Flutter opens adminChatView for this flag
+          )
+        )
+      );
     }
+    return;
   }
 });
 

@@ -144,4 +144,5 @@ abstract class AppRoutes {
   static const String posShift = '/owner/pos/shift';
   static const String posReports = '/owner/pos/reports';
   static const String posProducts = '/owner/pos/products';
+  static const String posBookingSale = '/owner/pos/booking-sale';
 }

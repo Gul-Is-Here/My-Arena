@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -837,10 +838,72 @@ class _TimeStep extends StatelessWidget {
 
 // ── Step 2: Customer ──────────────────────────────────────────────────────
 
-class _CustomerStep extends StatelessWidget {
+class _CustomerStep extends StatefulWidget {
   final TextEditingController nameCtrl;
   final TextEditingController phoneCtrl;
   const _CustomerStep({required this.nameCtrl, required this.phoneCtrl});
+
+  @override
+  State<_CustomerStep> createState() => _CustomerStepState();
+}
+
+class _CustomerStepState extends State<_CustomerStep> {
+  bool _searching = false;
+  String? _foundName;
+  String? _foundId;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.phoneCtrl.addListener(_onPhoneChanged);
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    widget.phoneCtrl.removeListener(_onPhoneChanged);
+    super.dispose();
+  }
+
+  void _onPhoneChanged() {
+    final phone = widget.phoneCtrl.text.trim();
+    _debounce?.cancel();
+    if (phone.length < 7) {
+      setState(() { _foundName = null; _foundId = null; });
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 600), () => _lookup(phone));
+  }
+
+  Future<void> _lookup(String phone) async {
+    setState(() => _searching = true);
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .where('phone', isEqualTo: phone)
+          .limit(1)
+          .get();
+      if (snap.docs.isNotEmpty) {
+        final m = snap.docs.first.data();
+        final name = (m['name'] as String? ?? '').trim();
+        final id = snap.docs.first.id;
+        setState(() { _foundName = name; _foundId = id; });
+      } else {
+        setState(() { _foundName = null; _foundId = null; });
+      }
+    } catch (_) {
+      setState(() { _foundName = null; _foundId = null; });
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
+  void _applyFound() {
+    if (_foundName != null) {
+      widget.nameCtrl.text = _foundName!;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -853,25 +916,101 @@ class _CustomerStep extends StatelessWidget {
         Text('Enter walk-in customer details',
             style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
         const SizedBox(height: 20),
-        _field('Name *', 'Customer name', nameCtrl, TextInputType.name),
-        const SizedBox(height: 14),
-        _field('Phone', 'Phone number (optional)', phoneCtrl, TextInputType.phone),
-      ],
-    );
-  }
 
-  Widget _field(String label, String hint, TextEditingController ctrl, TextInputType type) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
+        // Phone first — triggers lookup
+        _fieldLabel('Phone', 'Phone number — auto-fills name for regulars'),
         const SizedBox(height: 6),
         TextField(
-          controller: ctrl,
-          keyboardType: type,
+          controller: widget.phoneCtrl,
+          keyboardType: TextInputType.phone,
           style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textPrimary),
           decoration: InputDecoration(
-            hintText: hint,
+            hintText: '03xx-xxxxxxx',
+            hintStyle: AppTextStyles.bodyMedium.copyWith(color: AppColors.textDisabled),
+            filled: true,
+            fillColor: AppColors.surface,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            suffixIcon: _searching
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                  )
+                : _foundName != null
+                    ? const Icon(Icons.person_outline, color: AppColors.success, size: 20)
+                    : null,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppColors.border),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                  color: _foundName != null ? AppColors.success : AppColors.border),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppColors.primary),
+            ),
+          ),
+        ),
+
+        // Customer found card
+        if (_foundName != null) ...[
+          const SizedBox(height: 10),
+          GestureDetector(
+            onTap: _applyFound,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.success.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle_outline,
+                      color: AppColors.success, size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Regular customer found',
+                            style: AppTextStyles.caption.copyWith(
+                                color: AppColors.success,
+                                fontWeight: FontWeight.w600)),
+                        Text(_foundName!,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w700)),
+                      ],
+                    ),
+                  ),
+                  Text('Use →',
+                      style: AppTextStyles.caption.copyWith(
+                          color: AppColors.success,
+                          fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+          ),
+        ] else if (widget.phoneCtrl.text.trim().length >= 7 && !_searching) ...[
+          const SizedBox(height: 8),
+          Text('New customer — fill name below',
+              style: AppTextStyles.caption.copyWith(
+                  color: AppColors.textDisabled)),
+        ],
+
+        const SizedBox(height: 14),
+        _fieldLabel('Name *', 'Customer name'),
+        const SizedBox(height: 6),
+        TextField(
+          controller: widget.nameCtrl,
+          keyboardType: TextInputType.name,
+          style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textPrimary),
+          decoration: InputDecoration(
+            hintText: 'Customer name',
             hintStyle: AppTextStyles.bodyMedium.copyWith(color: AppColors.textDisabled),
             filled: true,
             fillColor: AppColors.surface,
@@ -893,6 +1032,14 @@ class _CustomerStep extends StatelessWidget {
       ],
     );
   }
+
+  Widget _fieldLabel(String label, String hint) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
+      Text(hint, style: AppTextStyles.caption.copyWith(color: AppColors.textDisabled, fontSize: 11)),
+    ],
+  );
 }
 
 // ── Step 3: Add-ons ───────────────────────────────────────────────────────

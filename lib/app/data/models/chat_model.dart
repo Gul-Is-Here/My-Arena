@@ -220,6 +220,7 @@ class ChatModel {
   final String? pairKey;
   final String? arenaId;
   final String? customerId;
+  final String? customerName;
 
   /// Last booking explicitly pinned in the context banner.
   final String? activeBookingId;
@@ -240,6 +241,7 @@ class ChatModel {
     this.pairKey,
     this.arenaId,
     this.customerId,
+    this.customerName,
     this.activeBookingId,
     this.participants = const [],
     required this.lastMessage,
@@ -271,6 +273,7 @@ class ChatModel {
       pairKey: m['pairKey'],
       arenaId: m['arenaId'],
       customerId: m['customerId'],
+      customerName: m['customerName'],
       activeBookingId: m['activeBookingId'],
       participants: List<String>.from(m['participants'] ?? []),
       lastMessage: m['lastMessage'] ?? '',
@@ -306,6 +309,7 @@ class ChatModel {
       if (pairKey != null) 'pairKey': pairKey,
       if (arenaId != null) 'arenaId': arenaId,
       if (customerId != null) 'customerId': customerId,
+      if (customerName != null) 'customerName': customerName,
       if (activeBookingId != null) 'activeBookingId': activeBookingId,
       'participants': participants,
       'lastMessage': lastMessage,
@@ -333,6 +337,7 @@ class ChatModel {
         pairKey: pairKey,
         arenaId: arenaId,
         customerId: customerId,
+        customerName: customerName,
         activeBookingId: activeBookingId ?? this.activeBookingId,
         participants: participants,
         lastMessage: lastMessage ?? this.lastMessage,

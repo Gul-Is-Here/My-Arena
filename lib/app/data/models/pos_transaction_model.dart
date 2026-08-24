@@ -42,10 +42,21 @@ extension PosPaymentMethodX on PosPaymentMethod {
       );
 }
 
-enum PosTransactionType { booking, addOn, expense, refund, adjustment, checkout }
+// bookingSale: standalone POS order linked to an existing booking.
+// Does NOT modify booking.totalAmount / amountPaid / remainingAmount.
+enum PosTransactionType { booking, addOn, expense, refund, adjustment, checkout, bookingSale }
 
 extension PosTransactionTypeX on PosTransactionType {
   String get key => name;
+  String get label => switch (this) {
+        PosTransactionType.booking => 'Booking',
+        PosTransactionType.addOn => 'Add-On',
+        PosTransactionType.expense => 'Expense',
+        PosTransactionType.refund => 'Refund',
+        PosTransactionType.adjustment => 'Adjustment',
+        PosTransactionType.checkout => 'Checkout',
+        PosTransactionType.bookingSale => 'Booking Sale',
+      };
   static PosTransactionType fromKey(String? k) =>
       PosTransactionType.values.firstWhere(
         (t) => t.name == k,
@@ -77,6 +88,8 @@ class PosTransactionModel {
   final String notes;
   final LedgerSource source;
   final String? idempotencyKey;
+  // Cart line items for bookingSale / addOn transactions: [{name, qty, unitPrice}]
+  final List<Map<String, dynamic>> items;
 
   const PosTransactionModel({
     required this.id,
@@ -102,6 +115,7 @@ class PosTransactionModel {
     this.notes = '',
     this.source = LedgerSource.pos,
     this.idempotencyKey,
+    this.items = const [],
   });
 
   Map<String, dynamic> toMap() => {
@@ -128,6 +142,7 @@ class PosTransactionModel {
         if (notes.isNotEmpty) 'notes': notes,
         'source': source.key,
         if (idempotencyKey != null) 'idempotencyKey': idempotencyKey,
+        if (items.isNotEmpty) 'items': items,
       };
 
   factory PosTransactionModel.fromMap(Map<String, dynamic> m) =>
@@ -157,5 +172,9 @@ class PosTransactionModel {
         notes: m['notes'] ?? '',
         source: LedgerSourceX.fromKey(m['source']),
         idempotencyKey: m['idempotencyKey'] as String?,
+        items: (m['items'] as List?)
+                ?.map((e) => Map<String, dynamic>.from(e as Map))
+                .toList() ??
+            [],
       );
 }
